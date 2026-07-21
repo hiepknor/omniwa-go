@@ -246,8 +246,7 @@ func (w whatsmeowService) ForceUpdateJid(instanceId string, number string) error
 	}
 
 	if instance.Jid == "" && number != "" {
-		sqlDeviceSearch := fmt.Sprintf("SELECT jid FROM whatsmeow_device WHERE jid LIKE '%%%s%%'", number)
-		rows, err := w.authDB.Query(sqlDeviceSearch)
+		rows, err := w.authDB.Query("SELECT jid FROM whatsmeow_device WHERE jid LIKE $1", "%"+number+"%")
 		if err != nil {
 			w.loggerWrapper.GetLogger(instanceId).LogError("[%s] Error getting device: %v", instanceId, err)
 			return err

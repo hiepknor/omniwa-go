@@ -246,11 +246,14 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 
 	r.GET("/ws", func(c *gin.Context) {
-		token := c.Query("token")
+		// The token is sent via Sec-WebSocket-Protocol (["apikey", "<token>"])
+		// rather than the query string, so it never lands in URLs/access logs.
+		// Browsers can set this through the second arg of `new WebSocket(url, [...])`.
+		token := websocket_producer.TokenFromProtocolHeader(c.GetHeader("Sec-WebSocket-Protocol"))
 		instanceId := c.Query("instanceId")
 
 		if token != config.GlobalApiKey {
-			logger.LogError("Token inválido: %s", token)
+			logger.LogError("WebSocket auth failed: invalid token")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido"})
 			return
 		}

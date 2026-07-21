@@ -453,16 +453,20 @@ Envia eventos através de uma conexão WebSocket persistente. Ideal para dashboa
 Recebe apenas eventos de uma instância:
 
 ```
-ws://localhost:4000/ws?token=TOKEN_DA_INSTANCIA&instanceId=vendas
+ws://localhost:4000/ws?instanceId=vendas
 ```
+
+> O token é enviado pelo subprotocolo `Sec-WebSocket-Protocol` como `["apikey", "<TOKEN>"]`, não mais pela query string (evita expor o token em URLs e logs de acesso).
 
 #### 2. Conexão Broadcast
 
 Recebe eventos de **todas as instâncias**:
 
 ```
-ws://localhost:4000/ws?token=GLOBAL_API_KEY
+ws://localhost:4000/ws
 ```
+
+> Token enviado pelo subprotocolo `Sec-WebSocket-Protocol`: `["apikey", "<GLOBAL_API_KEY>"]`.
 
 ### Gerenciamento de Conexões
 
@@ -479,7 +483,8 @@ O Evolution GO gerencia automaticamente as conexões WebSocket:
 // Conectar a instância específica
 const token = 'token-da-instancia-vendas';
 const instanceId = 'vendas';
-const ws = new WebSocket(`ws://localhost:4000/ws?token=${token}&instanceId=${instanceId}`);
+// O token vai no 2º argumento (subprotocolos): ["apikey", token].
+const ws = new WebSocket(`ws://localhost:4000/ws?instanceId=${instanceId}`, ['apikey', token]);
 
 ws.onopen = () => {
     console.log('WebSocket conectado!');
@@ -518,9 +523,10 @@ import websockets
 import json
 
 async def listen_events():
-    uri = "ws://localhost:4000/ws?token=TOKEN&instanceId=vendas"
+    uri = "ws://localhost:4000/ws?instanceId=vendas"
     
-    async with websockets.connect(uri) as websocket:
+    # Token enviado via subprotocolo: ["apikey", "<TOKEN>"]
+    async with websockets.connect(uri, subprotocols=["apikey", "TOKEN"]) as websocket:
         print("WebSocket conectado!")
         
         async for message in websocket:
@@ -870,7 +876,7 @@ python rabbitmq-consumer.py
     <div id="messages"></div>
 
     <script>
-        const ws = new WebSocket('ws://localhost:4000/ws?token=GLOBAL_API_KEY');
+        const ws = new WebSocket('ws://localhost:4000/ws', ['apikey', 'GLOBAL_API_KEY']);
         
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
