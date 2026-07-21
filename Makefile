@@ -1,7 +1,7 @@
 .PHONY: help dev run build test clean swagger deps docker-build docker-run install setup migrate-up migrate-down logs
 
 # Configurações
-APP_NAME=evolution-go
+APP_NAME=omniwa-go
 MAIN_PATH=cmd/evolution-go/main.go
 BUILD_DIR=build
 GO=go
@@ -18,18 +18,18 @@ NC=\033[0m # No Color
 ##@ Ajuda
 
 help: ## Exibe esta mensagem de ajuda
-	@echo "$(GREEN)Evolution GO - Makefile$(NC)"
+	@echo "$(GREEN)OmniWA GO - Makefile$(NC)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUso:\n  make $(YELLOW)<target>$(NC)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Desenvolvimento
 
 dev: ## Roda a aplicação em modo desenvolvimento
-	@echo "$(GREEN)🚀 Rodando Evolution GO em modo desenvolvimento...$(NC)"
+	@echo "$(GREEN)🚀 Rodando OmniWA GO em modo desenvolvimento...$(NC)"
 	$(GO) run $(LDFLAGS) $(MAIN_PATH) -dev
 
 run: ## Roda a aplicação em modo produção
-	@echo "$(GREEN)🚀 Rodando Evolution GO...$(NC)"
+	@echo "$(GREEN)🚀 Rodando OmniWA GO...$(NC)"
 	$(GO) run $(MAIN_PATH)
 
 watch: ## Roda a aplicação com hot reload (requer air)

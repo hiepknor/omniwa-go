@@ -61,6 +61,7 @@ type Config struct {
 	EventIgnoreStatus    bool
 	QrcodeMaxCount       int
 	CheckUserExists      bool
+	LicenseGateEnabled   bool
 
 	// Logger configurations
 	LogMaxSize    int
@@ -280,6 +281,11 @@ func Load() *Config {
 		checkUserExists = "true"
 	}
 
+	// License gate defaults to enabled (upstream behavior). Set
+	// LICENSE_GATE_ENABLED=false to run without the license activation gate and
+	// the associated remote heartbeat.
+	licenseGateEnabled := os.Getenv(config_env.LICENSE_GATE_ENABLED) != "false"
+
 	// Convertendo para int com valores padrão caso estejam vazios
 	major := 0
 	if whatsappVersionMajor != "" {
@@ -375,6 +381,7 @@ func Load() *Config {
 		EventIgnoreStatus:    eventIgnoreStatus == "true",
 		QrcodeMaxCount:       qrMaxCount,
 		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
+		LicenseGateEnabled:   licenseGateEnabled,
 		AmqpGlobalEvents:     amqpGlobalEvents,
 		AmqpSpecificEvents:   amqpSpecificEvents,
 		NatsUrl:              natsUrl,

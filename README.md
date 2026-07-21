@@ -1,40 +1,25 @@
-<p align="center">
-  <a href="https://evolutionfoundation.com.br">
-    <img src="./public/hover-evolution.png" alt="Evolution Foundation" />
-  </a>
-</p>
-
-<h1 align="center">Evolution Go</h1>
+<h1 align="center">OmniWA GO</h1>
 
 <p align="center">
-  High-performance WhatsApp API built in Go — part of the Evolution Foundation ecosystem.
+  High-performance WhatsApp API built in Go.
 </p>
 
 <p align="center">
-  <a href="https://github.com/evolution-foundation/evolution-go/releases/latest"><img src="https://img.shields.io/github/v/release/evolution-foundation/evolution-go?include_prereleases&label=version&color=00ffa7" alt="Latest version" /></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache 2.0" /></a>
-  <a href="https://docs.evolutionfoundation.com.br"><img src="https://img.shields.io/badge/Docs-evolutionfoundation.com.br-00ffa7" alt="Documentation" /></a>
-  <a href="https://evolutionfoundation.com.br/community"><img src="https://img.shields.io/badge/Community-Join%20us-white" alt="Community" /></a>
-  <a href="https://hub.docker.com/r/evoapicloud/evolution-go"><img src="https://img.shields.io/badge/Docker-evoapicloud-blue" alt="Docker image" /></a>
 </p>
 
-<p align="center">
-  <a href="https://evolutionfoundation.com.br">Website</a> &middot;
-  <a href="https://docs.evolutionfoundation.com.br">Documentation</a> &middot;
-  <a href="https://evolutionfoundation.com.br/community">Community</a> &middot;
-  <a href="mailto:suporte@evofoundation.com.br">Support</a>
-</p>
-
+> **OmniWA GO** is a downstream fork of
+> [Evolution Go](https://github.com/evolution-foundation/evolution-go) (Apache-2.0),
+> maintained independently. It is not affiliated with or endorsed by Evolution
+> Foundation. See [Attribution](#attribution) and [docs/SYNC.md](./docs/SYNC.md).
 
 ---
 
 ## About
 
-**Evolution Go** is a high-performance WhatsApp API built in Go. Part of the Evolution Foundation ecosystem, it provides a robust, lightweight solution for WhatsApp integration using the [whatsmeow](https://github.com/tulir/whatsmeow) library.
-
-## Part of the Evolution Foundation ecosystem
-
-Evolution Go is one of the messaging engines maintained by Evolution Foundation. It is used as a WhatsApp provider by the [Evo CRM Community](https://github.com/evolution-foundation/evo-crm-community) and other projects in the ecosystem.
+**OmniWA GO** is a high-performance WhatsApp API built in Go. It provides a
+robust, lightweight solution for WhatsApp integration using the
+[whatsmeow](https://github.com/tulir/whatsmeow) library.
 
 ---
 
@@ -46,7 +31,6 @@ Evolution Go is one of the messaging engines maintained by Evolution Foundation.
 - **Media support** — images, videos, audio, documents with MinIO/S3 storage
 - **Message storage** — optional PostgreSQL persistence
 - **QR code pairing** — built-in QR code generation for device linking
-- **License management** — built-in licensing with registration, activation, and heartbeat
 - **Docker ready** — production-ready Docker configuration
 
 ---
@@ -56,8 +40,8 @@ Evolution Go is one of the messaging engines maintained by Evolution Foundation.
 ### Docker (recommended)
 
 ```bash
-git clone https://github.com/evolution-foundation/evolution-go.git
-cd evolution-go
+git clone https://github.com/hiepknor/omniwa-go.git
+cd omniwa-go
 make docker-build
 make docker-run
 ```
@@ -65,8 +49,8 @@ make docker-run
 ### Local development
 
 ```bash
-git clone https://github.com/evolution-foundation/evolution-go.git
-cd evolution-go
+git clone https://github.com/hiepknor/omniwa-go.git
+cd omniwa-go
 
 # Setup, configure and run
 make setup
@@ -80,56 +64,49 @@ make dev
 
 ## Configuration
 
-Create a `.env` file:
+Create a `.env` file (see [.env.example](./.env.example)):
 
 ```env
 # Server
 SERVER_PORT=8080
-CLIENT_NAME=evolution
+CLIENT_NAME=omniwa
 
 # Security
 GLOBAL_API_KEY=your-secure-api-key-here
 
 # Database
-POSTGRES_AUTH_DB=postgresql://postgres:password@localhost:5432/evogo_auth?sslmode=disable
-POSTGRES_USERS_DB=postgresql://postgres:password@localhost:5432/evogo_users?sslmode=disable
+POSTGRES_AUTH_DB=postgresql://postgres:password@localhost:5432/omniwa_auth?sslmode=disable
+POSTGRES_USERS_DB=postgresql://postgres:password@localhost:5432/omniwa_users?sslmode=disable
 DATABASE_SAVE_MESSAGES=false
 
-# Logging
-WADEBUG=DEBUG
-LOGTYPE=console
-
-# Optional
-# AMQP_URL=amqp://guest:guest@localhost:5672/
-# NATS_URL=nats://localhost:4222
-# WEBHOOK_URL=https://your-webhook-url.com/webhook
-# MINIO_ENABLED=true
-# MINIO_ENDPOINT=localhost:9000
-# MINIO_ACCESS_KEY=minioadmin
-# MINIO_SECRET_KEY=minioadmin
+# License gate (see below). Set to false to run without activation.
+# LICENSE_GATE_ENABLED=true
 ```
 
 | Variable | Description | Default |
 |---|---|---|
 | `SERVER_PORT` | Server port | `8080` |
-| `CLIENT_NAME` | Client identifier | `evolution` |
+| `CLIENT_NAME` | Client identifier | `omniwa` |
 | `GLOBAL_API_KEY` | API authentication key | **Required** |
 | `DATABASE_SAVE_MESSAGES` | Enable message storage | `false` |
-| `WADEBUG` | WhatsApp debug level | `INFO` |
+| `LICENSE_GATE_ENABLED` | Enable the license activation gate | `true` |
 
 ---
 
-## License Activation
+## License Gate
 
-Evolution Go requires a license to operate. On first run:
+The upstream project ships a license activation gate: the API is blocked
+(`503`) until the instance is activated against the licensing server, and a
+periodic heartbeat is sent while running.
 
-1. Start the server — API endpoints return `503` until activated
-2. Open the **Manager** at `http://localhost:8080/manager/login`
-3. Enter your API URL and `GLOBAL_API_KEY`
-4. Complete the license registration flow
-5. Once activated, the API is fully operational
+OmniWA GO keeps this behavior by default, but makes it opt-out:
 
-The license status persists in the database (`runtime_configs` table). Heartbeats are sent periodically to maintain activation.
+- **`LICENSE_GATE_ENABLED=true` (default)** — the gate is active. On first run,
+  open the **Manager** at `http://localhost:8080/manager/login`, enter your API
+  URL and `GLOBAL_API_KEY`, and complete the registration flow. Status persists
+  in the `runtime_configs` table.
+- **`LICENSE_GATE_ENABLED=false`** — the API is served without the activation
+  gate and without the remote heartbeat, for fully independent operation.
 
 ---
 
@@ -157,8 +134,8 @@ http://localhost:8080/swagger/index.html
 ## Project Structure
 
 ```
-evolution-go/
-├── cmd/evolution-go/     # Application entry point
+omniwa-go/
+├── cmd/evolution-go/     # Application entry point (dir kept to ease upstream sync)
 ├── pkg/
 │   ├── core/            # License management & middleware
 │   ├── instance/        # Instance management
@@ -169,11 +146,15 @@ evolution-go/
 │   ├── config/          # Configuration
 │   ├── events/          # Event producers (AMQP, NATS, Webhook, WS)
 │   └── storage/         # Media storage (MinIO)
-├── docs/                # Swagger documentation
+├── docs/                # Swagger documentation + SYNC.md
 ├── Dockerfile
 ├── Makefile
 └── VERSION
 ```
+
+> The Go module path (`github.com/evolution-foundation/evolution-go`) and the
+> `cmd/evolution-go/` directory are intentionally kept unchanged to keep
+> upstream syncs low-conflict. See [docs/SYNC.md](./docs/SYNC.md).
 
 ---
 
@@ -181,7 +162,7 @@ evolution-go/
 
 | Component | Technology |
 |---|---|
-| Language | Go 1.24+ |
+| Language | Go 1.25+ |
 | HTTP framework | Gin |
 | WhatsApp | [whatsmeow](https://github.com/tulir/whatsmeow) |
 | Database | PostgreSQL |
@@ -193,69 +174,34 @@ evolution-go/
 
 ---
 
-## Documentation
+## Syncing with upstream
 
-| Resource | Link |
-|---|---|
-| Website | [evolutionfoundation.com.br](https://evolutionfoundation.com.br) |
-| Documentation | [docs.evolutionfoundation.com.br](https://docs.evolutionfoundation.com.br) |
-| Community | [evolutionfoundation.com.br/community](https://evolutionfoundation.com.br/community) |
-| Docker Hub | [evoapicloud/evolution-go](https://hub.docker.com/r/evoapicloud/evolution-go) |
-| Changelog | [CHANGELOG.md](./CHANGELOG.md) |
-| Contributing | [CONTRIBUTING.md](./CONTRIBUTING.md) |
-| Security | [SECURITY.md](./SECURITY.md) |
+OmniWA GO tracks [Evolution Go](https://github.com/evolution-foundation/evolution-go)
+and can merge upstream releases. The workflow is documented in
+[docs/SYNC.md](./docs/SYNC.md).
 
 ---
 
-## Hosting
+## Attribution
 
-Deploy Evolution Go with optimized infrastructure through our HostGator partnership:
+OmniWA GO is a derivative work of
+[Evolution Go](https://github.com/evolution-foundation/evolution-go) by Evolution
+Foundation, licensed under the Apache License 2.0.
 
-[**Evolution Go VPS — HostGator**](https://evolution-api.com/vps-evolution-go)
+- Original copyright and attribution are preserved in [NOTICE](./NOTICE).
+- "Evolution Foundation", "Evolution", and "Evolution Go" are trademarks of
+  Evolution Foundation. OmniWA GO is an independent fork and does not use those
+  marks for its own branding, nor is it affiliated with or endorsed by Evolution
+  Foundation.
 
----
-
-## Telemetry
-
-Evolution Go collects anonymous telemetry data (routes used, API version) to help improve the service. **No sensitive or personal data is collected.**
-
----
-
-## Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to submit issues, propose features, and open pull requests.
-
-Join our [community](https://evolutionfoundation.com.br/community) to discuss ideas and collaborate.
-
----
-
-## Security
-
-For security issues, **do not open a public issue**. Email **suporte@evofoundation.com.br** or use GitHub's private vulnerability reporting. See [SECURITY.md](./SECURITY.md) for details.
-
----
-
-## Acknowledgments
+### Acknowledgments
 
 - [whatsmeow](https://github.com/tulir/whatsmeow) by [Tulir Asokan](https://github.com/tulir) — WhatsApp protocol library
-- [Evolution API](https://github.com/evolution-foundation/evolution-api) — Node.js sister project
+- [Evolution Go](https://github.com/evolution-foundation/evolution-go) — the upstream project this fork is based on
 
 ---
 
 ## License
 
-Evolution Go is licensed under the Apache License 2.0, with additional brand-protection conditions (LOGO/copyright preservation and Usage Notification requirement). See [LICENSE](./LICENSE) for full details.
-
-For licensing inquiries, contact **suporte@evofoundation.com.br**.
-
-## Trademarks
-
-"Evolution Foundation", "Evolution" and "Evolution Go" are trademarks of Evolution Foundation. See [TRADEMARKS.md](./TRADEMARKS.md) for the brand assets policy.
-
-Third-party attributions are documented in [NOTICE](./NOTICE).
-
----
-
-<p align="center">
-  Made by <a href="https://evolutionfoundation.com.br">Evolution Foundation</a> · © 2026
-</p>
+Licensed under the Apache License 2.0. See [LICENSE](./LICENSE) for full details
+and [NOTICE](./NOTICE) for attributions.
