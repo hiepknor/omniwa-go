@@ -1,0 +1,52 @@
+# Production base: OmniWA GO + Postgres. Config comes from .env (see .env.example).
+# Run from this directory:  docker compose up -d
+# Add RabbitMQ + MinIO:     docker compose -f docker-compose.yml -f docker-compose.full.yml up -d
+
+name: omniwa-go
+
+services:
+  omniwa-go:
+    image: ghcr.io/hiepknor/omniwa-go:${IMAGE_TAG:-latest}
+    container_name: omniwa-go
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    volumes:
+      - omniwa_data:/app/dbdata
+      - omniwa_logs:/app/logs
+    networks:
+      - omniwa_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: omniwa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - omniwa_network
+
+volumes:
+  omniwa_data:
+  omniwa_logs:
+  postgres_data:
+
+networks:
+  omniwa_network:
+    driver: bridge
