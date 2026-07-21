@@ -158,8 +158,9 @@ func (i *instanceHandler) Connect(ctx *gin.Context) {
 // @Tags Instance
 // @Accept json
 // @Produce json
-// @Success 200 {object} gin.H "Instance reconnected successfully"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "Instance reconnected successfully"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/reconnect [post]
 func (i *instanceHandler) Reconnect(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -185,8 +186,9 @@ func (i *instanceHandler) Reconnect(ctx *gin.Context) {
 // @Tags Instance
 // @Accept json
 // @Produce json
-// @Success 200 {object} gin.H "Instance disconnected successfully"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "Instance disconnected successfully"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/disconnect [post]
 func (i *instanceHandler) Disconnect(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -214,8 +216,9 @@ func (i *instanceHandler) Disconnect(ctx *gin.Context) {
 // @Tags Instance
 // @Accept json
 // @Produce json
-// @Success 200 {object} gin.H "Instance logged out successfully"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "Instance logged out successfully"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/logout [delete]
 func (i *instanceHandler) Logout(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -391,9 +394,10 @@ func (i *instanceHandler) Info(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param instanceId path string true "Instance Id"
-// @Success 200 {object} gin.H "Instance deleted successfully"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "Instance deleted successfully"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/delete/{instanceId} [delete]
 func (i *instanceHandler) Delete(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
@@ -420,9 +424,10 @@ func (i *instanceHandler) Delete(ctx *gin.Context) {
 // @Produce json
 // @Param instanceId path string true "Instance id"
 // @Param proxy body instance_service.SetProxyStruct true "Proxy configuration"
-// @Success 200 {object} gin.H "Proxy set successfully"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=apidocs.SetProxyData} "Proxy set successfully"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/proxy/{instanceId} [post]
 func (i *instanceHandler) SetProxy(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
@@ -473,9 +478,10 @@ func (i *instanceHandler) SetProxy(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param instanceId path string true "Instance id"
-// @Success 200 {object} gin.H "Proxy deleted successfully"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "Proxy deleted successfully"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/proxy/{instanceId} [delete]
 func (i *instanceHandler) DeleteProxy(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
@@ -502,9 +508,10 @@ func (i *instanceHandler) DeleteProxy(ctx *gin.Context) {
 // @Produce json
 // @Param instanceId path string true "Instance Id"
 // @Param instance body instance_service.ForceReconnectStruct true "Instance data"
-// @Success 200 {object} gin.H "Instance force reconnected successfully"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "Instance force reconnected successfully"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/forcereconnect/{instanceId} [post]
 func (i *instanceHandler) ForceReconnect(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
@@ -555,9 +562,10 @@ type GetLogsQuery struct {
 // @Param end_date query string false "End date (YYYY-MM-DD, defaults to now)"
 // @Param level query string false "Log level filter"
 // @Param limit query int false "Max number of entries"
-// @Success 200 {object} gin.H "Logs"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {array} apidocs.LogEntry "Logs"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/logs/{instanceId} [get]
 func (h *instanceHandler) GetLogs(c *gin.Context) {
 	instanceId := c.Param("instanceId")
@@ -602,9 +610,10 @@ func (h *instanceHandler) GetLogs(c *gin.Context) {
 // @Produce json
 // @Param instanceId path string true "Instance ID"
 // @Success 200 {object} instance_model.AdvancedSettings "Advanced settings retrieved successfully"
-// @Failure 400 {object} gin.H "Invalid instance ID"
-// @Failure 404 {object} gin.H "Instance not found"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid instance ID"
+// @Failure 404 {object} apidocs.ErrorResponse "Instance not found"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/{instanceId}/advanced-settings [get]
 func (h *instanceHandler) GetAdvancedSettings(c *gin.Context) {
 	instanceId := c.Param("instanceId")
@@ -631,10 +640,11 @@ func (h *instanceHandler) GetAdvancedSettings(c *gin.Context) {
 // @Produce json
 // @Param instanceId path string true "Instance ID"
 // @Param settings body instance_model.AdvancedSettings true "Advanced settings data"
-// @Success 200 {object} gin.H "Advanced settings updated successfully"
-// @Failure 400 {object} gin.H "Invalid request data"
-// @Failure 404 {object} gin.H "Instance not found"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "Advanced settings updated successfully"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid request data"
+// @Failure 404 {object} apidocs.ErrorResponse "Instance not found"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/{instanceId}/advanced-settings [put]
 func (h *instanceHandler) UpdateAdvancedSettings(c *gin.Context) {
 	instanceId := c.Param("instanceId")

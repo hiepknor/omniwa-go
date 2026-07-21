@@ -23,6 +23,11 @@ const docTemplate = `{
     "paths": {
         "/call/reject": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Reject call",
                 "consumes": [
                     "application/json"
@@ -49,13 +54,13 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -63,6 +68,11 @@ const docTemplate = `{
         },
         "/chat/archive": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Archive a chat",
                 "consumes": [
                     "application/json"
@@ -89,19 +99,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.TimestampData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -109,6 +131,11 @@ const docTemplate = `{
         },
         "/chat/history-sync": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "HistorySyncRequest a chat",
                 "consumes": [
                     "application/json"
@@ -135,19 +162,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -155,6 +182,11 @@ const docTemplate = `{
         },
         "/chat/mute": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Mute a chat",
                 "consumes": [
                     "application/json"
@@ -181,19 +213,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.TimestampData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -201,6 +245,11 @@ const docTemplate = `{
         },
         "/chat/pin": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Pin a chat",
                 "consumes": [
                     "application/json"
@@ -227,19 +276,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.TimestampData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -247,6 +308,11 @@ const docTemplate = `{
         },
         "/chat/unarchive": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Unarchive a chat",
                 "consumes": [
                     "application/json"
@@ -273,19 +339,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.TimestampData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -293,6 +371,11 @@ const docTemplate = `{
         },
         "/chat/unmute": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Unmute a chat",
                 "consumes": [
                     "application/json"
@@ -319,19 +402,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.TimestampData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -339,6 +434,11 @@ const docTemplate = `{
         },
         "/chat/unpin": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Unpin a chat",
                 "consumes": [
                     "application/json"
@@ -365,19 +465,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.TimestampData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -385,6 +497,11 @@ const docTemplate = `{
         },
         "/community/add": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Add participant to community",
                 "consumes": [
                     "application/json"
@@ -411,19 +528,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -431,6 +548,11 @@ const docTemplate = `{
         },
         "/community/create": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Create community",
                 "consumes": [
                     "application/json"
@@ -457,19 +579,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.GroupInfo"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -477,6 +611,11 @@ const docTemplate = `{
         },
         "/community/remove": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Remove participant from community",
                 "consumes": [
                     "application/json"
@@ -503,19 +642,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -523,6 +662,11 @@ const docTemplate = `{
         },
         "/group/create": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Create group",
                 "consumes": [
                     "application/json"
@@ -549,19 +693,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -569,6 +713,11 @@ const docTemplate = `{
         },
         "/group/description": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Set group description",
                 "consumes": [
                     "application/json"
@@ -595,19 +744,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -615,6 +764,11 @@ const docTemplate = `{
         },
         "/group/info": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get group info",
                 "consumes": [
                     "application/json"
@@ -641,19 +795,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.GroupInfo"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -661,6 +827,11 @@ const docTemplate = `{
         },
         "/group/invitelink": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get group invite link",
                 "consumes": [
                     "application/json"
@@ -687,19 +858,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -707,6 +890,11 @@ const docTemplate = `{
         },
         "/group/join": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Join group link",
                 "consumes": [
                     "application/json"
@@ -733,19 +921,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -753,6 +941,11 @@ const docTemplate = `{
         },
         "/group/leave": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Leave group",
                 "consumes": [
                     "application/json"
@@ -779,19 +972,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -799,6 +992,11 @@ const docTemplate = `{
         },
         "/group/list": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "List groups",
                 "consumes": [
                     "application/json"
@@ -814,13 +1012,28 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/types.GroupInfo"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -828,6 +1041,11 @@ const docTemplate = `{
         },
         "/group/myall": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get my groups",
                 "consumes": [
                     "application/json"
@@ -843,13 +1061,28 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/types.GroupInfo"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -857,6 +1090,11 @@ const docTemplate = `{
         },
         "/group/name": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Set group name",
                 "consumes": [
                     "application/json"
@@ -883,19 +1121,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -903,6 +1141,11 @@ const docTemplate = `{
         },
         "/group/participant": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Update participant",
                 "consumes": [
                     "application/json"
@@ -929,19 +1172,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -949,6 +1192,11 @@ const docTemplate = `{
         },
         "/group/photo": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Set group photo",
                 "consumes": [
                     "application/json"
@@ -975,19 +1223,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -995,6 +1255,11 @@ const docTemplate = `{
         },
         "/group/settings": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Update group settings (announcement, not_announcement, locked, unlocked, approval_on, approval_off, admin_add, all_member_add)",
                 "consumes": [
                     "application/json"
@@ -1021,19 +1286,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1177,6 +1442,11 @@ const docTemplate = `{
         },
         "/instance/delete/{instanceId}": {
             "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Delete instance",
                 "consumes": [
                     "application/json"
@@ -1201,19 +1471,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Instance deleted successfully",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1221,6 +1491,11 @@ const docTemplate = `{
         },
         "/instance/disconnect": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Disconnect from instance",
                 "consumes": [
                     "application/json"
@@ -1236,13 +1511,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Instance disconnected successfully",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1250,6 +1525,11 @@ const docTemplate = `{
         },
         "/instance/forcereconnect/{instanceId}": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Force reconnect",
                 "consumes": [
                     "application/json"
@@ -1283,19 +1563,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Instance force reconnected successfully",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1352,6 +1632,11 @@ const docTemplate = `{
         },
         "/instance/logout": {
             "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Logout from instance",
                 "consumes": [
                     "application/json"
@@ -1367,13 +1652,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Instance logged out successfully",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1381,6 +1666,11 @@ const docTemplate = `{
         },
         "/instance/logs/{instanceId}": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Returns log entries for an instance, filterable by date range, level and limit",
                 "produces": [
                     "application/json"
@@ -1426,19 +1716,22 @@ const docTemplate = `{
                     "200": {
                         "description": "Logs",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/apidocs.LogEntry"
+                            }
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1497,6 +1790,11 @@ const docTemplate = `{
         },
         "/instance/proxy/{instanceId}": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Set proxy configuration for an instance",
                 "consumes": [
                     "application/json"
@@ -1530,24 +1828,41 @@ const docTemplate = `{
                     "200": {
                         "description": "Proxy set successfully",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.SetProxyData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Delete proxy",
                 "consumes": [
                     "application/json"
@@ -1572,19 +1887,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Proxy deleted successfully",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1626,6 +1941,11 @@ const docTemplate = `{
         },
         "/instance/reconnect": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Reconnect to instance",
                 "consumes": [
                     "application/json"
@@ -1641,13 +1961,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Instance reconnected successfully",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1689,6 +2009,11 @@ const docTemplate = `{
         },
         "/instance/{instanceId}/advanced-settings": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get advanced settings for a specific instance",
                 "produces": [
                     "application/json"
@@ -1716,24 +2041,29 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid instance ID",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Instance not found",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
             },
             "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Update advanced settings for a specific instance",
                 "consumes": [
                     "application/json"
@@ -1767,25 +2097,25 @@ const docTemplate = `{
                     "200": {
                         "description": "Advanced settings updated successfully",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request data",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Instance not found",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1793,6 +2123,11 @@ const docTemplate = `{
         },
         "/label/chat": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Add label to chat",
                 "consumes": [
                     "application/json"
@@ -1819,19 +2154,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1839,6 +2174,11 @@ const docTemplate = `{
         },
         "/label/edit": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Edit label",
                 "consumes": [
                     "application/json"
@@ -1865,19 +2205,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1885,6 +2225,11 @@ const docTemplate = `{
         },
         "/label/list": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get all labels",
                 "consumes": [
                     "application/json"
@@ -1900,13 +2245,16 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/apidocs.LabelItem"
+                            }
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1914,6 +2262,11 @@ const docTemplate = `{
         },
         "/label/message": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Add label to message",
                 "consumes": [
                     "application/json"
@@ -1940,19 +2293,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -1960,6 +2313,11 @@ const docTemplate = `{
         },
         "/message/delete": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Delete a message for everyone",
                 "consumes": [
                     "application/json"
@@ -1986,19 +2344,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.MessageIdData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2006,6 +2376,11 @@ const docTemplate = `{
         },
         "/message/downloadmedia": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Download the media content of a message (image, video, audio or document)",
                 "consumes": [
                     "application/json"
@@ -2032,19 +2407,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.DownloadMediaData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2052,6 +2439,11 @@ const docTemplate = `{
         },
         "/message/edit": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Edit a message",
                 "consumes": [
                     "application/json"
@@ -2078,19 +2470,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.MessageIdData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2098,6 +2502,11 @@ const docTemplate = `{
         },
         "/message/markplayed": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Mark an audio message as played",
                 "consumes": [
                     "application/json"
@@ -2124,19 +2533,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.TimestampData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2144,6 +2565,11 @@ const docTemplate = `{
         },
         "/message/markread": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Mark a message as read",
                 "consumes": [
                     "application/json"
@@ -2170,19 +2596,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.TimestampData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2190,6 +2628,11 @@ const docTemplate = `{
         },
         "/message/presence": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Set chat presence",
                 "consumes": [
                     "application/json"
@@ -2216,19 +2659,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.TimestampData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2236,6 +2691,11 @@ const docTemplate = `{
         },
         "/message/react": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "React to a message with support for fromMe field and participant field for group messages",
                 "consumes": [
                     "application/json"
@@ -2262,19 +2722,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2282,6 +2742,11 @@ const docTemplate = `{
         },
         "/message/status": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get message status",
                 "consumes": [
                     "application/json"
@@ -2308,19 +2773,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apidocs.MessageStatusData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2328,6 +2805,11 @@ const docTemplate = `{
         },
         "/newsletter/create": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Create newsletter",
                 "consumes": [
                     "application/json"
@@ -2354,19 +2836,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.NewsletterMetadata"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2374,6 +2868,11 @@ const docTemplate = `{
         },
         "/newsletter/info": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get newsletter",
                 "consumes": [
                     "application/json"
@@ -2400,19 +2899,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.NewsletterMetadata"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2420,6 +2931,11 @@ const docTemplate = `{
         },
         "/newsletter/link": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get newsletter invite",
                 "consumes": [
                     "application/json"
@@ -2446,19 +2962,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.NewsletterMetadata"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2466,6 +2994,11 @@ const docTemplate = `{
         },
         "/newsletter/list": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "List newsletters",
                 "consumes": [
                     "application/json"
@@ -2481,13 +3014,28 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/types.NewsletterMetadata"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2495,6 +3043,11 @@ const docTemplate = `{
         },
         "/newsletter/messages": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get newsletter messages",
                 "consumes": [
                     "application/json"
@@ -2521,19 +3074,34 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/types.NewsletterMessage"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2541,6 +3109,11 @@ const docTemplate = `{
         },
         "/newsletter/subscribe": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Subscribe newsletter",
                 "consumes": [
                     "application/json"
@@ -2567,19 +3140,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -2752,6 +3325,11 @@ const docTemplate = `{
         },
         "/polls/{pollMessageId}/results": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Retorna todos os votos de uma enquete específica",
                 "consumes": [
                     "application/json"
@@ -2774,27 +3352,27 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_poll_model.PollResults"
+                            "$ref": "#/definitions/apidocs.PollResultsData"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3437,6 +4015,11 @@ const docTemplate = `{
         },
         "/unlabel/chat": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Remove label from chat",
                 "consumes": [
                     "application/json"
@@ -3463,19 +4046,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3483,6 +4066,11 @@ const docTemplate = `{
         },
         "/unlabel/message": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Remove label from message",
                 "consumes": [
                     "application/json"
@@ -3509,19 +4097,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3529,6 +4117,11 @@ const docTemplate = `{
         },
         "/user/avatar": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a user's avatar",
                 "consumes": [
                     "application/json"
@@ -3555,19 +4148,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.ProfilePictureInfo"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3575,6 +4180,11 @@ const docTemplate = `{
         },
         "/user/block": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Block a contact",
                 "consumes": [
                     "application/json"
@@ -3601,19 +4211,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.Blocklist"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3621,6 +4243,11 @@ const docTemplate = `{
         },
         "/user/blocklist": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a user's block list",
                 "consumes": [
                     "application/json"
@@ -3636,13 +4263,25 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.Blocklist"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3650,6 +4289,11 @@ const docTemplate = `{
         },
         "/user/check": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Check a user",
                 "consumes": [
                     "application/json"
@@ -3676,19 +4320,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.CheckUserCollection"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3696,6 +4352,11 @@ const docTemplate = `{
         },
         "/user/contacts": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a user's contacts",
                 "consumes": [
                     "application/json"
@@ -3711,13 +4372,28 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3725,6 +4401,11 @@ const docTemplate = `{
         },
         "/user/info": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a user",
                 "consumes": [
                     "application/json"
@@ -3751,19 +4432,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.UserCollection"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3771,6 +4464,11 @@ const docTemplate = `{
         },
         "/user/privacy": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a user's privacy settings",
                 "consumes": [
                     "application/json"
@@ -3786,18 +4484,35 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.PrivacySettings"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Set a user's privacy settings",
                 "consumes": [
                     "application/json"
@@ -3824,13 +4539,25 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.PrivacySettings"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3838,6 +4565,11 @@ const docTemplate = `{
         },
         "/user/profileName": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Set a user's profile name",
                 "consumes": [
                     "application/json"
@@ -3864,19 +4596,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3884,6 +4616,11 @@ const docTemplate = `{
         },
         "/user/profilePicture": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Set a user's profile picture",
                 "consumes": [
                     "application/json"
@@ -3910,19 +4647,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3930,6 +4667,11 @@ const docTemplate = `{
         },
         "/user/profileStatus": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Set a user's profile status",
                 "consumes": [
                     "application/json"
@@ -3956,19 +4698,19 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -3976,6 +4718,11 @@ const docTemplate = `{
         },
         "/user/unblock": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Unblock a contact",
                 "consumes": [
                     "application/json"
@@ -4002,19 +4749,31 @@ const docTemplate = `{
                     "200": {
                         "description": "success",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/types.Blocklist"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     }
                 }
@@ -4063,6 +4822,19 @@ const docTemplate = `{
                 }
             }
         },
+        "apidocs.DownloadMediaData": {
+            "type": "object",
+            "properties": {
+                "base64": {
+                    "type": "string",
+                    "example": "data:image/jpeg;base64,/9j/4AAQ..."
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2026-07-21T10:30:00Z"
+                }
+            }
+        },
         "apidocs.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -4099,6 +4871,72 @@ const docTemplate = `{
                 }
             }
         },
+        "apidocs.LabelItem": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "label_color": {
+                    "type": "string"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "label_name": {
+                    "type": "string"
+                },
+                "predefined_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "apidocs.LogEntry": {
+            "type": "object",
+            "properties": {
+                "instance_id": {
+                    "type": "string"
+                },
+                "level": {
+                    "type": "string",
+                    "example": "INFO"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "metadata": {},
+                "timestamp": {
+                    "type": "string",
+                    "example": "2026-07-21T10:30:00Z"
+                }
+            }
+        },
+        "apidocs.MessageIdData": {
+            "type": "object",
+            "properties": {
+                "messageId": {
+                    "type": "string",
+                    "example": "3EB0C767D26A8D4E2A1B"
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2026-07-21T10:30:00Z"
+                }
+            }
+        },
+        "apidocs.MessageStatusData": {
+            "type": "object",
+            "properties": {
+                "result": {},
+                "timestamp": {
+                    "type": "string",
+                    "example": "2026-07-21T10:30:00Z"
+                }
+            }
+        },
         "apidocs.PairData": {
             "type": "object",
             "properties": {
@@ -4117,6 +4955,82 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "success"
+                }
+            }
+        },
+        "apidocs.PollResultsData": {
+            "type": "object",
+            "properties": {
+                "optionCounts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "pollChatJid": {
+                    "type": "string"
+                },
+                "pollMessageId": {
+                    "type": "string"
+                },
+                "totalVotes": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "voters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apidocs.VoterItem"
+                    }
+                },
+                "votes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apidocs.PollVoteItem"
+                    }
+                }
+            }
+        },
+        "apidocs.PollVoteItem": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "pollChatJid": {
+                    "type": "string"
+                },
+                "pollMessageId": {
+                    "type": "string"
+                },
+                "receivedAt": {
+                    "type": "string",
+                    "example": "2026-07-21T10:30:00Z"
+                },
+                "selectedOptions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "voteMessageId": {
+                    "type": "string"
+                },
+                "votedAt": {
+                    "type": "string",
+                    "example": "2026-07-21T10:30:00Z"
+                },
+                "voterJid": {
+                    "type": "string"
+                },
+                "voterName": {
+                    "type": "string"
+                },
+                "voterPhone": {
+                    "type": "string"
                 }
             }
         },
@@ -4179,6 +5093,27 @@ const docTemplate = `{
                 }
             }
         },
+        "apidocs.SetProxyData": {
+            "type": "object",
+            "properties": {
+                "hasAuth": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "host": {
+                    "type": "string",
+                    "example": "proxy.example.com"
+                },
+                "port": {
+                    "type": "string",
+                    "example": "8080"
+                },
+                "protocol": {
+                    "type": "string",
+                    "example": "http"
+                }
+            }
+        },
         "apidocs.StatusData": {
             "type": "object",
             "properties": {
@@ -4205,6 +5140,49 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "success"
+                }
+            }
+        },
+        "apidocs.SuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
+        "apidocs.TimestampData": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "string",
+                    "example": "2026-07-21T10:30:00Z"
+                }
+            }
+        },
+        "apidocs.VoterItem": {
+            "type": "object",
+            "properties": {
+                "jid": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "selectedOptions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "votedAt": {
+                    "type": "string",
+                    "example": "2026-07-21T10:30:00Z"
                 }
             }
         },
@@ -4775,107 +5753,6 @@ const docTemplate = `{
             "properties": {
                 "jid": {
                     "$ref": "#/definitions/types.JID"
-                }
-            }
-        },
-        "github_com_evolution-foundation_evolution-go_pkg_poll_model.PollResults": {
-            "type": "object",
-            "properties": {
-                "optionCounts": {
-                    "description": "hash -\u003e count",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "integer"
-                    }
-                },
-                "pollChatJid": {
-                    "type": "string"
-                },
-                "pollMessageId": {
-                    "type": "string"
-                },
-                "totalVotes": {
-                    "type": "integer"
-                },
-                "voters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_poll_model.VoterInfo"
-                    }
-                },
-                "votes": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_poll_model.PollVote"
-                    }
-                }
-            }
-        },
-        "github_com_evolution-foundation_evolution-go_pkg_poll_model.PollVote": {
-            "type": "object",
-            "properties": {
-                "companyId": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "instanceId": {
-                    "type": "string"
-                },
-                "pollChatJid": {
-                    "type": "string"
-                },
-                "pollMessageId": {
-                    "type": "string"
-                },
-                "receivedAt": {
-                    "type": "string"
-                },
-                "selectedOptions": {
-                    "description": "SHA-256 hashes",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "voteMessageId": {
-                    "type": "string"
-                },
-                "votedAt": {
-                    "type": "string"
-                },
-                "voterJid": {
-                    "type": "string"
-                },
-                "voterName": {
-                    "type": "string"
-                },
-                "voterPhone": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_evolution-foundation_evolution-go_pkg_poll_model.VoterInfo": {
-            "type": "object",
-            "properties": {
-                "jid": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "phone": {
-                    "type": "string"
-                },
-                "selectedOptions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "votedAt": {
-                    "type": "string"
                 }
             }
         },
@@ -5563,6 +6440,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_user_service.CheckUserCollection": {
+            "type": "object",
+            "properties": {
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.User"
+                    }
+                }
+            }
+        },
         "github_com_evolution-foundation_evolution-go_pkg_user_service.CheckUserStruct": {
             "type": "object",
             "properties": {
@@ -5574,6 +6462,29 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo": {
+            "type": "object",
+            "properties": {
+                "BusinessName": {
+                    "type": "string"
+                },
+                "FirstName": {
+                    "type": "string"
+                },
+                "Found": {
+                    "type": "boolean"
+                },
+                "FullName": {
+                    "type": "string"
+                },
+                "Jid": {
+                    "type": "string"
+                },
+                "PushName": {
+                    "type": "string"
                 }
             }
         },
@@ -5622,6 +6533,64 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_user_service.User": {
+            "type": "object",
+            "properties": {
+                "isInWhatsapp": {
+                    "type": "boolean"
+                },
+                "jid": {
+                    "type": "string"
+                },
+                "lid": {
+                    "type": "string"
+                },
+                "query": {
+                    "type": "string"
+                },
+                "remoteJID": {
+                    "type": "string"
+                },
+                "verifiedName": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_user_service.UserCollection": {
+            "type": "object",
+            "properties": {
+                "users": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.UserInfo"
+                    }
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_user_service.UserInfo": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.JID"
+                    }
+                },
+                "lid": {
+                    "description": "The local ID (if available)",
+                    "type": "string"
+                },
+                "pictureID": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "verifiedName": {
+                    "$ref": "#/definitions/types.VerifiedName"
+                }
+            }
+        },
         "github_com_evolution-foundation_evolution-go_pkg_utils.VCardStruct": {
             "type": "object",
             "properties": {
@@ -5636,6 +6605,22 @@ const docTemplate = `{
                 }
             }
         },
+        "jsontime.UnixMicroString": {
+            "type": "object",
+            "properties": {
+                "time.Time": {
+                    "type": "string"
+                }
+            }
+        },
+        "jsontime.UnixString": {
+            "type": "object",
+            "properties": {
+                "time.Time": {
+                    "type": "string"
+                }
+            }
+        },
         "types.AddressingMode": {
             "type": "string",
             "enum": [
@@ -5646,6 +6631,21 @@ const docTemplate = `{
                 "AddressingModePN",
                 "AddressingModeLID"
             ]
+        },
+        "types.Blocklist": {
+            "type": "object",
+            "properties": {
+                "dhash": {
+                    "description": "TODO is this just a timestamp?",
+                    "type": "string"
+                },
+                "jids": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.JID"
+                    }
+                }
+            }
         },
         "types.BotEditType": {
             "type": "string",
@@ -5704,6 +6704,170 @@ const docTemplate = `{
                 "EditAttributeSenderRevoke",
                 "EditAttributeAdminRevoke"
             ]
+        },
+        "types.GroupInfo": {
+            "type": "object",
+            "properties": {
+                "addressingMode": {
+                    "$ref": "#/definitions/types.AddressingMode"
+                },
+                "announceVersionID": {
+                    "type": "string"
+                },
+                "creatorCountryCode": {
+                    "type": "string"
+                },
+                "defaultMembershipApprovalMode": {
+                    "description": "request_required",
+                    "type": "string"
+                },
+                "disappearingTimer": {
+                    "type": "integer"
+                },
+                "groupCreated": {
+                    "type": "string"
+                },
+                "isAnnounce": {
+                    "type": "boolean"
+                },
+                "isDefaultSubGroup": {
+                    "type": "boolean"
+                },
+                "isEphemeral": {
+                    "type": "boolean"
+                },
+                "isIncognito": {
+                    "type": "boolean"
+                },
+                "isJoinApprovalRequired": {
+                    "type": "boolean"
+                },
+                "isLocked": {
+                    "type": "boolean"
+                },
+                "isParent": {
+                    "type": "boolean"
+                },
+                "jid": {
+                    "$ref": "#/definitions/types.JID"
+                },
+                "linkedParentJID": {
+                    "$ref": "#/definitions/types.JID"
+                },
+                "memberAddMode": {
+                    "$ref": "#/definitions/types.GroupMemberAddMode"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nameSetAt": {
+                    "type": "string"
+                },
+                "nameSetBy": {
+                    "$ref": "#/definitions/types.JID"
+                },
+                "nameSetByPN": {
+                    "$ref": "#/definitions/types.JID"
+                },
+                "ownerJID": {
+                    "$ref": "#/definitions/types.JID"
+                },
+                "ownerPN": {
+                    "$ref": "#/definitions/types.JID"
+                },
+                "participantCount": {
+                    "type": "integer"
+                },
+                "participantVersionID": {
+                    "type": "string"
+                },
+                "participants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.GroupParticipant"
+                    }
+                },
+                "suspended": {
+                    "description": "Suspended indicates whether the group is currently paused/suspended.",
+                    "type": "boolean"
+                },
+                "topic": {
+                    "type": "string"
+                },
+                "topicDeleted": {
+                    "type": "boolean"
+                },
+                "topicID": {
+                    "type": "string"
+                },
+                "topicSetAt": {
+                    "type": "string"
+                },
+                "topicSetBy": {
+                    "$ref": "#/definitions/types.JID"
+                },
+                "topicSetByPN": {
+                    "$ref": "#/definitions/types.JID"
+                }
+            }
+        },
+        "types.GroupMemberAddMode": {
+            "type": "string",
+            "enum": [
+                "admin_add",
+                "all_member_add"
+            ],
+            "x-enum-varnames": [
+                "GroupMemberAddModeAdmin",
+                "GroupMemberAddModeAllMember"
+            ]
+        },
+        "types.GroupParticipant": {
+            "type": "object",
+            "properties": {
+                "addRequest": {
+                    "$ref": "#/definitions/types.GroupParticipantAddRequest"
+                },
+                "displayName": {
+                    "description": "This is only present for anonymous users in announcement groups, it's an obfuscated phone number",
+                    "type": "string"
+                },
+                "error": {
+                    "description": "When creating groups, adding some participants may fail.\nIn such cases, the error code will be here.",
+                    "type": "integer"
+                },
+                "isAdmin": {
+                    "type": "boolean"
+                },
+                "isSuperAdmin": {
+                    "type": "boolean"
+                },
+                "jid": {
+                    "description": "The primary JID that should be used to send messages to this participant.\nAlways equals either the LID or phone number.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.JID"
+                        }
+                    ]
+                },
+                "lid": {
+                    "$ref": "#/definitions/types.JID"
+                },
+                "phoneNumber": {
+                    "$ref": "#/definitions/types.JID"
+                }
+            }
+        },
+        "types.GroupParticipantAddRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "expiration": {
+                    "type": "string"
+                }
+            }
         },
         "types.JID": {
             "type": "object",
@@ -5874,6 +7038,196 @@ const docTemplate = `{
                 }
             }
         },
+        "types.NewsletterMessage": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "description": "This is only present when fetching messages, not in live updates",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/waE2E.Message"
+                        }
+                    ]
+                },
+                "messageID": {
+                    "type": "string"
+                },
+                "messageServerID": {
+                    "type": "integer"
+                },
+                "reactionCounts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "viewsCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "types.NewsletterMetadata": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "$ref": "#/definitions/types.JID"
+                },
+                "state": {
+                    "$ref": "#/definitions/types.WrappedNewsletterState"
+                },
+                "thread_metadata": {
+                    "$ref": "#/definitions/types.NewsletterThreadMetadata"
+                },
+                "viewer_metadata": {
+                    "$ref": "#/definitions/types.NewsletterViewerMetadata"
+                }
+            }
+        },
+        "types.NewsletterMuteState": {
+            "type": "string",
+            "enum": [
+                "on",
+                "off"
+            ],
+            "x-enum-varnames": [
+                "NewsletterMuteOn",
+                "NewsletterMuteOff"
+            ]
+        },
+        "types.NewsletterReactionSettings": {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "$ref": "#/definitions/types.NewsletterReactionsMode"
+                }
+            }
+        },
+        "types.NewsletterReactionsMode": {
+            "type": "string",
+            "enum": [
+                "all",
+                "basic",
+                "none",
+                "blocklist"
+            ],
+            "x-enum-varnames": [
+                "NewsletterReactionsModeAll",
+                "NewsletterReactionsModeBasic",
+                "NewsletterReactionsModeNone",
+                "NewsletterReactionsModeBlocklist"
+            ]
+        },
+        "types.NewsletterRole": {
+            "type": "string",
+            "enum": [
+                "subscriber",
+                "guest",
+                "admin",
+                "owner"
+            ],
+            "x-enum-varnames": [
+                "NewsletterRoleSubscriber",
+                "NewsletterRoleGuest",
+                "NewsletterRoleAdmin",
+                "NewsletterRoleOwner"
+            ]
+        },
+        "types.NewsletterSettings": {
+            "type": "object",
+            "properties": {
+                "reaction_codes": {
+                    "$ref": "#/definitions/types.NewsletterReactionSettings"
+                }
+            }
+        },
+        "types.NewsletterState": {
+            "type": "string",
+            "enum": [
+                "active",
+                "suspended",
+                "geosuspended"
+            ],
+            "x-enum-varnames": [
+                "NewsletterStateActive",
+                "NewsletterStateSuspended",
+                "NewsletterStateGeoSuspended"
+            ]
+        },
+        "types.NewsletterText": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "update_time": {
+                    "$ref": "#/definitions/jsontime.UnixMicroString"
+                }
+            }
+        },
+        "types.NewsletterThreadMetadata": {
+            "type": "object",
+            "properties": {
+                "creation_time": {
+                    "$ref": "#/definitions/jsontime.UnixString"
+                },
+                "description": {
+                    "$ref": "#/definitions/types.NewsletterText"
+                },
+                "invite": {
+                    "type": "string"
+                },
+                "name": {
+                    "$ref": "#/definitions/types.NewsletterText"
+                },
+                "picture": {
+                    "$ref": "#/definitions/types.ProfilePictureInfo"
+                },
+                "preview": {
+                    "$ref": "#/definitions/types.ProfilePictureInfo"
+                },
+                "settings": {
+                    "$ref": "#/definitions/types.NewsletterSettings"
+                },
+                "subscribers_count": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "verification": {
+                    "$ref": "#/definitions/types.NewsletterVerificationState"
+                }
+            }
+        },
+        "types.NewsletterVerificationState": {
+            "type": "string",
+            "enum": [
+                "verified",
+                "unverified"
+            ],
+            "x-enum-varnames": [
+                "NewsletterVerificationStateVerified",
+                "NewsletterVerificationStateUnverified"
+            ]
+        },
+        "types.NewsletterViewerMetadata": {
+            "type": "object",
+            "properties": {
+                "mute": {
+                    "$ref": "#/definitions/types.NewsletterMuteState"
+                },
+                "role": {
+                    "$ref": "#/definitions/types.NewsletterRole"
+                }
+            }
+        },
         "types.PrivacySetting": {
             "type": "string",
             "enum": [
@@ -5900,6 +7254,119 @@ const docTemplate = `{
                 "PrivacySettingOnStandard",
                 "PrivacySettingOff"
             ]
+        },
+        "types.PrivacySettings": {
+            "type": "object",
+            "properties": {
+                "callAdd": {
+                    "description": "Valid values: PrivacySettingAll, PrivacySettingKnown",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                },
+                "defense": {
+                    "description": "Valid values: PrivacySettingOnStandard, PrivacySettingOff",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                },
+                "groupAdd": {
+                    "description": "Valid values: PrivacySettingAll, PrivacySettingContacts, PrivacySettingContactBlacklist, PrivacySettingNone",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                },
+                "lastSeen": {
+                    "description": "Valid values: PrivacySettingAll, PrivacySettingContacts, PrivacySettingContactBlacklist, PrivacySettingNone",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                },
+                "messages": {
+                    "description": "Valid values: PrivacySettingAll, PrivacySettingContacts",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                },
+                "online": {
+                    "description": "Valid values: PrivacySettingAll, PrivacySettingMatchLastSeen",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                },
+                "profile": {
+                    "description": "Valid values: PrivacySettingAll, PrivacySettingContacts, PrivacySettingContactBlacklist, PrivacySettingNone",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                },
+                "readReceipts": {
+                    "description": "Valid values: PrivacySettingAll, PrivacySettingNone",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                },
+                "status": {
+                    "description": "Valid values: PrivacySettingAll, PrivacySettingContacts, PrivacySettingContactBlacklist, PrivacySettingNone",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                },
+                "stickers": {
+                    "description": "Valid values: PrivacySettingContacts, PrivacySettingContactAllowlist, PrivacySettingNone",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PrivacySetting"
+                        }
+                    ]
+                }
+            }
+        },
+        "types.ProfilePictureInfo": {
+            "type": "object",
+            "properties": {
+                "direct_path": {
+                    "description": "The path to the image, probably not very useful",
+                    "type": "string"
+                },
+                "hash": {
+                    "description": "Some kind of hash (format is unknown)",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "id": {
+                    "description": "The ID of the image. This is the same as UserInfo.PictureID.",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "The type of image. Known types include \"image\" (full res) and \"preview\" (thumbnail).",
+                    "type": "string"
+                },
+                "url": {
+                    "description": "The full URL for the image, can be downloaded with a simple HTTP request.",
+                    "type": "string"
+                }
+            }
         },
         "types.VerifiedName": {
             "type": "object",
@@ -5958,6 +7425,14 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "types.WrappedNewsletterState": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "$ref": "#/definitions/types.NewsletterState"
                 }
             }
         },

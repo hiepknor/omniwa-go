@@ -23,8 +23,9 @@ type callHandler struct {
 // @Accept json
 // @Produce json
 // @Param message body call_service.RejectCallStruct true "Call data"
-// @Success 200 {object} gin.H "success"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /call/reject [post]
 func (g *callHandler) RejectCall(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")

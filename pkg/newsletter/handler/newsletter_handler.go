@@ -28,9 +28,10 @@ type newsletterHandler struct {
 // @Accept json
 // @Produce json
 // @Param message body newsletter_service.CreateNewsletterStruct true "Newsletter data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=types.NewsletterMetadata} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /newsletter/create [post]
 func (n *newsletterHandler) CreateNewsletter(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -68,8 +69,9 @@ func (n *newsletterHandler) CreateNewsletter(ctx *gin.Context) {
 // @Tags Newsletter
 // @Accept json
 // @Produce json
-// @Success 200 {object} gin.H "success"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]types.NewsletterMetadata} "success"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /newsletter/list [get]
 func (n *newsletterHandler) ListNewsletter(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -96,9 +98,10 @@ func (n *newsletterHandler) ListNewsletter(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body newsletter_service.GetNewsletterStruct true "Newsletter data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=types.NewsletterMetadata} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /newsletter/info [post]
 func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -137,9 +140,10 @@ func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body newsletter_service.GetNewsletterInviteStruct true "Newsletter data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=types.NewsletterMetadata} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /newsletter/link [post]
 func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -178,9 +182,10 @@ func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body newsletter_service.GetNewsletterStruct true "Newsletter data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /newsletter/subscribe [post]
 func (n *newsletterHandler) SubscribeNewsletter(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -219,9 +224,10 @@ func (n *newsletterHandler) SubscribeNewsletter(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body newsletter_service.GetNewsletterMessagesStruct true "Newsletter data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]types.NewsletterMessage} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /newsletter/messages [post]
 func (n *newsletterHandler) GetNewsletterMessages(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")

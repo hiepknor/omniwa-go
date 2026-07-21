@@ -30,9 +30,10 @@ type messageHandler struct {
 // @Accept json
 // @Produce json
 // @Param message body message_service.ReactStruct true "React to a message with fromMe and participant fields"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /message/react [post]
 func (m *messageHandler) React(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -76,9 +77,10 @@ func (m *messageHandler) React(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body message_service.ChatPresenceStruct true "Set chat presence"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=apidocs.TimestampData} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /message/presence [post]
 func (m *messageHandler) ChatPresence(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -126,9 +128,10 @@ func (m *messageHandler) ChatPresence(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body message_service.MarkReadStruct true "Mark a message as read"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=apidocs.TimestampData} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /message/markread [post]
 func (m *messageHandler) MarkRead(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -176,9 +179,10 @@ func (m *messageHandler) MarkRead(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body message_service.MarkPlayedStruct true "Mark an audio message as played"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=apidocs.TimestampData} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /message/markplayed [post]
 func (m *messageHandler) MarkPlayed(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -226,9 +230,10 @@ func (m *messageHandler) MarkPlayed(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body message_service.DownloadMediaStruct true "Download media"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=apidocs.DownloadMediaData} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /message/downloadmedia [post]
 func (m *messageHandler) DownloadMedia(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -267,9 +272,10 @@ func (m *messageHandler) DownloadMedia(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body message_service.MessageStatusStruct true "Get message status"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=apidocs.MessageStatusData} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /message/status [post]
 func (m *messageHandler) GetMessageStatus(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -313,9 +319,10 @@ func (m *messageHandler) GetMessageStatus(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body message_service.MessageStruct true "Delete a message for everyone"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=apidocs.MessageIdData} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /message/delete [post]
 func (m *messageHandler) DeleteMessageEveryone(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -364,9 +371,10 @@ func (m *messageHandler) DeleteMessageEveryone(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body message_service.EditMessageStruct true "Edit a message"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=apidocs.MessageIdData} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /message/edit [post]
 func (m *messageHandler) EditMessage(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")

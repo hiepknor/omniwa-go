@@ -33,8 +33,9 @@ type groupHandler struct {
 // @Tags Group
 // @Accept json
 // @Produce json
-// @Success 200 {object} gin.H "success"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]types.GroupInfo} "success"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/list [get]
 func (g *groupHandler) ListGroups(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -61,9 +62,10 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.GetGroupInfoStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=types.GroupInfo} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/info [post]
 func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -102,9 +104,10 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.GetGroupInviteLinkStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=string} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/invitelink [post]
 func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -143,9 +146,10 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.SetGroupPhotoStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=string} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/photo [post]
 func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -189,9 +193,10 @@ func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.SetGroupNameStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/name [post]
 func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -235,9 +240,10 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.SetGroupDescriptionStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/description [post]
 func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -279,9 +285,10 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.CreateGroupStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/create [post]
 func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -325,9 +332,10 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.AddParticipantStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/participant [post]
 func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -375,8 +383,9 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 // @Tags Group
 // @Accept json
 // @Produce json
-// @Success 200 {object} gin.H "success"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]types.GroupInfo} "success"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/myall [get]
 func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -403,9 +412,10 @@ func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.JoinGroupStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/join [post]
 func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -444,9 +454,10 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.LeaveGroupStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/leave [post]
 func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -485,9 +496,10 @@ func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.UpdateGroupSettingsStruct true "Group data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /group/settings [post]
 func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")

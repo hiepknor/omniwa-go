@@ -118,3 +118,94 @@ type SendMessageResponse struct {
 	Message string          `json:"message" example:"success"`
 	Data    SendMessageData `json:"data"`
 }
+
+// TimestampData is the payload of action endpoints that only report when the
+// action was applied (chat pin/mute/archive, message presence/markread/…).
+type TimestampData struct {
+	Timestamp string `json:"timestamp" example:"2026-07-21T10:30:00Z"`
+}
+
+// MessageIdData is the payload of message delete/edit — the affected message id
+// and when the change took effect.
+type MessageIdData struct {
+	MessageId string `json:"messageId" example:"3EB0C767D26A8D4E2A1B"`
+	Timestamp string `json:"timestamp" example:"2026-07-21T10:30:00Z"`
+}
+
+// DownloadMediaData is the payload of POST /message/downloadmedia — the media as
+// a base64 data URL plus the timestamp.
+type DownloadMediaData struct {
+	Base64    string `json:"base64" example:"data:image/jpeg;base64,/9j/4AAQ..."`
+	Timestamp string `json:"timestamp" example:"2026-07-21T10:30:00Z"`
+}
+
+// MessageStatusData is the payload of POST /message/status — the resolved
+// message plus the timestamp. `result` mirrors the stored message object.
+type MessageStatusData struct {
+	Result    interface{} `json:"result"`
+	Timestamp string      `json:"timestamp" example:"2026-07-21T10:30:00Z"`
+}
+
+// LabelItem mirrors a WhatsApp label. GET /label/list returns a bare JSON array
+// of these (no envelope). Mirrors label_model.Label.
+type LabelItem struct {
+	Id           string `json:"id"`
+	InstanceID   string `json:"instance_id"`
+	LabelID      string `json:"label_id"`
+	LabelName    string `json:"label_name"`
+	LabelColor   string `json:"label_color"`
+	PredefinedId string `json:"predefined_id"`
+}
+
+// PollVoteItem mirrors a single poll vote (model.PollVote).
+type PollVoteItem struct {
+	Id              string   `json:"id"`
+	InstanceID      string   `json:"instanceId"`
+	PollMessageID   string   `json:"pollMessageId"`
+	PollChatJid     string   `json:"pollChatJid"`
+	VoteMessageID   string   `json:"voteMessageId"`
+	VoterJid        string   `json:"voterJid"`
+	VoterPhone      string   `json:"voterPhone,omitempty"`
+	VoterName       string   `json:"voterName,omitempty"`
+	SelectedOptions []string `json:"selectedOptions"`
+	VotedAt         string   `json:"votedAt" example:"2026-07-21T10:30:00Z"`
+	ReceivedAt      string   `json:"receivedAt" example:"2026-07-21T10:30:00Z"`
+}
+
+// VoterItem mirrors aggregated voter info (model.VoterInfo).
+type VoterItem struct {
+	Jid             string   `json:"jid"`
+	Phone           string   `json:"phone,omitempty"`
+	Name            string   `json:"name,omitempty"`
+	SelectedOptions []string `json:"selectedOptions"`
+	VotedAt         string   `json:"votedAt" example:"2026-07-21T10:30:00Z"`
+}
+
+// PollResultsData mirrors model.PollResults. GET /polls/{pollMessageId}/results
+// returns this object directly (no envelope).
+type PollResultsData struct {
+	PollMessageID string         `json:"pollMessageId"`
+	PollChatJid   string         `json:"pollChatJid"`
+	TotalVotes    int            `json:"totalVotes" example:"42"`
+	Votes         []PollVoteItem `json:"votes"`
+	OptionCounts  map[string]int `json:"optionCounts"`
+	Voters        []VoterItem    `json:"voters"`
+}
+
+// LogEntry mirrors a logger LogEntry. GET /instance/logs/{instanceId} returns a
+// bare JSON array of these (no envelope).
+type LogEntry struct {
+	Timestamp  string      `json:"timestamp" example:"2026-07-21T10:30:00Z"`
+	Level      string      `json:"level" example:"INFO"`
+	InstanceId string      `json:"instance_id"`
+	Message    string      `json:"message"`
+	Metadata   interface{} `json:"metadata,omitempty"`
+}
+
+// SetProxyData is the payload of POST /instance/proxy/{instanceId}.
+type SetProxyData struct {
+	Protocol string `json:"protocol" example:"http"`
+	Host     string `json:"host" example:"proxy.example.com"`
+	Port     string `json:"port" example:"8080"`
+	HasAuth  bool   `json:"hasAuth" example:"true"`
+}
