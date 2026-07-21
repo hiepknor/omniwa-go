@@ -8,12 +8,12 @@
 # omniwa-go > Package settings > Change visibility > Public). Otherwise run
 # `docker login ghcr.io -u hiepknor` with a read:packages token first.
 #
-# Usage (from the repo root):
-#   docker compose -f docker/docker-compose.dev.yml up -d
+# Usage (from this docker/ directory):
+#   docker compose -f docker-compose.dev.yml up -d
 #   curl http://localhost:4000/health
 #
 # Pin a specific version by setting IMAGE_TAG (defaults to latest):
-#   IMAGE_TAG=0.7.2 docker compose -f docker/docker-compose.dev.yml up -d
+#   IMAGE_TAG=0.7.2 docker compose -f docker-compose.dev.yml up -d
 
 services:
   omniwa-go:

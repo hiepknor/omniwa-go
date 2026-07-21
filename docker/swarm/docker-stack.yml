@@ -1,0 +1,73 @@
+# Docker Swarm deployment reference for OmniWA GO.
+# Adjust the domain, GLOBAL_API_KEY, database URL, and the external network/
+# volumes to your environment, then:
+#   docker stack deploy -c swarm/docker-stack.yml omniwa
+#
+# Assumes an external overlay network (here: network_public) and an existing
+# Postgres reachable at host "postgres".
+
+services:
+  omniwa-go:
+    image: ghcr.io/hiepknor/omniwa-go:latest
+    networks:
+      - network_public
+    environment:
+      SERVER_PORT: 4000
+      CLIENT_NAME: "omniwa"
+      OS_NAME: "OmniWA GO"
+
+      # Set to false to run without the license activation gate.
+      LICENSE_GATE_ENABLED: "true"
+
+      # CHANGE THIS
+      GLOBAL_API_KEY: "change-me"
+
+      POSTGRES_AUTH_DB: "postgresql://postgres:postgres@postgres:5432/omniwa_auth?sslmode=disable"
+      POSTGRES_USERS_DB: "postgresql://postgres:postgres@postgres:5432/omniwa_users?sslmode=disable"
+      DATABASE_SAVE_MESSAGES: "false"
+
+      WADEBUG: "INFO"
+      LOGTYPE: "console"
+      LOG_DIRECTORY: "/app/logs"
+
+      CONNECT_ON_STARTUP: "true"
+      WEBHOOK_FILES: "true"
+
+      EVENT_IGNORE_GROUP: "false"
+      EVENT_IGNORE_STATUS: "true"
+
+      MINIO_ENABLED: "false"
+    volumes:
+      - omniwa_data:/app/dbdata
+      - omniwa_logs:/app/logs
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      labels:
+        # Traefik — adjust the host rule to your domain.
+        - traefik.enable=true
+        - traefik.http.routers.omniwa_go.rule=Host(`omniwa.example.com`)
+        - traefik.http.routers.omniwa_go.entrypoints=websecure
+        - traefik.http.routers.omniwa_go.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.omniwa_go.service=omniwa_go
+        - traefik.http.services.omniwa_go.loadbalancer.server.port=4000
+        - traefik.http.services.omniwa_go.loadbalancer.passHostHeader=true
+
+volumes:
+  omniwa_data:
+    external: true
+    name: omniwa_data
+  omniwa_logs:
+    external: true
+    name: omniwa_logs
+
+networks:
+  network_public:
+    external: true
+    name: network_public
