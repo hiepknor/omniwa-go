@@ -18,9 +18,15 @@ reconnect, …) omit `data`:
 { "message": "success" }
 ```
 
-A handful of endpoints return their payload directly (for example
-`GET /instance/logs/{id}` and the advanced-settings routes return the object
-without the envelope). The Swagger schema for each endpoint is authoritative.
+In the OpenAPI spec the envelope is modelled with `apidocs.SuccessResponse`
+composed with a concrete `data` type per endpoint (e.g. `data=types.GroupInfo`),
+so Swagger shows the exact `data` shape rather than a generic object.
+
+A handful of endpoints return their payload **directly, without the envelope**:
+`GET /instance/logs/{id}` (array of log entries), `GET /label/list` (array of
+labels), `GET /polls/{pollMessageId}/results` (results object), and the
+advanced-settings routes (the settings object). The Swagger schema for each
+endpoint is authoritative.
 
 ## Errors
 

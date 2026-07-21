@@ -28,6 +28,15 @@ definitions:
         example: success
         type: string
     type: object
+  apidocs.DownloadMediaData:
+    properties:
+      base64:
+        example: data:image/jpeg;base64,/9j/4AAQ...
+        type: string
+      timestamp:
+        example: "2026-07-21T10:30:00Z"
+        type: string
+    type: object
   apidocs.ErrorResponse:
     properties:
       error:
@@ -52,6 +61,51 @@ definitions:
         example: success
         type: string
     type: object
+  apidocs.LabelItem:
+    properties:
+      id:
+        type: string
+      instance_id:
+        type: string
+      label_color:
+        type: string
+      label_id:
+        type: string
+      label_name:
+        type: string
+      predefined_id:
+        type: string
+    type: object
+  apidocs.LogEntry:
+    properties:
+      instance_id:
+        type: string
+      level:
+        example: INFO
+        type: string
+      message:
+        type: string
+      metadata: {}
+      timestamp:
+        example: "2026-07-21T10:30:00Z"
+        type: string
+    type: object
+  apidocs.MessageIdData:
+    properties:
+      messageId:
+        example: 3EB0C767D26A8D4E2A1B
+        type: string
+      timestamp:
+        example: "2026-07-21T10:30:00Z"
+        type: string
+    type: object
+  apidocs.MessageStatusData:
+    properties:
+      result: {}
+      timestamp:
+        example: "2026-07-21T10:30:00Z"
+        type: string
+    type: object
   apidocs.PairData:
     properties:
       PairingCode:
@@ -64,6 +118,57 @@ definitions:
         $ref: '#/definitions/apidocs.PairData'
       message:
         example: success
+        type: string
+    type: object
+  apidocs.PollResultsData:
+    properties:
+      optionCounts:
+        additionalProperties:
+          type: integer
+        type: object
+      pollChatJid:
+        type: string
+      pollMessageId:
+        type: string
+      totalVotes:
+        example: 42
+        type: integer
+      voters:
+        items:
+          $ref: '#/definitions/apidocs.VoterItem'
+        type: array
+      votes:
+        items:
+          $ref: '#/definitions/apidocs.PollVoteItem'
+        type: array
+    type: object
+  apidocs.PollVoteItem:
+    properties:
+      id:
+        type: string
+      instanceId:
+        type: string
+      pollChatJid:
+        type: string
+      pollMessageId:
+        type: string
+      receivedAt:
+        example: "2026-07-21T10:30:00Z"
+        type: string
+      selectedOptions:
+        items:
+          type: string
+        type: array
+      voteMessageId:
+        type: string
+      votedAt:
+        example: "2026-07-21T10:30:00Z"
+        type: string
+      voterJid:
+        type: string
+      voterName:
+        type: string
+      voterPhone:
         type: string
     type: object
   apidocs.QRCodeData:
@@ -106,6 +211,21 @@ definitions:
         example: success
         type: string
     type: object
+  apidocs.SetProxyData:
+    properties:
+      hasAuth:
+        example: true
+        type: boolean
+      host:
+        example: proxy.example.com
+        type: string
+      port:
+        example: "8080"
+        type: string
+      protocol:
+        example: http
+        type: string
+    type: object
   apidocs.StatusData:
     properties:
       Connected:
@@ -124,6 +244,35 @@ definitions:
         $ref: '#/definitions/apidocs.StatusData'
       message:
         example: success
+        type: string
+    type: object
+  apidocs.SuccessResponse:
+    properties:
+      data: {}
+      message:
+        example: success
+        type: string
+    type: object
+  apidocs.TimestampData:
+    properties:
+      timestamp:
+        example: "2026-07-21T10:30:00Z"
+        type: string
+    type: object
+  apidocs.VoterItem:
+    properties:
+      jid:
+        type: string
+      name:
+        type: string
+      phone:
+        type: string
+      selectedOptions:
+        items:
+          type: string
+        type: array
+      votedAt:
+        example: "2026-07-21T10:30:00Z"
         type: string
     type: object
   gin.H:
@@ -497,73 +646,6 @@ definitions:
     properties:
       jid:
         $ref: '#/definitions/types.JID'
-    type: object
-  github_com_evolution-foundation_evolution-go_pkg_poll_model.PollResults:
-    properties:
-      optionCounts:
-        additionalProperties:
-          type: integer
-        description: hash -> count
-        type: object
-      pollChatJid:
-        type: string
-      pollMessageId:
-        type: string
-      totalVotes:
-        type: integer
-      voters:
-        items:
-          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_poll_model.VoterInfo'
-        type: array
-      votes:
-        items:
-          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_poll_model.PollVote'
-        type: array
-    type: object
-  github_com_evolution-foundation_evolution-go_pkg_poll_model.PollVote:
-    properties:
-      companyId:
-        type: string
-      id:
-        type: string
-      instanceId:
-        type: string
-      pollChatJid:
-        type: string
-      pollMessageId:
-        type: string
-      receivedAt:
-        type: string
-      selectedOptions:
-        description: SHA-256 hashes
-        items:
-          type: string
-        type: array
-      voteMessageId:
-        type: string
-      votedAt:
-        type: string
-      voterJid:
-        type: string
-      voterName:
-        type: string
-      voterPhone:
-        type: string
-    type: object
-  github_com_evolution-foundation_evolution-go_pkg_poll_model.VoterInfo:
-    properties:
-      jid:
-        type: string
-      name:
-        type: string
-      phone:
-        type: string
-      selectedOptions:
-        items:
-          type: string
-        type: array
-      votedAt:
-        type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_sendMessage_service.Button:
     properties:
@@ -1054,6 +1136,13 @@ definitions:
       number:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_user_service.CheckUserCollection:
+    properties:
+      users:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.User'
+        type: array
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_user_service.CheckUserStruct:
     properties:
       formatJid:
@@ -1062,6 +1151,21 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo:
+    properties:
+      BusinessName:
+        type: string
+      FirstName:
+        type: string
+      Found:
+        type: boolean
+      FullName:
+        type: string
+      Jid:
+        type: string
+      PushName:
+        type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_user_service.GetAvatarStruct:
     properties:
@@ -1092,6 +1196,44 @@ definitions:
       image:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_user_service.User:
+    properties:
+      isInWhatsapp:
+        type: boolean
+      jid:
+        type: string
+      lid:
+        type: string
+      query:
+        type: string
+      remoteJID:
+        type: string
+      verifiedName:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_user_service.UserCollection:
+    properties:
+      users:
+        additionalProperties:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.UserInfo'
+        type: object
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_user_service.UserInfo:
+    properties:
+      devices:
+        items:
+          $ref: '#/definitions/types.JID'
+        type: array
+      lid:
+        description: The local ID (if available)
+        type: string
+      pictureID:
+        type: string
+      status:
+        type: string
+      verifiedName:
+        $ref: '#/definitions/types.VerifiedName'
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_utils.VCardStruct:
     properties:
       fullName:
@@ -1099,6 +1241,16 @@ definitions:
       organization:
         type: string
       phone:
+        type: string
+    type: object
+  jsontime.UnixMicroString:
+    properties:
+      time.Time:
+        type: string
+    type: object
+  jsontime.UnixString:
+    properties:
+      time.Time:
         type: string
     type: object
   types.AddressingMode:
@@ -1109,6 +1261,16 @@ definitions:
     x-enum-varnames:
     - AddressingModePN
     - AddressingModeLID
+  types.Blocklist:
+    properties:
+      dhash:
+        description: TODO is this just a timestamp?
+        type: string
+      jids:
+        items:
+          $ref: '#/definitions/types.JID'
+        type: array
+    type: object
   types.BotEditType:
     enum:
     - first
@@ -1153,6 +1315,120 @@ definitions:
     - EditAttributeAdminEdit
     - EditAttributeSenderRevoke
     - EditAttributeAdminRevoke
+  types.GroupInfo:
+    properties:
+      addressingMode:
+        $ref: '#/definitions/types.AddressingMode'
+      announceVersionID:
+        type: string
+      creatorCountryCode:
+        type: string
+      defaultMembershipApprovalMode:
+        description: request_required
+        type: string
+      disappearingTimer:
+        type: integer
+      groupCreated:
+        type: string
+      isAnnounce:
+        type: boolean
+      isDefaultSubGroup:
+        type: boolean
+      isEphemeral:
+        type: boolean
+      isIncognito:
+        type: boolean
+      isJoinApprovalRequired:
+        type: boolean
+      isLocked:
+        type: boolean
+      isParent:
+        type: boolean
+      jid:
+        $ref: '#/definitions/types.JID'
+      linkedParentJID:
+        $ref: '#/definitions/types.JID'
+      memberAddMode:
+        $ref: '#/definitions/types.GroupMemberAddMode'
+      name:
+        type: string
+      nameSetAt:
+        type: string
+      nameSetBy:
+        $ref: '#/definitions/types.JID'
+      nameSetByPN:
+        $ref: '#/definitions/types.JID'
+      ownerJID:
+        $ref: '#/definitions/types.JID'
+      ownerPN:
+        $ref: '#/definitions/types.JID'
+      participantCount:
+        type: integer
+      participantVersionID:
+        type: string
+      participants:
+        items:
+          $ref: '#/definitions/types.GroupParticipant'
+        type: array
+      suspended:
+        description: Suspended indicates whether the group is currently paused/suspended.
+        type: boolean
+      topic:
+        type: string
+      topicDeleted:
+        type: boolean
+      topicID:
+        type: string
+      topicSetAt:
+        type: string
+      topicSetBy:
+        $ref: '#/definitions/types.JID'
+      topicSetByPN:
+        $ref: '#/definitions/types.JID'
+    type: object
+  types.GroupMemberAddMode:
+    enum:
+    - admin_add
+    - all_member_add
+    type: string
+    x-enum-varnames:
+    - GroupMemberAddModeAdmin
+    - GroupMemberAddModeAllMember
+  types.GroupParticipant:
+    properties:
+      addRequest:
+        $ref: '#/definitions/types.GroupParticipantAddRequest'
+      displayName:
+        description: This is only present for anonymous users in announcement groups,
+          it's an obfuscated phone number
+        type: string
+      error:
+        description: |-
+          When creating groups, adding some participants may fail.
+          In such cases, the error code will be here.
+        type: integer
+      isAdmin:
+        type: boolean
+      isSuperAdmin:
+        type: boolean
+      jid:
+        allOf:
+        - $ref: '#/definitions/types.JID'
+        description: |-
+          The primary JID that should be used to send messages to this participant.
+          Always equals either the LID or phone number.
+      lid:
+        $ref: '#/definitions/types.JID'
+      phoneNumber:
+        $ref: '#/definitions/types.JID'
+    type: object
+  types.GroupParticipantAddRequest:
+    properties:
+      code:
+        type: string
+      expiration:
+        type: string
+    type: object
   types.JID:
     properties:
       device:
@@ -1260,6 +1536,136 @@ definitions:
       threadMessageSenderJID:
         $ref: '#/definitions/types.JID'
     type: object
+  types.NewsletterMessage:
+    properties:
+      message:
+        allOf:
+        - $ref: '#/definitions/waE2E.Message'
+        description: This is only present when fetching messages, not in live updates
+      messageID:
+        type: string
+      messageServerID:
+        type: integer
+      reactionCounts:
+        additionalProperties:
+          type: integer
+        type: object
+      timestamp:
+        type: string
+      type:
+        type: string
+      viewsCount:
+        type: integer
+    type: object
+  types.NewsletterMetadata:
+    properties:
+      id:
+        $ref: '#/definitions/types.JID'
+      state:
+        $ref: '#/definitions/types.WrappedNewsletterState'
+      thread_metadata:
+        $ref: '#/definitions/types.NewsletterThreadMetadata'
+      viewer_metadata:
+        $ref: '#/definitions/types.NewsletterViewerMetadata'
+    type: object
+  types.NewsletterMuteState:
+    enum:
+    - "on"
+    - "off"
+    type: string
+    x-enum-varnames:
+    - NewsletterMuteOn
+    - NewsletterMuteOff
+  types.NewsletterReactionSettings:
+    properties:
+      value:
+        $ref: '#/definitions/types.NewsletterReactionsMode'
+    type: object
+  types.NewsletterReactionsMode:
+    enum:
+    - all
+    - basic
+    - none
+    - blocklist
+    type: string
+    x-enum-varnames:
+    - NewsletterReactionsModeAll
+    - NewsletterReactionsModeBasic
+    - NewsletterReactionsModeNone
+    - NewsletterReactionsModeBlocklist
+  types.NewsletterRole:
+    enum:
+    - subscriber
+    - guest
+    - admin
+    - owner
+    type: string
+    x-enum-varnames:
+    - NewsletterRoleSubscriber
+    - NewsletterRoleGuest
+    - NewsletterRoleAdmin
+    - NewsletterRoleOwner
+  types.NewsletterSettings:
+    properties:
+      reaction_codes:
+        $ref: '#/definitions/types.NewsletterReactionSettings'
+    type: object
+  types.NewsletterState:
+    enum:
+    - active
+    - suspended
+    - geosuspended
+    type: string
+    x-enum-varnames:
+    - NewsletterStateActive
+    - NewsletterStateSuspended
+    - NewsletterStateGeoSuspended
+  types.NewsletterText:
+    properties:
+      id:
+        type: string
+      text:
+        type: string
+      update_time:
+        $ref: '#/definitions/jsontime.UnixMicroString'
+    type: object
+  types.NewsletterThreadMetadata:
+    properties:
+      creation_time:
+        $ref: '#/definitions/jsontime.UnixString'
+      description:
+        $ref: '#/definitions/types.NewsletterText'
+      invite:
+        type: string
+      name:
+        $ref: '#/definitions/types.NewsletterText'
+      picture:
+        $ref: '#/definitions/types.ProfilePictureInfo'
+      preview:
+        $ref: '#/definitions/types.ProfilePictureInfo'
+      settings:
+        $ref: '#/definitions/types.NewsletterSettings'
+      subscribers_count:
+        example: "0"
+        type: string
+      verification:
+        $ref: '#/definitions/types.NewsletterVerificationState'
+    type: object
+  types.NewsletterVerificationState:
+    enum:
+    - verified
+    - unverified
+    type: string
+    x-enum-varnames:
+    - NewsletterVerificationStateVerified
+    - NewsletterVerificationStateUnverified
+  types.NewsletterViewerMetadata:
+    properties:
+      mute:
+        $ref: '#/definitions/types.NewsletterMuteState'
+      role:
+        $ref: '#/definitions/types.NewsletterRole'
+    type: object
   types.PrivacySetting:
     enum:
     - ""
@@ -1284,6 +1690,76 @@ definitions:
     - PrivacySettingNone
     - PrivacySettingOnStandard
     - PrivacySettingOff
+  types.PrivacySettings:
+    properties:
+      callAdd:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingAll, PrivacySettingKnown'
+      defense:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingOnStandard, PrivacySettingOff'
+      groupAdd:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingAll, PrivacySettingContacts, PrivacySettingContactBlacklist,
+          PrivacySettingNone'
+      lastSeen:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingAll, PrivacySettingContacts, PrivacySettingContactBlacklist,
+          PrivacySettingNone'
+      messages:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingAll, PrivacySettingContacts'
+      online:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingAll, PrivacySettingMatchLastSeen'
+      profile:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingAll, PrivacySettingContacts, PrivacySettingContactBlacklist,
+          PrivacySettingNone'
+      readReceipts:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingAll, PrivacySettingNone'
+      status:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingAll, PrivacySettingContacts, PrivacySettingContactBlacklist,
+          PrivacySettingNone'
+      stickers:
+        allOf:
+        - $ref: '#/definitions/types.PrivacySetting'
+        description: 'Valid values: PrivacySettingContacts, PrivacySettingContactAllowlist,
+          PrivacySettingNone'
+    type: object
+  types.ProfilePictureInfo:
+    properties:
+      direct_path:
+        description: The path to the image, probably not very useful
+        type: string
+      hash:
+        description: Some kind of hash (format is unknown)
+        items:
+          type: integer
+        type: array
+      id:
+        description: The ID of the image. This is the same as UserInfo.PictureID.
+        type: string
+      type:
+        description: The type of image. Known types include "image" (full res) and
+          "preview" (thumbnail).
+        type: string
+      url:
+        description: The full URL for the image, can be downloaded with a simple HTTP
+          request.
+        type: string
+    type: object
   types.VerifiedName:
     properties:
       certificate:
@@ -1322,6 +1798,11 @@ definitions:
         items:
           type: integer
         type: array
+    type: object
+  types.WrappedNewsletterState:
+    properties:
+      type:
+        $ref: '#/definitions/types.NewsletterState'
     type: object
   waAICommon.AIMediaCollectionMessage:
     properties:
@@ -7250,11 +7731,13 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Reject call
       tags:
       - Call
@@ -7276,15 +7759,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.TimestampData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Archive a chat
       tags:
       - Chat
@@ -7306,15 +7796,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: HistorySyncRequest a chat
       tags:
       - Chat
@@ -7336,15 +7828,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.TimestampData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Mute a chat
       tags:
       - Chat
@@ -7366,15 +7865,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.TimestampData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Pin a chat
       tags:
       - Chat
@@ -7396,15 +7902,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.TimestampData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Unarchive a chat
       tags:
       - Chat
@@ -7426,15 +7939,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.TimestampData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Unmute a chat
       tags:
       - Chat
@@ -7456,15 +7976,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.TimestampData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Unpin a chat
       tags:
       - Chat
@@ -7486,15 +8013,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Add participant to community
       tags:
       - Community
@@ -7516,15 +8045,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.GroupInfo'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Create community
       tags:
       - Community
@@ -7546,15 +8082,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Remove participant from community
       tags:
       - Community
@@ -7576,15 +8114,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Create group
       tags:
       - Group
@@ -7606,15 +8146,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Set group description
       tags:
       - Group
@@ -7636,15 +8178,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.GroupInfo'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get group info
       tags:
       - Group
@@ -7666,15 +8215,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get group invite link
       tags:
       - Group
@@ -7696,15 +8252,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Join group link
       tags:
       - Group
@@ -7726,15 +8284,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Leave group
       tags:
       - Group
@@ -7749,11 +8309,20 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/types.GroupInfo'
+                  type: array
+              type: object
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: List groups
       tags:
       - Group
@@ -7768,11 +8337,20 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/types.GroupInfo'
+                  type: array
+              type: object
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get my groups
       tags:
       - Group
@@ -7794,15 +8372,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Set group name
       tags:
       - Group
@@ -7824,15 +8404,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Update participant
       tags:
       - Group
@@ -7854,15 +8436,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  type: string
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Set group photo
       tags:
       - Group
@@ -7885,15 +8474,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Update group settings
       tags:
       - Group
@@ -7916,15 +8507,17 @@ paths:
         "400":
           description: Invalid instance ID
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "404":
           description: Instance not found
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get advanced settings
       tags:
       - Instance
@@ -7950,19 +8543,21 @@ paths:
         "200":
           description: Advanced settings updated successfully
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Invalid request data
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "404":
           description: Instance not found
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Update advanced settings
       tags:
       - Instance
@@ -8070,15 +8665,17 @@ paths:
         "200":
           description: Instance deleted successfully
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Delete instance
       tags:
       - Instance
@@ -8093,11 +8690,13 @@ paths:
         "200":
           description: Instance disconnected successfully
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Disconnect from instance
       tags:
       - Instance
@@ -8124,15 +8723,17 @@ paths:
         "200":
           description: Instance force reconnected successfully
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Force reconnect
       tags:
       - Instance
@@ -8178,11 +8779,13 @@ paths:
         "200":
           description: Instance logged out successfully
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Logout from instance
       tags:
       - Instance
@@ -8218,15 +8821,19 @@ paths:
         "200":
           description: Logs
           schema:
-            $ref: '#/definitions/gin.H'
+            items:
+              $ref: '#/definitions/apidocs.LogEntry'
+            type: array
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get instance logs
       tags:
       - Instance
@@ -8279,15 +8886,17 @@ paths:
         "200":
           description: Proxy deleted successfully
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Delete proxy
       tags:
       - Instance
@@ -8313,15 +8922,22 @@ paths:
         "200":
           description: Proxy set successfully
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.SetProxyData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Set proxy configuration
       tags:
       - Instance
@@ -8357,11 +8973,13 @@ paths:
         "200":
           description: Instance reconnected successfully
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Reconnect to instance
       tags:
       - Instance
@@ -8404,15 +9022,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Add label to chat
       tags:
       - Label
@@ -8434,15 +9054,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Edit label
       tags:
       - Label
@@ -8457,11 +9079,15 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            items:
+              $ref: '#/definitions/apidocs.LabelItem'
+            type: array
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get all labels
       tags:
       - Label
@@ -8483,15 +9109,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Add label to message
       tags:
       - Label
@@ -8513,15 +9141,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.MessageIdData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Delete a message for everyone
       tags:
       - Message
@@ -8544,15 +9179,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.DownloadMediaData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Download media
       tags:
       - Message
@@ -8574,15 +9216,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.MessageIdData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Edit a message
       tags:
       - Message
@@ -8604,15 +9253,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.TimestampData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Mark an audio message as played
       tags:
       - Message
@@ -8634,15 +9290,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.TimestampData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Mark a message as read
       tags:
       - Message
@@ -8664,15 +9327,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.TimestampData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Set chat presence
       tags:
       - Message
@@ -8695,15 +9365,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: React a message
       tags:
       - Message
@@ -8725,15 +9397,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.MessageStatusData'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get message status
       tags:
       - Message
@@ -8755,15 +9434,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.NewsletterMetadata'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Create newsletter
       tags:
       - Newsletter
@@ -8785,15 +9471,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.NewsletterMetadata'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get newsletter
       tags:
       - Newsletter
@@ -8815,15 +9508,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.NewsletterMetadata'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get newsletter invite
       tags:
       - Newsletter
@@ -8838,11 +9538,20 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/types.NewsletterMetadata'
+                  type: array
+              type: object
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: List newsletters
       tags:
       - Newsletter
@@ -8864,15 +9573,24 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/types.NewsletterMessage'
+                  type: array
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get newsletter messages
       tags:
       - Newsletter
@@ -8894,15 +9612,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Subscribe newsletter
       tags:
       - Newsletter
@@ -9036,21 +9756,23 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: success
           schema:
-            $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_poll_model.PollResults'
+            $ref: '#/definitions/apidocs.PollResultsData'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get poll results
       tags:
       - Polls
@@ -9508,15 +10230,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Remove label from chat
       tags:
       - Label
@@ -9538,15 +10262,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Remove label from message
       tags:
       - Label
@@ -9568,15 +10294,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.ProfilePictureInfo'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get a user's avatar
       tags:
       - User
@@ -9598,15 +10331,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.Blocklist'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Block a contact
       tags:
       - User
@@ -9621,11 +10361,18 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.Blocklist'
+              type: object
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get a user's block list
       tags:
       - User
@@ -9647,15 +10394,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.CheckUserCollection'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Check a user
       tags:
       - User
@@ -9670,11 +10424,20 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo'
+                  type: array
+              type: object
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get a user's contacts
       tags:
       - User
@@ -9696,15 +10459,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.UserCollection'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get a user
       tags:
       - User
@@ -9719,11 +10489,18 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.PrivacySettings'
+              type: object
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get a user's privacy settings
       tags:
       - User
@@ -9744,11 +10521,18 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.PrivacySettings'
+              type: object
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Set a user's privacy settings
       tags:
       - User
@@ -9770,15 +10554,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Set a user's profile name
       tags:
       - User
@@ -9800,15 +10586,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Set a user's profile picture
       tags:
       - User
@@ -9830,15 +10618,17 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Set a user's profile status
       tags:
       - User
@@ -9860,15 +10650,22 @@ paths:
         "200":
           description: success
           schema:
-            $ref: '#/definitions/gin.H'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/types.Blocklist'
+              type: object
         "400":
           description: Error on validation
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Unblock a contact
       tags:
       - User

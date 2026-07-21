@@ -34,10 +34,11 @@ func NewPollHandler(pollService poll_service.PollService, loggerWrapper *logger_
 // @Accept json
 // @Produce json
 // @Param pollMessageId path string true "ID da mensagem da enquete"
-// @Success 200 {object} poll_model.PollResults
-// @Failure 400 {object} gin.H
-// @Failure 404 {object} gin.H
-// @Failure 500 {object} gin.H
+// @Success 200 {object} apidocs.PollResultsData "success"
+// @Failure 400 {object} apidocs.ErrorResponse
+// @Failure 404 {object} apidocs.ErrorResponse
+// @Failure 500 {object} apidocs.ErrorResponse
+// @Security ApiKeyAuth
 // @Router /polls/{pollMessageId}/results [get]
 func (h *PollHandler) GetPollResults(c *gin.Context) {
 	pollMessageID := c.Param("pollMessageId")

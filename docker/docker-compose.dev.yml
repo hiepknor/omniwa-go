@@ -15,6 +15,11 @@
 # Pin a specific version by setting IMAGE_TAG (defaults to latest):
 #   IMAGE_TAG=0.7.2 docker compose -f docker-compose.dev.yml up -d
 
+# Compose project name (the "stack" shown in Docker Desktop). Without this,
+# Compose falls back to the directory name ("docker"). Kept distinct from the
+# production stack (omniwa-go) so dev and prod can run side by side.
+name: omniwa-dev
+
 services:
   omniwa-go:
     image: ghcr.io/hiepknor/omniwa-go:${IMAGE_TAG:-latest}
