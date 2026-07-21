@@ -462,7 +462,7 @@ definitions:
         type: string
       footer:
         description: Footer text (required).
-        example: Evolution GO
+        example: OmniWA GO
         type: string
       formatJid:
         description: If false, skips automatic formatting/validation of `number` into
@@ -589,7 +589,7 @@ definitions:
         type: integer
       footer:
         description: Optional message footer shown below the cards.
-        example: Evolution GO
+        example: OmniWA GO
         type: string
       formatJid:
         description: If false, skips automatic formatting/validation of `number` into
@@ -671,7 +671,7 @@ definitions:
         type: string
       footerText:
         description: Footer text (required).
-        example: Evolution GO
+        example: OmniWA GO
         type: string
       formatJid:
         description: If false, skips automatic formatting/validation of `number` into
@@ -7166,8 +7166,8 @@ definitions:
     - ParticipantChangeDemote
 info:
   contact: {}
-  description: Evolution GO - whatsmeow
-  title: Evolution GO
+  description: OmniWA GO - WhatsApp API (whatsmeow)
+  title: OmniWA GO
   version: "1.0"
 paths:
   /call/reject:
