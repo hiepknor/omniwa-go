@@ -9,7 +9,6 @@ import (
 type MessageRepository interface {
 	InsertMessage(message message_model.Message) error
 	GetMessageByID(messageID string) (*message_model.Message, error)
-	DeleteAllMessages() (int64, error)
 	GetLatestMessageID(source string) (string, string, error)
 }
 
@@ -44,11 +43,6 @@ func (m *messageRepository) GetMessageByID(messageID string) (*message_model.Mes
 	}
 
 	return &message, nil
-}
-
-func (m *messageRepository) DeleteAllMessages() (int64, error) {
-	result := m.db.Exec("DELETE FROM messages")
-	return result.RowsAffected, result.Error
 }
 
 func (m *messageRepository) GetLatestMessageID(source string) (string, string, error) {

@@ -41,21 +41,8 @@ type Routes struct {
 }
 
 func (r *Routes) AssignRoutes(eng *gin.Engine) {
-	// Configuração do CORS
-	eng.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(200)
-			return
-		}
-
-		c.Next()
-	})
+	// CORS is configured once in setupRouter (cmd/evolution-go/main.go),
+	// applied before every route including the license gate.
 
 	eng.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
