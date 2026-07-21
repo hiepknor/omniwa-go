@@ -17,6 +17,10 @@ var upgrader = websocket.Upgrader{
 		logger.LogInfo("Verificando origem da conexão WebSocket")
 		return true
 	},
+	// The auth token is carried as the second Sec-WebSocket-Protocol value
+	// (["apikey", "<token>"]). Advertise only "apikey" so the handshake echoes
+	// that scheme back and never reflects the token in the response header.
+	Subprotocols: []string{"apikey"},
 }
 
 type websocketProducer struct {
@@ -33,6 +37,19 @@ func NewWebsocketProducer(loggerWrapper *logger_wrapper.LoggerManager) *websocke
 		clientsMux:    sync.RWMutex{},
 		loggerWrapper: loggerWrapper,
 	}
+}
+
+// TokenFromProtocolHeader extracts the auth token from a Sec-WebSocket-Protocol
+// header of the form "apikey, <token>". Browsers can't set custom headers on a
+// WebSocket handshake but can set subprotocols via `new WebSocket(url, [...])`,
+// so the token travels there instead of the query string. Returns "" when the
+// header is absent or not in the expected shape.
+func TokenFromProtocolHeader(header string) string {
+	protocols := strings.Split(header, ",")
+	if len(protocols) >= 2 && strings.TrimSpace(protocols[0]) == "apikey" {
+		return strings.TrimSpace(protocols[1])
+	}
+	return ""
 }
 
 // ServeWs lida com as requisições de upgrade para websocket

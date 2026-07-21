@@ -214,8 +214,10 @@ GET /endpoint?page=1&limit=50
 Para receber eventos em tempo real via WebSocket:
 
 ```
-ws://localhost:4000/ws?token=SUA-CHAVE-API&instanceId=minha-instancia
+ws://localhost:4000/ws?instanceId=minha-instancia
 ```
+
+O token é enviado pelo subprotocolo `Sec-WebSocket-Protocol` como `["apikey", "<SUA-CHAVE-API>"]` — no navegador, use o 2º argumento de `new WebSocket(url, ['apikey', token])`. Assim o token não aparece na URL nem em logs de acesso.
 
 ## Webhooks
 
