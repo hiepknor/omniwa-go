@@ -30,3 +30,15 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+      # Fail if the committed Swagger docs are out of date with the code
+      # annotations. Uses the same command as `make swagger` (pinned swag
+      # version, no dependency parsing) so the check is deterministic.
+      - name: Swagger up-to-date
+        run: |
+          go install github.com/swaggo/swag/cmd/swag@v1.16.3
+          "$(go env GOPATH)/bin/swag" init -g cmd/evolution-go/main.go -o ./docs
+          git diff --exit-status docs/ || {
+            echo "::error::docs/ is out of date. Run 'make swagger' and commit the result."
+            exit 1
+          }
