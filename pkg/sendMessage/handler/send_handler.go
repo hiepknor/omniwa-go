@@ -38,9 +38,10 @@ type sendHandler struct {
 // @Accept json
 // @Produce json
 // @Param message body send_service.TextStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/text [post]
 func (s *sendHandler) SendText(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -84,9 +85,10 @@ func (s *sendHandler) SendText(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.LinkStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/link [post]
 func (s *sendHandler) SendLink(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -130,9 +132,10 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.MediaStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/media [post]
 func (s *sendHandler) SendMedia(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -290,9 +293,10 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.PollStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/poll [post]
 func (s *sendHandler) SendPoll(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -341,9 +345,10 @@ func (s *sendHandler) SendPoll(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.StickerStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/sticker [post]
 func (s *sendHandler) SendSticker(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -387,9 +392,10 @@ func (s *sendHandler) SendSticker(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.LocationStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/location [post]
 func (s *sendHandler) SendLocation(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -448,9 +454,10 @@ func (s *sendHandler) SendLocation(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.ContactStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/contact [post]
 func (s *sendHandler) SendContact(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -510,9 +517,10 @@ func (s *sendHandler) SendContact(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.ButtonStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/button [post]
 func (s *sendHandler) SendButton(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -572,9 +580,10 @@ func (s *sendHandler) SendButton(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.ListStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/list [post]
 func (s *sendHandler) SendList(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -648,9 +657,10 @@ func (s *sendHandler) SendList(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.CarouselStruct true "Message data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/carousel [post]
 func (s *sendHandler) SendCarousel(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -694,9 +704,10 @@ func (s *sendHandler) SendCarousel(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body send_service.StatusTextStruct true "Status text data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/status/text [post]
 func (s *sendHandler) SendStatusText(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -739,9 +750,10 @@ func (s *sendHandler) SendStatusText(ctx *gin.Context) {
 // @Param url formData string false "Media URL (for JSON upload)"
 // @Param caption formData string false "Caption for the media"
 // @Param id formData string false "Custom message ID"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Security ApiKeyAuth
+// @Success 200 {object} apidocs.SendMessageResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Router /send/status/media [post]
 func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")

@@ -112,22 +112,28 @@ OmniWA GO keeps this behavior by default, but makes it opt-out:
 
 ## API Documentation
 
-Swagger UI available at:
+- **Swagger UI** (auto-generated, always in sync with the code, with an
+  **Authorize** button): `http://localhost:8080/swagger/index.html`
+- **WebUI Integration Guide** (English): [`docs/wiki-en/`](docs/wiki-en/) —
+  authentication, the create → connect → QR → send flow, response conventions,
+  and the realtime [WebSocket event stream](docs/wiki-en/websocket-events.md)
+  (which Swagger cannot describe).
 
-```
-http://localhost:8080/swagger/index.html
-```
+Every endpoint is authenticated with an `apikey` header: admin `/instance`
+routes use the global `GLOBAL_API_KEY`; all other routes use the target
+instance's own token. See [Authentication](docs/wiki-en/authentication.md).
 
 ### Key Endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/instance/create` | Create WhatsApp instance |
-| `GET` | `/instance/{name}/qrcode` | Get QR code for pairing |
-| `POST` | `/message/sendText` | Send text message |
-| `POST` | `/message/sendMedia` | Send media message |
-| `GET` | `/instance/{name}/status` | Get instance status |
-| `DELETE` | `/instance/{name}` | Delete instance |
+| `POST` | `/instance/create` | Create WhatsApp instance (admin key) |
+| `POST` | `/instance/connect` | Start connecting an instance |
+| `GET` | `/instance/qr` | Get QR code / pairing payload |
+| `GET` | `/instance/status` | Get instance status |
+| `POST` | `/send/text` | Send text message |
+| `POST` | `/send/media` | Send media message |
+| `DELETE` | `/instance/delete/{instanceId}` | Delete instance (admin key) |
 
 ---
 

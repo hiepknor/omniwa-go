@@ -44,9 +44,10 @@ type instanceHandler struct {
 // @Accept json
 // @Produce json
 // @Param instance body instance_service.CreateStruct true "Instance data with optional advanced settings"
-// @Success 200 {object} gin.H "Instance created successfully"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.CreateInstanceResponse "Instance created successfully; data.token is the apikey for this instance"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/create [post]
 func (i *instanceHandler) Create(ctx *gin.Context) {
 	var data *instance_service.CreateStruct
@@ -113,9 +114,10 @@ func (i *instanceHandler) Create(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param instance body instance_service.ConnectStruct true "Instance data"
-// @Success 200 {object} gin.H "Instance connected successfully"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.ConnectResponse "Instance connected successfully"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/connect [post]
 func (i *instanceHandler) Connect(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -241,8 +243,9 @@ func (i *instanceHandler) Logout(ctx *gin.Context) {
 // @Tags Instance
 // @Accept json
 // @Produce json
-// @Success 200 {object} gin.H "Instance status"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.StatusResponse "Instance status"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/status [get]
 func (i *instanceHandler) Status(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -268,8 +271,9 @@ func (i *instanceHandler) Status(ctx *gin.Context) {
 // @Tags Instance
 // @Accept json
 // @Produce json
-// @Success 200 {object} gin.H "Instance QR code"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.QRCodeResponse "Instance QR code / pairing payload"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/qr [get]
 func (i *instanceHandler) Qr(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -296,9 +300,10 @@ func (i *instanceHandler) Qr(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param instance body instance_service.PairStruct true "Instance data"
-// @Success 200 {object} gin.H "Pairing code"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.PairResponse "Pairing code"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/pair [post]
 func (i *instanceHandler) Pair(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -336,8 +341,9 @@ func (i *instanceHandler) Pair(ctx *gin.Context) {
 // @Tags Instance
 // @Accept json
 // @Produce json
-// @Success 200 {object} gin.H "All instances"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.InstanceListResponse "All instances"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/all [get]
 func (i *instanceHandler) All(ctx *gin.Context) {
 	instances, err := i.instanceService.GetAll()
@@ -356,9 +362,10 @@ func (i *instanceHandler) All(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param instanceId path string true "Instance Id"
-// @Success 200 {object} gin.H "Instance"
-// @Failure 400 {object} gin.H "Error on validation"
-// @Failure 500 {object} gin.H "Internal server error"
+// @Success 200 {object} apidocs.InstanceResponse "Instance"
+// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
 // @Router /instance/info/{instanceId} [get]
 func (i *instanceHandler) Info(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")

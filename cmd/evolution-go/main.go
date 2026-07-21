@@ -336,7 +336,16 @@ func initPostgresAuthDB(config *config.Config) (*sql.DB, error) {
 
 // @title OmniWA GO
 // @version 1.0
-// @description OmniWA GO - WhatsApp API (whatsmeow)
+// @description OmniWA GO - WhatsApp API (whatsmeow). All endpoints are authenticated with an `apikey` HTTP header. Admin routes under `/instance` (create/all/info/delete/proxy/forcereconnect/logs) require the global key from `GLOBAL_API_KEY`; every other route requires the target instance's own token as the `apikey`. See docs/wiki-en for the WebUI integration guide, including the realtime `/ws` event stream (not describable in Swagger 2.0).
+// @contact.name OmniWA GO
+// @license.name Apache-2.0
+// @license.url https://www.apache.org/licenses/LICENSE-2.0
+// @BasePath /
+// @schemes http https
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name apikey
+// @security ApiKeyAuth
 func main() {
 	flag.Parse()
 	if *devMode {
