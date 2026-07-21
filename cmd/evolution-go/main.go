@@ -216,10 +216,15 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		c.Next()
 	})
 
-	r.Use(core.GateMiddleware(runtimeCtx))
+	// License gate is opt-out via LICENSE_GATE_ENABLED=false (default: enabled).
+	// When disabled, the API is served without the activation gate and the
+	// runtime context is nil (no license routes, no remote heartbeat).
+	if config.LicenseGateEnabled {
+		r.Use(core.GateMiddleware(runtimeCtx))
 
-	// License routes (always accessible, even without license)
-	core.LicenseRoutes(r, runtimeCtx)
+		// License routes (always accessible, even without license)
+		core.LicenseRoutes(r, runtimeCtx)
+	}
 
 	// Passkey ceremony routes — PUBLIC (called by the browser extension from the
 	// web.whatsapp.com origin, gated only by an opaque ephemeral token).
@@ -329,9 +334,9 @@ func initPostgresAuthDB(config *config.Config) (*sql.DB, error) {
 	return db, nil
 }
 
-// @title Evolution GO
+// @title OmniWA GO
 // @version 1.0
-// @description Evolution GO - whatsmeow
+// @description OmniWA GO - WhatsApp API (whatsmeow)
 func main() {
 	flag.Parse()
 	if *devMode {
@@ -343,7 +348,7 @@ func main() {
 
 	cfg := config.Load()
 
-	logger.LogInfo("Starting Evolution GO version %s", version)
+	logger.LogInfo("Starting OmniWA GO version %s", version)
 
 	startTime := time.Now()
 
@@ -372,13 +377,20 @@ func main() {
 
 	migrate(db)
 
-	// Initialize core DB + license runtime
-	core.SetDB(db)
-	if err := core.MigrateDB(); err != nil {
-		log.Fatal("Failed to migrate runtime_configs: ", err)
+	// Initialize core DB + license runtime only when the gate is enabled.
+	// With LICENSE_GATE_ENABLED=false the runtime context stays nil and the
+	// server never contacts the licensing server.
+	var runtimeCtx *core.RuntimeContext
+	if cfg.LicenseGateEnabled {
+		core.SetDB(db)
+		if err := core.MigrateDB(); err != nil {
+			log.Fatal("Failed to migrate runtime_configs: ", err)
+		}
+		tier := "evolution-go"
+		runtimeCtx = core.InitializeRuntime(tier, version, cfg.GlobalApiKey)
+	} else {
+		logger.LogInfo("License gate disabled (LICENSE_GATE_ENABLED=false) — running without activation")
 	}
-	tier := "evolution-go"
-	runtimeCtx := core.InitializeRuntime(tier, version, cfg.GlobalApiKey)
 
 	var conn *amqp.Connection
 
@@ -414,7 +426,9 @@ func main() {
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
 	defer heartbeatCancel()
 
-	core.StartHeartbeat(heartbeatCtx, runtimeCtx, startTime)
+	if cfg.LicenseGateEnabled {
+		core.StartHeartbeat(heartbeatCtx, runtimeCtx, startTime)
+	}
 
 	srv := &http.Server{
 		Addr:    ":" + os.Getenv("SERVER_PORT"),
@@ -437,7 +451,9 @@ func main() {
 	// Stop heartbeat loop
 	heartbeatCancel()
 
-	core.Shutdown(runtimeCtx)
+	if cfg.LicenseGateEnabled {
+		core.Shutdown(runtimeCtx)
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
