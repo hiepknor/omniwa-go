@@ -1,0 +1,120 @@
+// Package apidocs holds documentation-only response models used by the Swagger
+// annotations (swaggo). Handlers return `gin.H` maps at runtime; these structs
+// simply give the generated OpenAPI spec a concrete, typed schema for the
+// success/error envelopes so a WebUI client can see the real payload shape.
+//
+// This package is fork-specific (it does not exist upstream), so adding or
+// changing it never conflicts when syncing from evolution-go. Nothing imports
+// it at runtime — swaggo resolves the types by name from the annotations.
+package apidocs
+
+import (
+	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+)
+
+// SuccessResponse is the standard success envelope returned by most endpoints:
+//
+//	{ "message": "success", "data": { ... } }
+//
+// `data` is present only on endpoints that return a payload; action endpoints
+// (disconnect, logout, delete, reconnect...) return just `message`.
+type SuccessResponse struct {
+	Message string      `json:"message" example:"success"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+// ErrorResponse is the standard error envelope returned on 4xx/5xx:
+//
+//	{ "error": "<human readable reason>" }
+type ErrorResponse struct {
+	Error string `json:"error" example:"phone number is required"`
+}
+
+// CreateInstanceResponse is returned by POST /instance/create. `data` is the
+// full instance record, including the per-instance `token` that becomes the
+// `apikey` header for every per-instance route.
+type CreateInstanceResponse struct {
+	Message string                  `json:"message" example:"success"`
+	Data    instance_model.Instance `json:"data"`
+}
+
+// InstanceResponse is returned by endpoints that echo a single instance
+// (e.g. GET /instance/info/{instanceId}).
+type InstanceResponse struct {
+	Message string                  `json:"message" example:"success"`
+	Data    instance_model.Instance `json:"data"`
+}
+
+// InstanceListResponse is returned by GET /instance/all.
+type InstanceListResponse struct {
+	Message string                    `json:"message" example:"success"`
+	Data    []instance_model.Instance `json:"data"`
+}
+
+// ConnectData is the payload of POST /instance/connect.
+type ConnectData struct {
+	Jid         string `json:"jid" example:"5511999999999:12@s.whatsapp.net"`
+	WebhookURL  string `json:"webhookUrl" example:"https://example.com/webhook"`
+	EventString string `json:"eventString" example:"MESSAGE,CONNECTION,QRCODE"`
+}
+
+// ConnectResponse is returned by POST /instance/connect.
+type ConnectResponse struct {
+	Message string      `json:"message" example:"success"`
+	Data    ConnectData `json:"data"`
+}
+
+// QRCodeData mirrors the QR/pairing payload used while linking a device. When
+// the account requires a WebAuthn passkey to finish linking there is no QR to
+// scan and the Passkey* fields drive the UI instead.
+type QRCodeData struct {
+	Qrcode         string `json:"qrcode" example:"data:image/png;base64,iVBORw0KGgo..."`
+	Code           string `json:"code" example:"2@abc123..."`
+	PasskeyStage   string `json:"passkeyStage,omitempty"`
+	PasskeyOpenURL string `json:"passkeyOpenUrl,omitempty"`
+	PasskeyCode    string `json:"passkeyCode,omitempty"`
+}
+
+// QRCodeResponse is returned by GET /instance/qr.
+type QRCodeResponse struct {
+	Message string     `json:"message" example:"success"`
+	Data    QRCodeData `json:"data"`
+}
+
+// StatusData is the payload of GET /instance/status.
+type StatusData struct {
+	Connected bool   `json:"Connected" example:"true"`
+	LoggedIn  bool   `json:"LoggedIn" example:"true"`
+	Name      string `json:"Name" example:"My WhatsApp"`
+}
+
+// StatusResponse is returned by GET /instance/status.
+type StatusResponse struct {
+	Message string     `json:"message" example:"success"`
+	Data    StatusData `json:"data"`
+}
+
+// PairData is the payload of POST /instance/pair.
+type PairData struct {
+	PairingCode string `json:"PairingCode" example:"ABCD-EFGH"`
+}
+
+// PairResponse is returned by POST /instance/pair.
+type PairResponse struct {
+	Message string   `json:"message" example:"success"`
+	Data    PairData `json:"data"`
+}
+
+// SendMessageData describes the stable, WebUI-relevant fields of a sent
+// message. The runtime `data` also carries the raw whatsmeow message envelope;
+// only the fields documented here are considered part of the public contract.
+type SendMessageData struct {
+	ID        string `json:"ID" example:"3EB0C767D26A8D4E2A1B"`
+	Timestamp string `json:"Timestamp" example:"2026-07-21T10:30:00Z"`
+}
+
+// SendMessageResponse is returned by the POST /send/* endpoints.
+type SendMessageResponse struct {
+	Message string          `json:"message" example:"success"`
+	Data    SendMessageData `json:"data"`
+}
