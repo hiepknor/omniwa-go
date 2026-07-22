@@ -96,8 +96,12 @@ DATABASE_SAVE_MESSAGES=false
 | `LICENSE_GATE_ENABLED` | Enable the license activation gate | `true` |
 
 When `INSTANCE_TOKEN_HMAC_KEY` is enabled, admin capability discovery advertises
-`instance_token_rotation`. Rotation is compare-and-swap protected by the
+`instance_token_rotation` and `instance_credential_health`. Rotation is compare-and-swap protected by the
 instance view's additive `credentialVersion`; the new token is returned once.
+Use admin-only `GET /instance/credential-health` to observe digest coverage and
+plaintext fallback usage without exposing tokens or digests. These facts do not
+by themselves authorize plaintext removal; complete the Console rollout and
+the agreed rollback window first.
 
 ---
 

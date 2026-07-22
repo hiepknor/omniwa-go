@@ -83,3 +83,21 @@ administrative capability. Public instance views expose the additive
 `credentialVersion` needed for optimistic concurrency; they continue returning
 the legacy token until the Console migration and rollback measurement required
 by the contract phase are complete.
+
+Migration 20 makes the rollback measurement durable without retaining any new
+credential material. A successful plaintext fallback increments one aggregate
+row per instance and attempted HMAC key version, recording only a count and the
+first/last observation timestamps. The same transaction repairs that instance's
+lookup digest, so ordinary future authentication uses the indexed digest path.
+If either recording or repair fails, fallback authentication fails closed; this
+prevents an unmeasured compatibility path from producing false rollout
+confidence.
+
+When digest lookup is configured, the admin-only
+`GET /instance/credential-health` endpoint and
+`instance_credential_health` capability expose global digest coverage and
+lifetime fallback facts. The endpoint never returns tokens or lookup digests,
+and it deliberately does not calculate a `safeToRemove` decision. Operators
+must correlate Console rollout time, last fallback observation, full current-key
+coverage, the agreed rollback window, and backup/restore evidence before the
+later destructive contract migration is approved.

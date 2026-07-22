@@ -249,6 +249,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	instanceRepository := instance_repository.NewInstanceRepositoryWithTokenDigester(db, tokenDigester)
 	var tokenRotator instance_repository.TokenRotator
+	var credentialHealthService *instance_credential.HealthService
 	var credentialCapabilities []string
 	if tokenDigester != nil {
 		backfiller, ok := instanceRepository.(instance_repository.TokenBackfiller)
@@ -269,7 +270,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			log.Fatal("instance repository does not support token rotation")
 		}
 		tokenRotator = rotator
-		credentialCapabilities = append(credentialCapabilities, "instance_token_rotation")
+		healthReader, ok := instanceRepository.(instance_repository.CredentialHealthReader)
+		if !ok {
+			log.Fatal("instance repository does not support credential health")
+		}
+		credentialHealthService = instance_credential.NewHealthService(healthReader, config.InstanceTokenHMACKeyVersion)
+		credentialCapabilities = append(credentialCapabilities, "instance_credential_health", "instance_token_rotation")
 	}
 	messageRepository := message_repository.NewMessageRepository(db)
 	labelRepository := label_repository.NewLabelRepository(db)
@@ -516,7 +522,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	routes.NewRouter(
 		auth_middleware.NewMiddleware(config, instanceService),
-		instance_handler.NewInstanceHandler(instanceService, config, instance_handler.WithTokenRotation(tokenRotationService)),
+		instance_handler.NewInstanceHandler(
+			instanceService, config,
+			instance_handler.WithTokenRotation(tokenRotationService),
+			instance_handler.WithCredentialHealth(credentialHealthService),
+		),
 		user_handler.NewUserHandler(userService),
 		send_handler.NewSendHandler(sendMessageService),
 		message_handler.NewMessageHandler(messageService, chatMessageReader),

@@ -2382,6 +2382,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/instance/credential-health": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns global, secret-free migration facts. This endpoint does not declare that plaintext removal is safe.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Instance"
+                ],
+                "summary": "Get instance credential migration health",
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_credential.CredentialHealth"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Credential health is not configured",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/instance/delete/{instanceId}": {
             "delete": {
                 "security": [
@@ -6851,6 +6906,7 @@ const docTemplate = `{
                         "campaign_orchestration",
                         "rate_limit_retry_after",
                         "groups_projection",
+                        "instance_credential_health",
                         "instance_token_rotation"
                     ]
                 },
@@ -7660,6 +7716,57 @@ const docTemplate = `{
                 },
                 "groupJid": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_instance_credential.CredentialCoverage": {
+            "type": "object",
+            "properties": {
+                "currentDigest": {
+                    "type": "integer"
+                },
+                "otherKeyVersion": {
+                    "type": "integer"
+                },
+                "plaintextOnly": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_instance_credential.CredentialHealth": {
+            "type": "object",
+            "properties": {
+                "currentKeyVersion": {
+                    "type": "integer"
+                },
+                "generatedAt": {
+                    "type": "string"
+                },
+                "instances": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_credential.CredentialCoverage"
+                },
+                "plaintextFallback": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_credential.PlaintextFallbackUsage"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_instance_credential.PlaintextFallbackUsage": {
+            "type": "object",
+            "properties": {
+                "affectedInstances": {
+                    "type": "integer"
+                },
+                "firstObservedAt": {
+                    "type": "string"
+                },
+                "lastObservedAt": {
+                    "type": "string"
+                },
+                "lookups": {
+                    "type": "integer"
                 }
             }
         },

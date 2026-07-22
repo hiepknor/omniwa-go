@@ -35,12 +35,42 @@ type InstanceHandler interface {
 	GetAdvancedSettings(ctx *gin.Context)
 	UpdateAdvancedSettings(ctx *gin.Context)
 	RotateToken(ctx *gin.Context)
+	CredentialHealth(ctx *gin.Context)
 }
 
 type instanceHandler struct {
-	config          *config.Config
-	instanceService instance_service.InstanceService
-	tokenRotation   *instance_credential.RotationService
+	config           *config.Config
+	instanceService  instance_service.InstanceService
+	tokenRotation    *instance_credential.RotationService
+	credentialHealth *instance_credential.HealthService
+}
+
+// CredentialHealth returns secret-free digest coverage and plaintext fallback facts.
+// @Summary Get instance credential migration health
+// @Description Returns global, secret-free migration facts. This endpoint does not declare that plaintext removal is safe.
+// @Tags Instance
+// @Produce json
+// @Success 200 {object} apidocs.SuccessResponse{data=instance_credential.CredentialHealth} "success"
+// @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
+// @Failure 503 {object} apidocs.ErrorResponse "Credential health is not configured"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /instance/credential-health [get]
+func (i *instanceHandler) CredentialHealth(ctx *gin.Context) {
+	if i.credentialHealth == nil {
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "capability_unavailable", "instance credential health is not configured")
+		return
+	}
+	health, err := i.credentialHealth.Snapshot(ctx.Request.Context())
+	if errors.Is(err, instance_credential.ErrCredentialHealthUnavailable) {
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "capability_unavailable", "instance credential health is not configured")
+		return
+	}
+	if err != nil {
+		httpapi.WriteInternal(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": health})
 }
 
 type RotateTokenRequest struct {
@@ -732,6 +762,10 @@ type Option func(*instanceHandler)
 
 func WithTokenRotation(service *instance_credential.RotationService) Option {
 	return func(handler *instanceHandler) { handler.tokenRotation = service }
+}
+
+func WithCredentialHealth(service *instance_credential.HealthService) Option {
+	return func(handler *instanceHandler) { handler.credentialHealth = service }
 }
 
 func NewInstanceHandler(instanceService instance_service.InstanceService, config *config.Config, options ...Option) InstanceHandler {

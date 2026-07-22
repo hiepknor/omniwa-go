@@ -82,6 +82,25 @@ discard that secret ad hoc: the current rollout has a single active digest key
 and retains plaintext only as a measured rollback path. Backfill work is
 bounded per startup and safely resumes on a later restart.
 
+### Credential migration health
+
+With the HMAC key configured, admin capability discovery includes
+`instance_credential_health`. The admin-only endpoint below reports current-key
+digest coverage and durable plaintext-fallback observations:
+
+```http
+GET /instance/credential-health
+apikey: <global-admin-key>
+```
+
+The response contains aggregate counts and first/last fallback timestamps. It
+never contains an instance token or lookup digest. A successful legacy fallback
+records the observation and repairs that instance's digest in one database
+transaction; recording failures fail authentication rather than creating a
+false zero. The response is factual telemetry, not a `safeToRemove` verdict.
+Plaintext response and storage removal still requires a completed Console
+rollout, a separately agreed quiet rollback window, and tested recovery evidence.
+
 ### Audited token rotation
 
 When an admin-scoped `GET /server/capabilities` response contains
