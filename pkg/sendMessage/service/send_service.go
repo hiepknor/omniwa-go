@@ -868,7 +868,16 @@ func (s *sendService) convertAudioWithApi(apiUrl string, apiKey string, convertD
 }
 
 func convertAudioToOpusWithDuration(inputData []byte) ([]byte, int, error) {
-	cmd := exec.Command("ffmpeg", "-i", "pipe:0",
+	const (
+		conversionTimeout = 60 * time.Second
+		maxAudioOutput    = int64(64 * 1024 * 1024)
+		maxDiagnostic     = int64(64 * 1024)
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), conversionTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", "pipe:0",
 		"-f",
 		"ogg",
 		"-vn",
@@ -903,16 +912,19 @@ func convertAudioToOpusWithDuration(inputData []byte) ([]byte, int, error) {
 		"pipe:1",
 	)
 
-	var outBuffer bytes.Buffer
-	var errBuffer bytes.Buffer
+	outBuffer := newCappedBuffer(maxAudioOutput)
+	errBuffer := newCappedBuffer(maxDiagnostic)
 
 	cmd.Stdin = bytes.NewReader(inputData)
-	cmd.Stdout = &outBuffer
-	cmd.Stderr = &errBuffer
+	cmd.Stdout = outBuffer
+	cmd.Stderr = errBuffer
 
 	err := cmd.Run()
 	if err != nil {
-		return nil, 0, fmt.Errorf("error during conversion: %v, details: %s", err, errBuffer.String())
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, 0, errors.New("audio conversion timed out")
+		}
+		return nil, 0, errors.New("audio conversion failed")
 	}
 
 	convertedData := outBuffer.Bytes()
@@ -2130,7 +2142,14 @@ func makePDFThumbnail(fileData []byte, maxWidth int) []byte {
 
 	// Render only the first page to a PNG on stdout, scaled to scaleWidth.
 	// "-scale-to-y -1" keeps the original aspect ratio.
-	cmd := exec.Command("pdftoppm",
+	const (
+		rasterizationTimeout = 15 * time.Second
+		maxRasterOutput      = int64(16 * 1024 * 1024)
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), rasterizationTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "pdftoppm",
 		"-png",
 		"-f", "1",
 		"-l", "1",
@@ -2140,8 +2159,8 @@ func makePDFThumbnail(fileData []byte, maxWidth int) []byte {
 	)
 	cmd.Stdin = bytes.NewReader(fileData)
 
-	var out bytes.Buffer
-	cmd.Stdout = &out
+	out := newCappedBuffer(maxRasterOutput)
+	cmd.Stdout = out
 	if err := cmd.Run(); err != nil {
 		return nil
 	}
