@@ -6491,6 +6491,10 @@ const docTemplate = `{
                         "groups_projection"
                     ]
                 },
+                "revision": {
+                    "type": "string",
+                    "example": "0123456789abcdef0123456789abcdef01234567"
+                },
                 "version": {
                     "type": "string",
                     "example": "1.2.3"

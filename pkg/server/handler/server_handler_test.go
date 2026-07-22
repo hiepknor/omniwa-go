@@ -45,7 +45,7 @@ func TestEventHistoryIsInstanceScopedAndRejectsInvalidPagination(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repository := &eventHistoryRepositoryStub{page: &projection_repository.DurableEventPage{Items: []projection_model.DurableEvent{}}}
 	reader := projection_service.NewDurableEventReader(repository, 30*24*time.Hour)
-	handler := NewServerHandler("test", &projectionStateHandlerStub{}, reader, nil)
+	handler := NewServerHandler("test", "abc123", &projectionStateHandlerStub{}, reader, nil)
 
 	response := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(response)
@@ -82,7 +82,7 @@ func TestOverviewUsesAuthenticationScopeAndValidatesWindow(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			repository := &overviewRepositoryHandlerStub{}
-			handler := NewServerHandler("test", &projectionStateHandlerStub{}, nil, projection_service.NewOverviewService(repository))
+			handler := NewServerHandler("test", "abc123", &projectionStateHandlerStub{}, nil, projection_service.NewOverviewService(repository))
 			response := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(response)
 			ctx.Request = httptest.NewRequest(http.MethodGet, test.requestURL, nil)
@@ -107,6 +107,20 @@ func (s *projectionStateHandlerStub) Health(instanceID string) (*projection_serv
 	return &projection_service.ProjectionHealth{Status: "healthy", GeneratedAt: time.Unix(100, 0), ByStatus: map[string]int{}, Resources: []projection_service.ProjectionResourceHealth{}}, nil
 }
 
+func TestCapabilitiesExposeBuildRevision(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewServerHandler("1.2.3", "0123456789abcdef", &projectionStateHandlerStub{}, nil, nil)
+	response := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(response)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/server/capabilities", nil)
+
+	handler.Capabilities(ctx)
+
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"version":"1.2.3"`) || !strings.Contains(response.Body.String(), `"revision":"0123456789abcdef"`) {
+		t.Fatalf("Capabilities() status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestProjectionHealthUsesAuthenticationScope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, test := range []struct {
@@ -119,7 +133,7 @@ func TestProjectionHealthUsesAuthenticationScope(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			state := &projectionStateHandlerStub{}
-			handler := NewServerHandler("test", state, nil, nil)
+			handler := NewServerHandler("test", "abc123", state, nil, nil)
 			response := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(response)
 			ctx.Request = httptest.NewRequest(http.MethodGet, "/server/projection-health", nil)

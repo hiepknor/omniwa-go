@@ -47,6 +47,7 @@ func (s *serverHandler) ProjectionHealth(ctx *gin.Context) {
 
 type serverHandler struct {
 	version         string
+	revision        string
 	projectionState projection_service.StateService
 	eventReader     *projection_service.DurableEventReader
 	overview        *projection_service.OverviewService
@@ -198,13 +199,13 @@ func (s *serverHandler) Capabilities(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{"version": s.version, "capabilities": capabilities}})
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{"version": s.version, "revision": s.revision, "capabilities": capabilities}})
 }
 
-func NewServerHandler(version string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overview *projection_service.OverviewService, healthServices ...*projection_service.ServerHealthService) ServerHandler {
+func NewServerHandler(version, revision string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overview *projection_service.OverviewService, healthServices ...*projection_service.ServerHealthService) ServerHandler {
 	var health *projection_service.ServerHealthService
 	if len(healthServices) > 0 {
 		health = healthServices[0]
 	}
-	return &serverHandler{version: version, projectionState: projectionState, eventReader: eventReader, overview: overview, health: health}
+	return &serverHandler{version: version, revision: revision, projectionState: projectionState, eventReader: eventReader, overview: overview, health: health}
 }
