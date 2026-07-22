@@ -24,6 +24,7 @@ import (
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
@@ -60,7 +61,10 @@ type sendService struct {
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
 	identityResolver waquery.IdentityResolver
+	messageWriter    projection_service.MessageWriteThrough
 }
+
+const projectionWriteThroughTimeout = 2 * time.Second
 
 type SendDataStruct struct {
 	Id              string
@@ -2785,15 +2789,23 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent successfully! ServerID: %d", instance.Id, response.ServerID)
 
+	sentAt := response.Timestamp.UTC()
+	if sentAt.IsZero() {
+		sentAt = time.Now().UTC()
+	}
+	sender := *s.clientPointer[instance.Id].Store.ID
+	if !response.Sender.IsEmpty() {
+		sender = response.Sender
+	}
 	messageInfo := types.MessageInfo{
 		MessageSource: types.MessageSource{
 			Chat:     recipient,
-			Sender:   *s.clientPointer[instance.Id].Store.ID,
+			Sender:   sender,
 			IsFromMe: true,
 			IsGroup:  isGroup,
 		},
 		ID:        message,
-		Timestamp: time.Now(),
+		Timestamp: sentAt,
 		ServerID:  response.ServerID,
 		Type:      messageType,
 	}
@@ -2807,6 +2819,8 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 			QuotedMessage: &waE2E.Message{Conversation: proto.String("")},
 		},
 	}
+
+	s.writeMessageProjection(instance.Id, messageSent)
 
 	postMap := make(map[string]interface{})
 	postMap["event"] = "SendMessage"
@@ -3155,15 +3169,23 @@ func (s *sendService) SendStatusText(data *StatusTextStruct, instance *instance_
 		return nil, err
 	}
 
+	sentAt := response.Timestamp.UTC()
+	if sentAt.IsZero() {
+		sentAt = time.Now().UTC()
+	}
+	sender := *client.Store.ID
+	if !response.Sender.IsEmpty() {
+		sender = response.Sender
+	}
 	messageInfo := types.MessageInfo{
 		MessageSource: types.MessageSource{
 			Chat:     recipient,
-			Sender:   *client.Store.ID,
+			Sender:   sender,
 			IsFromMe: true,
 			IsGroup:  false,
 		},
 		ID:        messageID,
-		Timestamp: time.Now(),
+		Timestamp: sentAt,
 		ServerID:  response.ServerID,
 		Type:      "StatusTextMessage",
 	}
@@ -3178,6 +3200,7 @@ func (s *sendService) SendStatusText(data *StatusTextStruct, instance *instance_
 		},
 	}
 
+	s.writeMessageProjection(instance.Id, messageSent)
 	s.sendStatusWebhook(messageSent, instance, "text")
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Status text sent successfully", instance.Id)
 	return messageSent, nil
@@ -3311,15 +3334,23 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 		return nil, err
 	}
 
+	sentAt := response.Timestamp.UTC()
+	if sentAt.IsZero() {
+		sentAt = time.Now().UTC()
+	}
+	sender := *client.Store.ID
+	if !response.Sender.IsEmpty() {
+		sender = response.Sender
+	}
 	messageInfo := types.MessageInfo{
 		MessageSource: types.MessageSource{
 			Chat:     recipient,
-			Sender:   *client.Store.ID,
+			Sender:   sender,
 			IsFromMe: true,
 			IsGroup:  false,
 		},
 		ID:        messageID,
-		Timestamp: time.Now(),
+		Timestamp: sentAt,
 		ServerID:  response.ServerID,
 		Type:      mediaType,
 	}
@@ -3334,8 +3365,20 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 		},
 	}
 
+	s.writeMessageProjection(instance.Id, messageSent)
 	s.sendStatusWebhook(messageSent, instance, "media")
 	return messageSent, nil
+}
+
+func (s *sendService) writeMessageProjection(instanceID string, message *MessageSendStruct) {
+	if s.messageWriter == nil || message == nil {
+		return
+	}
+	writeCtx, cancel := context.WithTimeout(context.Background(), projectionWriteThroughTimeout)
+	defer cancel()
+	if err := s.messageWriter.WriteSent(writeCtx, instanceID, message.Info, message.Message); err != nil {
+		s.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=write_through resource=messages instance_id=%s result=failed error_code=projection_write_failed", instanceID)
+	}
 }
 
 func (s *sendService) sendStatusWebhook(messageSent *MessageSendStruct, instance *instance_model.Instance, messageType string) {
@@ -3378,6 +3421,7 @@ func NewSendService(
 	config *config.Config,
 	queryGuard waquery.Guard,
 	identityResolver waquery.IdentityResolver,
+	messageWriter projection_service.MessageWriteThrough,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) SendService {
 	return &sendService{
@@ -3386,6 +3430,7 @@ func NewSendService(
 		config:           config,
 		queryGuard:       queryGuard,
 		identityResolver: identityResolver,
+		messageWriter:    messageWriter,
 		loggerWrapper:    loggerWrapper,
 	}
 }
