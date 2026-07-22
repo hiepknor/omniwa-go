@@ -42,10 +42,12 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 	repository := campaign_repository.NewCampaignRepository(db)
 	campaign, _, err := repository.CreateDraft(context.Background(), instance.Id, campaign_repository.DraftInput{
 		Name: "Concurrency", TextBody: "Hello", Actor: campaign_repository.Actor{Type: "system"},
-		Recipients: []campaign_repository.RecipientConsent{{
-			JID: "15550007777@s.whatsapp.net", OptInSource: "integration_test",
-			EvidenceReference: "consent-record", OptedInAt: time.Now().Add(-time.Hour),
-		}},
+		Recipients: []campaign_repository.RecipientConsent{
+			{JID: "15550007771@s.whatsapp.net", OptInSource: "integration_test", EvidenceReference: "consent-1", OptedInAt: time.Now().Add(-time.Hour)},
+			{JID: "15550007772@s.whatsapp.net", OptInSource: "integration_test", EvidenceReference: "consent-2", OptedInAt: time.Now().Add(-time.Hour)},
+			{JID: "15550007773@s.whatsapp.net", OptInSource: "integration_test", EvidenceReference: "consent-3", OptedInAt: time.Now().Add(-time.Hour)},
+			{JID: "15550007774@s.whatsapp.net", OptInSource: "integration_test", EvidenceReference: "consent-4", OptedInAt: time.Now().Add(-time.Hour)},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +88,86 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 	audit, err := repository.ListAudit(context.Background(), instance.Id, campaign.ID)
 	if err != nil || len(audit) != 4 {
 		t.Fatalf("atomic audit = %#v, %v", audit, err)
+	}
+	pausedClaims, err := repository.ClaimReadyForInstance(context.Background(), instance.Id, 4, time.Minute)
+	if err != nil || len(pausedClaims) != 0 {
+		t.Fatalf("paused campaign produced claims = %#v, %v", pausedClaims, err)
+	}
+	globalPausedClaims, err := repository.ClaimReady(context.Background(), 4, time.Minute)
+	if err != nil || len(globalPausedClaims) != 0 {
+		t.Fatalf("global claim on paused campaign = %#v, %v", globalPausedClaims, err)
+	}
+	if _, err := repository.Transition(context.Background(), instance.Id, campaign.ID, campaign_model.CampaignStatusRunning, nil, campaign_repository.Actor{Type: "system"}); err != nil {
+		t.Fatal(err)
+	}
+
+	claimResults := make(chan []campaign_model.Recipient, 2)
+	claimErrors := make(chan error, 2)
+	workers.Add(2)
+	for index := 0; index < 2; index++ {
+		go func() {
+			defer workers.Done()
+			claimed, claimErr := repository.ClaimReadyForInstance(context.Background(), instance.Id, 2, time.Minute)
+			claimResults <- claimed
+			claimErrors <- claimErr
+		}()
+	}
+	workers.Wait()
+	close(claimResults)
+	close(claimErrors)
+	for claimErr := range claimErrors {
+		if claimErr != nil {
+			t.Fatalf("concurrent claim: %v", claimErr)
+		}
+	}
+	claimed := make([]campaign_model.Recipient, 0, 4)
+	claimedIDs := make(map[string]struct{}, 4)
+	for batch := range claimResults {
+		claimed = append(claimed, batch...)
+		for _, recipient := range batch {
+			if _, duplicate := claimedIDs[recipient.ID]; duplicate {
+				t.Fatalf("recipient claimed twice: %s", recipient.ID)
+			}
+			claimedIDs[recipient.ID] = struct{}{}
+		}
+	}
+	if len(claimed) != 4 {
+		t.Fatalf("claimed recipients = %d, want 4", len(claimed))
+	}
+	if err := repository.MarkSent(context.Background(), &claimed[0], "provider-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.MarkSent(context.Background(), &claimed[0], "provider-duplicate"); !errors.Is(err, campaign_repository.ErrRecipientClaimLost) {
+		t.Fatalf("stale claim completion error = %v", err)
+	}
+	retryAt := time.Now().Add(25 * time.Millisecond)
+	if err := repository.MarkRetry(context.Background(), &claimed[1], "temporary_failure", retryAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.MarkFailed(context.Background(), &claimed[2], "permanent_failure"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.MarkSent(context.Background(), &claimed[3], "provider-4"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Transition(context.Background(), instance.Id, campaign.ID, campaign_model.CampaignStatusCompleted, nil, campaign_repository.Actor{Type: "system"}); !errors.Is(err, campaign_repository.ErrCampaignHasPendingWork) {
+		t.Fatalf("premature completion error = %v", err)
+	}
+	time.Sleep(30 * time.Millisecond)
+	retried, err := repository.ClaimReadyForInstance(context.Background(), instance.Id, 1, time.Minute)
+	if err != nil || len(retried) != 1 || retried[0].ID != claimed[1].ID {
+		t.Fatalf("retried claim = %#v, %v", retried, err)
+	}
+	if err := repository.MarkSent(context.Background(), &retried[0], "provider-2"); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := repository.Transition(context.Background(), instance.Id, campaign.ID, campaign_model.CampaignStatusCompleted, nil, campaign_repository.Actor{Type: "system"})
+	if err != nil || completed.Status != campaign_model.CampaignStatusCompleted {
+		t.Fatalf("completed campaign = %#v, %v", completed, err)
+	}
+	audit, err = repository.ListAudit(context.Background(), instance.Id, campaign.ID)
+	if err != nil || len(audit) != 11 {
+		t.Fatalf("recipient audit = %#v, %v", audit, err)
 	}
 
 	invalidRecipient := campaign_model.Recipient{
