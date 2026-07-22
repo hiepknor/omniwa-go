@@ -56,7 +56,11 @@ jobs:
       - name: Test with PostgreSQL
         env:
           TEST_POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/omniwa_ci?sslmode=disable
-        run: go test ./... -count=1
+        # Packages share this integration database. Serial package execution
+        # prevents one package's projection worker from claiming another
+        # package's inbox fixtures; concurrency is exercised explicitly inside
+        # the repository tests and by the separate race suite.
+        run: go test -p=1 ./... -count=1
 
       - name: Test with race detector
         run: go test -race ./...
