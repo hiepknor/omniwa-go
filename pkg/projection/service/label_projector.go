@@ -22,7 +22,7 @@ type labelProjectionState interface {
 	MarkReady(instanceID, resource string, schemaVersion int64, reconciledAt time.Time) error
 }
 
-type labelReadinessBarrier interface {
+type projectionReadinessBarrier interface {
 	HasUnprocessedEvents(context.Context, string, string, []string, string) (bool, error)
 }
 
@@ -31,10 +31,10 @@ var labelMutationEventTypes = []string{"label_edit", "label_chat_association", "
 type LabelProjector struct {
 	labels    labelProjectionWriter
 	state     labelProjectionState
-	readiness labelReadinessBarrier
+	readiness projectionReadinessBarrier
 }
 
-func NewLabelProjector(labels labelProjectionWriter, state labelProjectionState, readiness labelReadinessBarrier) *LabelProjector {
+func NewLabelProjector(labels labelProjectionWriter, state labelProjectionState, readiness projectionReadinessBarrier) *LabelProjector {
 	return &LabelProjector{labels: labels, state: state, readiness: readiness}
 }
 

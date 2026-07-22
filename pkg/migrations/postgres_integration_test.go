@@ -526,7 +526,7 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if inserted, err := eventService.Ingest(context.Background(), durableContactEvent); err != nil || !inserted {
 		t.Fatalf("durable contact ingest = %v, %v", inserted, err)
 	}
-	contactProjector := projection_service.NewContactProjector(contactRepository, stateService)
+	contactProjector := projection_service.NewContactProjector(contactRepository, stateService, projection_repository.NewReadinessRepository(reopened))
 	contactBatch, err := eventService.ProcessBatchFor(
 		context.Background(), "contacts", []string{"contact", "push_name", "business_name", "picture", "user_about"}, 10, contactProjector.Handle,
 	)
@@ -537,6 +537,26 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	durableByLID, lidErr := contactRepository.GetByIdentity(context.Background(), instance.Id, projection_model.ContactIdentityKindLID, durableLID)
 	if phoneErr != nil || lidErr != nil || durableByPhone.ContactID != durableByLID.ContactID || durableByPhone.FullName == nil || *durableByPhone.FullName != durableName {
 		t.Fatalf("durable contact aliases = phone %#v, LID %#v, errors %v/%v", durableByPhone, durableByLID, phoneErr, lidErr)
+	}
+	contactSyncer := projection_service.NewContactSyncer(contactRepository, stateService, eventService)
+	if err := contactSyncer.Sync(context.Background(), instance.Id, func(context.Context) (map[types.JID]types.ContactInfo, error) {
+		return map[types.JID]types.ContactInfo{
+			types.NewJID("snapshot", types.DefaultUserServer): {Found: true, FullName: "Snapshot contact", PushName: "Snapshot"},
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	contactBatch, err = eventService.ProcessBatchFor(
+		context.Background(), "contacts", []string{"contact", "push_name", "business_name", "picture", "user_about", "contact_sync_complete"}, 10, contactProjector.Handle,
+	)
+	if err != nil || contactBatch.Claimed != 1 || contactBatch.Processed != 1 || contactBatch.Failed != 0 {
+		t.Fatalf("contact sync completion batch = %#v, %v", contactBatch, err)
+	}
+	readyContactState, err := stateService.Get(instance.Id, "contacts")
+	contactCapabilities, contactCapabilityErr := stateService.Capabilities(instance.Id)
+	if err != nil || contactCapabilityErr != nil || readyContactState.SyncStatus != projection_model.SyncStatusReady || readyContactState.LastReconciledAt == nil ||
+		!containsString(contactCapabilities, "contacts_projection") {
+		t.Fatalf("ready contacts state = %#v capabilities=%v errors=%v/%v", readyContactState, contactCapabilities, err, contactCapabilityErr)
 	}
 	guard, err := waquery.New(waquery.Settings{RatePerSecond: 100, Burst: 10, MaxWait: time.Second, Cooldown: time.Second})
 	if err != nil {
@@ -599,9 +619,10 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		t.Fatalf("write-through tombstone remained readable: %v", err)
 	}
 	health, err := stateService.Health(instance.Id)
-	if err != nil || health.Total != 3 || health.Status != "syncing" || health.ByStatus["ready"] != 2 || health.ByStatus["not_started"] != 1 ||
+	if err != nil || health.Total != 3 || health.Status != "healthy" || health.ByStatus["ready"] != 3 || health.ByStatus["not_started"] != 0 ||
 		len(health.Resources) != 3 || !containsHealthResource(health.Resources, "groups", projection_model.SyncStatusReady) ||
-		!containsHealthResource(health.Resources, "labels", projection_model.SyncStatusReady) {
+		!containsHealthResource(health.Resources, "labels", projection_model.SyncStatusReady) ||
+		!containsHealthResource(health.Resources, "contacts", projection_model.SyncStatusReady) {
 		t.Fatalf("projection health = %#v, %v", health, err)
 	}
 }

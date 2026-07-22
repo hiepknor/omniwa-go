@@ -104,6 +104,7 @@ type whatsmeowService struct {
 	projectionEvents   projection_service.EventService
 	groupReconciler    *projection_service.GroupReconciler
 	labelSyncer        *projection_service.LabelSyncer
+	contactSyncer      *projection_service.ContactSyncer
 	appCtx             context.Context
 }
 
@@ -142,6 +143,7 @@ type MyClient struct {
 	projectionEvents   projection_service.EventService
 	groupReconciler    *projection_service.GroupReconciler
 	labelSyncer        *projection_service.LabelSyncer
+	contactSyncer      *projection_service.ContactSyncer
 	appCtx             context.Context
 	reconcileMu        sync.Mutex
 	reconcileRunning   bool
@@ -151,6 +153,7 @@ type MyClient struct {
 
 const projectionIngestTimeout = 2 * time.Second
 const groupReconcileTimeout = 2 * time.Minute
+const contactProjectionSyncTimeout = 2 * time.Minute
 
 func (mycli *MyClient) triggerGroupReconciliation(parent context.Context) {
 	if mycli == nil || mycli.groupReconciler == nil || mycli.WAClient == nil || !mycli.WAClient.IsConnected() {
@@ -235,6 +238,48 @@ func (mycli *MyClient) startLabelProjectionSync() {
 			return
 		}
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=reconcile instance_id=%s resource=labels result=queued", mycli.userID)
+	}()
+}
+
+func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
+	if mycli == nil || mycli.contactSyncer == nil || mycli.WAClient == nil || mycli.WAClient.Store == nil {
+		return
+	}
+	parent := mycli.appCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(parent, contactProjectionSyncTimeout)
+		defer cancel()
+		var preflight map[types.JID]types.ContactInfo
+		if !fullSyncConfirmed {
+			if mycli.WAClient.Store.Contacts == nil {
+				return
+			}
+			var err error
+			preflight, err = mycli.WAClient.Store.Contacts.GetAllContacts(ctx)
+			if err != nil || len(preflight) == 0 {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=reconcile instance_id=%s resource=contacts result=deferred reason=awaiting_full_sync", mycli.userID)
+				return
+			}
+		}
+		err := mycli.contactSyncer.Sync(ctx, mycli.userID, func(fetchCtx context.Context) (map[types.JID]types.ContactInfo, error) {
+			if preflight != nil {
+				contacts := preflight
+				preflight = nil
+				return contacts, nil
+			}
+			if mycli.WAClient.Store.Contacts == nil {
+				return nil, fmt.Errorf("whatsmeow contact store is unavailable")
+			}
+			return mycli.WAClient.Store.Contacts.GetAllContacts(fetchCtx)
+		})
+		if err != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=reconcile instance_id=%s resource=contacts result=failed error_code=snapshot_failed", mycli.userID)
+			return
+		}
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=reconcile instance_id=%s resource=contacts result=queued", mycli.userID)
 	}()
 }
 
@@ -731,6 +776,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		projectionEvents:   w.projectionEvents,
 		groupReconciler:    w.groupReconciler,
 		labelSyncer:        w.labelSyncer,
+		contactSyncer:      w.contactSyncer,
 		appCtx:             w.appCtx,
 	}
 
@@ -1111,6 +1157,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		mycli.handleQRCodes(evt.Codes)
 		return
 	case *events.AppStateSyncComplete:
+		if evt.Name == appstate.WAPatchRegular {
+			mycli.startContactProjectionSync(true)
+		}
 		if len(mycli.WAClient.Store.PushName) > 0 && evt.Name == appstate.WAPatchCriticalBlock {
 			err := mycli.WAClient.SendPresence(context.Background(), types.PresenceUnavailable)
 			if err != nil {
@@ -1123,6 +1172,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] events.Connected to Whatsapp for user '%s'", mycli.userID, mycli.WAClient.Store.PushName)
 		mycli.startGroupReconciliationLoop()
 		mycli.startLabelProjectionSync()
+		mycli.startContactProjectionSync(false)
 		if len(mycli.WAClient.Store.PushName) > 0 {
 			doWebhook = true
 			postMap["event"] = "Connected"
@@ -3050,6 +3100,7 @@ func NewWhatsmeowService(
 	projectionEvents projection_service.EventService,
 	groupReconciler *projection_service.GroupReconciler,
 	labelSyncer *projection_service.LabelSyncer,
+	contactSyncer *projection_service.ContactSyncer,
 	appCtx context.Context,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) WhatsmeowService {
@@ -3079,6 +3130,7 @@ func NewWhatsmeowService(
 		projectionEvents:   projectionEvents,
 		groupReconciler:    groupReconciler,
 		labelSyncer:        labelSyncer,
+		contactSyncer:      contactSyncer,
 		appCtx:             appCtx,
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),

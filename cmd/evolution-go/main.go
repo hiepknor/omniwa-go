@@ -185,7 +185,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	labelProjectionRepository := projection_repository.NewLabelProjectionRepository(db)
 	labelProjector := projection_service.NewLabelProjector(labelProjectionRepository, projectionStateService, projection_repository.NewReadinessRepository(db))
 	contactProjectionRepository := projection_repository.NewContactRepository(db)
-	contactProjector := projection_service.NewContactProjector(contactProjectionRepository, projectionStateService)
+	projectionReadinessRepository := projection_repository.NewReadinessRepository(db)
+	contactProjector := projection_service.NewContactProjector(contactProjectionRepository, projectionStateService, projectionReadinessRepository)
+	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
 	labelReader := projection_service.NewLabelReader(labelProjectionRepository, projectionStateService)
 	labelWriter := projection_service.NewLabelWriter(labelProjectionRepository, projectionStateService)
@@ -227,7 +229,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 	}()
 	contactWorker := projection_service.NewWorker(
-		projectionEventService, "contacts", []string{"contact", "push_name", "business_name", "picture", "user_about"}, 50, time.Second, contactProjector.Handle,
+		projectionEventService, "contacts", []string{"contact", "push_name", "business_name", "picture", "user_about", "contact_sync_complete"}, 50, time.Second, contactProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
 			if err != nil {
 				logger.LogError("component=projection action=process resource=contacts result=failed error_code=batch_failed")
@@ -263,6 +265,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		projectionEventService,
 		groupReconciler,
 		labelSyncer,
+		contactSyncer,
 		appCtx,
 		loggerWrapper,
 	)
