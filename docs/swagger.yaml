@@ -743,6 +743,13 @@ definitions:
     - SyncStatusReady
     - SyncStatusStale
     - SyncStatusFailed
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ConnectionHealth:
+    properties:
+      connected:
+        type: boolean
+      status:
+        type: string
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.DurableEventHistoryItem:
     properties:
       id:
@@ -769,6 +776,22 @@ definitions:
         type: integer
       source:
         type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.HealthDimension:
+    properties:
+      status:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.InstanceHealth:
+    properties:
+      connection:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ConnectionHealth'
+      instanceId:
+        type: string
+      projection:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionHealth'
+      throttling:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ThrottlingHealth'
     type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.Overview:
     properties:
@@ -964,6 +987,30 @@ definitions:
         type: string
       syncStatus:
         $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ServerHealth:
+    properties:
+      api:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.HealthDimension'
+      generatedAt:
+        type: string
+      instances:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.InstanceHealth'
+        type: array
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ThrottlingHealth:
+    properties:
+      circuitState:
+        type: string
+      observed:
+        type: boolean
+      openUntil:
+        type: string
+      retryAfterSeconds:
+        type: integer
+      status:
+        type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_sendMessage_service.Button:
     properties:
@@ -11062,6 +11109,33 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get server capabilities
+      tags:
+      - Server
+  /server/health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ServerHealth'
+              type: object
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get split server health
       tags:
       - Server
   /server/overview:

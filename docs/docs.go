@@ -4655,6 +4655,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/server/health": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Get split server health",
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ServerHealth"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/server/overview": {
             "get": {
                 "security": [
@@ -6751,6 +6799,17 @@ const docTemplate = `{
                 "SyncStatusFailed"
             ]
         },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ConnectionHealth": {
+            "type": "object",
+            "properties": {
+                "connected": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_evolution-foundation_evolution-go_pkg_projection_service.DurableEventHistoryItem": {
             "type": "object",
             "properties": {
@@ -6789,6 +6848,31 @@ const docTemplate = `{
                 },
                 "source": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.HealthDimension": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.InstanceHealth": {
+            "type": "object",
+            "properties": {
+                "connection": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ConnectionHealth"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "projection": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionHealth"
+                },
+                "throttling": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ThrottlingHealth"
                 }
             }
         },
@@ -7087,6 +7171,43 @@ const docTemplate = `{
                 },
                 "syncStatus": {
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ServerHealth": {
+            "type": "object",
+            "properties": {
+                "api": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.HealthDimension"
+                },
+                "generatedAt": {
+                    "type": "string"
+                },
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.InstanceHealth"
+                    }
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ThrottlingHealth": {
+            "type": "object",
+            "properties": {
+                "circuitState": {
+                    "type": "string"
+                },
+                "observed": {
+                    "type": "boolean"
+                },
+                "openUntil": {
+                    "type": "string"
+                },
+                "retryAfterSeconds": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },

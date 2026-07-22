@@ -220,6 +220,10 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := reopened.Create(&otherInstance).Error; err != nil {
 		t.Fatalf("create isolated event instance: %v", err)
 	}
+	healthRecords, err := projection_repository.NewHealthRepository(reopened).ListInstances(context.Background(), otherInstance.Id)
+	if err != nil || len(healthRecords) != 1 || healthRecords[0].InstanceID != otherInstance.Id || healthRecords[0].Connected {
+		t.Fatalf("instance-scoped health records = %#v, %v", healthRecords, err)
+	}
 	otherEvent := projection_model.DurableEvent{
 		ID: "00000000-0000-0000-0000-000000000995", InstanceID: otherInstance.Id, Type: "PaginationTest",
 		OccurredAt: time.Unix(350, 0), IngestedAt: time.Unix(350, 0), ExpiresAt: time.Now().Add(time.Hour), Summary: json.RawMessage(`{}`),
