@@ -26,6 +26,13 @@ type eventHistoryRepositoryStub struct {
 	page       *projection_repository.DurableEventPage
 }
 
+type overviewRepositoryHandlerStub struct{ instanceID string }
+
+func (s *overviewRepositoryHandlerStub) Snapshot(_ context.Context, instanceID string, _, _ time.Time) (*projection_repository.OverviewCounts, error) {
+	s.instanceID = instanceID
+	return &projection_repository.OverviewCounts{InstancesTotal: 1}, nil
+}
+
 func (s *eventHistoryRepositoryStub) List(_ context.Context, instanceID, _ string, _ int, _ *projection_repository.DurableEventCursor) (*projection_repository.DurableEventPage, error) {
 	s.instanceID = instanceID
 	return s.page, nil
@@ -56,6 +63,37 @@ func TestEventHistoryIsInstanceScopedAndRejectsInvalidPagination(t *testing.T) {
 	handler.EventHistory(ctx)
 	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"invalid_cursor"`) {
 		t.Fatalf("invalid cursor status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestOverviewUsesAuthenticationScopeAndValidatesWindow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, test := range []struct {
+		name       string
+		instance   *instance_model.Instance
+		wantID     string
+		wantScope  string
+		requestURL string
+		wantStatus int
+	}{
+		{name: "admin scope", wantScope: `"type":"server"`, requestURL: "/server/overview?window=1h", wantStatus: http.StatusOK},
+		{name: "instance scope", instance: &instance_model.Instance{Id: "instance-a"}, wantID: "instance-a", wantScope: `"type":"instance"`, requestURL: "/server/overview", wantStatus: http.StatusOK},
+		{name: "invalid window", requestURL: "/server/overview?window=721h", wantStatus: http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &overviewRepositoryHandlerStub{}
+			handler := NewServerHandler("test", &projectionStateHandlerStub{}, nil, projection_service.NewOverviewService(repository))
+			response := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(response)
+			ctx.Request = httptest.NewRequest(http.MethodGet, test.requestURL, nil)
+			if test.instance != nil {
+				ctx.Set("instance", test.instance)
+			}
+			handler.Overview(ctx)
+			if response.Code != test.wantStatus || (test.wantStatus == http.StatusOK && (repository.instanceID != test.wantID || !strings.Contains(response.Body.String(), test.wantScope))) {
+				t.Fatalf("Overview() status=%d instance=%q body=%s", response.Code, repository.instanceID, response.Body.String())
+			}
+		})
 	}
 }
 func (s *projectionStateHandlerStub) RecordEvent(string, string, int64, time.Time) error { return nil }

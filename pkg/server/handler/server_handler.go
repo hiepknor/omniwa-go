@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
@@ -16,6 +17,7 @@ type ServerHandler interface {
 	Capabilities(ctx *gin.Context)
 	ProjectionHealth(ctx *gin.Context)
 	EventHistory(ctx *gin.Context)
+	Overview(ctx *gin.Context)
 }
 
 // ProjectionHealth returns persisted projection synchronization metrics.
@@ -46,6 +48,46 @@ type serverHandler struct {
 	version         string
 	projectionState projection_service.StateService
 	eventReader     *projection_service.DurableEventReader
+	overview        *projection_service.OverviewService
+}
+
+// Overview returns persisted metrics without querying WhatsApp.
+// @Summary Get persisted overview metrics
+// @Tags Server
+// @Produce json
+// @Param window query string false "Metric window as a Go duration (maximum 720h)" default(24h)
+// @Success 200 {object} apidocs.SuccessResponse{data=projection_service.Overview} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid metric window"
+// @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /server/overview [get]
+func (s *serverHandler) Overview(ctx *gin.Context) {
+	window := projection_service.DefaultOverviewWindow
+	if value := ctx.Query("window"); value != "" {
+		parsed, err := time.ParseDuration(value)
+		if err != nil || parsed <= 0 || parsed > projection_service.MaximumOverviewWindow {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "window must be a positive duration no greater than 720h", "code": "invalid_window"})
+			return
+		}
+		window = parsed
+	}
+	instanceID := ""
+	if value, exists := ctx.Get("instance"); exists {
+		if instance, ok := value.(*instance_model.Instance); ok {
+			instanceID = instance.Id
+		}
+	}
+	if s.overview == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	overview, err := s.overview.Snapshot(ctx.Request.Context(), instanceID, window)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": overview})
 }
 
 // EventHistory returns retention-bound normalized events without querying WhatsApp.
@@ -129,10 +171,10 @@ func (s *serverHandler) Capabilities(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{"version": s.version, "capabilities": capabilities}})
 }
 
-func NewServerHandler(version string, projectionState projection_service.StateService, eventReaders ...*projection_service.DurableEventReader) ServerHandler {
-	var eventReader *projection_service.DurableEventReader
-	if len(eventReaders) > 0 {
-		eventReader = eventReaders[0]
+func NewServerHandler(version string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overviews ...*projection_service.OverviewService) ServerHandler {
+	var overview *projection_service.OverviewService
+	if len(overviews) > 0 {
+		overview = overviews[0]
 	}
-	return &serverHandler{version: version, projectionState: projectionState, eventReader: eventReader}
+	return &serverHandler{version: version, projectionState: projectionState, eventReader: eventReader, overview: overview}
 }

@@ -770,6 +770,68 @@ definitions:
       source:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.Overview:
+    properties:
+      generatedAt:
+        type: string
+      instances:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewInstances'
+      messages:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewMessages'
+      projections:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewProjectionCounts'
+      scope:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewScope'
+      window:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewWindow'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewInstances:
+    properties:
+      connected:
+        type: integer
+      disconnected:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewMessages:
+    properties:
+      incoming:
+        type: integer
+      outgoing:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewProjectionCounts:
+    properties:
+      chats:
+        type: integer
+      contacts:
+        type: integer
+      events:
+        type: integer
+      groups:
+        type: integer
+      messages:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewScope:
+    properties:
+      instanceId:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewWindow:
+    properties:
+      durationSeconds:
+        type: integer
+      end:
+        type: string
+      start:
+        type: string
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat:
     properties:
       archived:
@@ -11000,6 +11062,43 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get server capabilities
+      tags:
+      - Server
+  /server/overview:
+    get:
+      parameters:
+      - default: 24h
+        description: Metric window as a Go duration (maximum 720h)
+        in: query
+        name: window
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.Overview'
+              type: object
+        "400":
+          description: Invalid metric window
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get persisted overview metrics
       tags:
       - Server
   /server/projection-health:
