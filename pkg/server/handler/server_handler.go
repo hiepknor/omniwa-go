@@ -18,6 +18,7 @@ type ServerHandler interface {
 	ProjectionHealth(ctx *gin.Context)
 	EventHistory(ctx *gin.Context)
 	Overview(ctx *gin.Context)
+	Health(ctx *gin.Context)
 }
 
 // ProjectionHealth returns persisted projection synchronization metrics.
@@ -49,6 +50,35 @@ type serverHandler struct {
 	projectionState projection_service.StateService
 	eventReader     *projection_service.DurableEventReader
 	overview        *projection_service.OverviewService
+	health          *projection_service.ServerHealthService
+}
+
+// Health returns independent API, connection, projection, and throttling dimensions.
+// @Summary Get split server health
+// @Tags Server
+// @Produce json
+// @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ServerHealth} "success"
+// @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /server/health [get]
+func (s *serverHandler) Health(ctx *gin.Context) {
+	instanceID := ""
+	if value, exists := ctx.Get("instance"); exists {
+		if instance, ok := value.(*instance_model.Instance); ok {
+			instanceID = instance.Id
+		}
+	}
+	if s.health == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	health, err := s.health.Snapshot(ctx.Request.Context(), instanceID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": health})
 }
 
 // Overview returns persisted metrics without querying WhatsApp.
@@ -171,10 +201,10 @@ func (s *serverHandler) Capabilities(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{"version": s.version, "capabilities": capabilities}})
 }
 
-func NewServerHandler(version string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overviews ...*projection_service.OverviewService) ServerHandler {
-	var overview *projection_service.OverviewService
-	if len(overviews) > 0 {
-		overview = overviews[0]
+func NewServerHandler(version string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overview *projection_service.OverviewService, healthServices ...*projection_service.ServerHealthService) ServerHandler {
+	var health *projection_service.ServerHealthService
+	if len(healthServices) > 0 {
+		health = healthServices[0]
 	}
-	return &serverHandler{version: version, projectionState: projectionState, eventReader: eventReader, overview: overview}
+	return &serverHandler{version: version, projectionState: projectionState, eventReader: eventReader, overview: overview, health: health}
 }

@@ -45,7 +45,7 @@ func TestEventHistoryIsInstanceScopedAndRejectsInvalidPagination(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repository := &eventHistoryRepositoryStub{page: &projection_repository.DurableEventPage{Items: []projection_model.DurableEvent{}}}
 	reader := projection_service.NewDurableEventReader(repository, 30*24*time.Hour)
-	handler := NewServerHandler("test", &projectionStateHandlerStub{}, reader)
+	handler := NewServerHandler("test", &projectionStateHandlerStub{}, reader, nil)
 
 	response := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(response)
@@ -119,7 +119,7 @@ func TestProjectionHealthUsesAuthenticationScope(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			state := &projectionStateHandlerStub{}
-			handler := NewServerHandler("test", state, nil)
+			handler := NewServerHandler("test", state, nil, nil)
 			response := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(response)
 			ctx.Request = httptest.NewRequest(http.MethodGet, "/server/projection-health", nil)
