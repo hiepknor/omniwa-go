@@ -61,6 +61,14 @@ and exposes the same normalized model. Optional phone/LID identity, username,
 redacted phone, picture, and user-about fields are additive; raw provider event
 payloads remain internal.
 
+The additive `GET /user/contacts/search` endpoint provides case-insensitive
+prefix search over normalized identity and display fields. It uses bounded
+keyset pagination ordered by normalized preferred JID and contact UUID. Cursors
+are versioned and bound to the normalized query, so a cursor cannot silently be
+reused with a different search. Search is instance-scoped, treats SQL wildcard
+characters literally, and never queries WhatsApp. Migration 13 adds partial
+functional indexes for the search and ordering expressions.
+
 ## Consequences
 
 - Contacts remain stable when new provider aliases are discovered.

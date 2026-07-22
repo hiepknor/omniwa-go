@@ -8,6 +8,7 @@ import (
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"gorm.io/gorm"
 )
@@ -23,6 +24,10 @@ func (s *userContactReadRepositoryStub) GetByIdentity(context.Context, string, p
 		return nil, gorm.ErrRecordNotFound
 	}
 	return &s.contacts[0], nil
+}
+
+func (s *userContactReadRepositoryStub) Search(context.Context, string, string, int, *projection_repository.ContactCursor) (*projection_repository.ContactPage, error) {
+	return &projection_repository.ContactPage{Items: s.contacts}, nil
 }
 
 type userContactReadStateStub struct {
@@ -61,5 +66,20 @@ func TestGetContactsPropagatesNotReady(t *testing.T) {
 	service := &userService{contactReader: reader}
 	if _, _, err := service.GetContacts(context.Background(), &instance_model.Instance{Id: "instance-a"}); !errors.Is(err, projection_service.ErrContactsProjectionNotReady) {
 		t.Fatalf("GetContacts() error = %v", err)
+	}
+}
+
+func TestSearchContactsUsesNormalizedProjectionModel(t *testing.T) {
+	fullName := "Ada Lovelace"
+	reconciledAt := time.Unix(500, 0)
+	reader := projection_service.NewContactReader(&userContactReadRepositoryStub{contacts: []projection_model.Contact{{
+		ContactID: "11111111-1111-1111-1111-111111111111", PreferredJID: "ada@s.whatsapp.net", Found: true, FullName: &fullName,
+	}}}, &userContactReadStateStub{state: &projection_model.State{
+		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: projection_service.ContactsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
+	}})
+	service := &userService{contactReader: reader}
+	contacts, meta, err := service.SearchContacts(context.Background(), &instance_model.Instance{Id: "instance-a"}, "ada", 50, "")
+	if err != nil || len(contacts) != 1 || contacts[0].Jid != "ada@s.whatsapp.net" || contacts[0].FullName != fullName || meta == nil || meta.Source != "projection" {
+		t.Fatalf("SearchContacts() = %#v, %#v, %v", contacts, meta, err)
 	}
 }

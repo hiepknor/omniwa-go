@@ -11945,6 +11945,58 @@ paths:
       summary: Get a user's contacts
       tags:
       - User
+  /user/contacts/search:
+    get:
+      description: Prefix-search normalized contacts from the persisted instance projection
+        without querying WhatsApp
+      parameters:
+      - description: Case-insensitive prefix matched against normalized contact fields
+        in: query
+        maxLength: 128
+        name: q
+        type: string
+      - default: 50
+        description: Page size (1-200)
+        in: query
+        maximum: 200
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Opaque cursor bound to the normalized search query
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo'
+                  type: array
+              type: object
+        "400":
+          description: Invalid search or cursor
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Search projected contacts
+      tags:
+      - User
   /user/info:
     post:
       consumes:

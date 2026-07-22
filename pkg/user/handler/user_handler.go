@@ -3,6 +3,7 @@ package user_handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -18,6 +19,7 @@ type UserHandler interface {
 	CheckUser(ctx *gin.Context)
 	GetAvatar(ctx *gin.Context)
 	GetContacts(ctx *gin.Context)
+	SearchContacts(ctx *gin.Context)
 	GetContact(ctx *gin.Context)
 	GetPrivacy(ctx *gin.Context)
 	SetPrivacy(ctx *gin.Context)
@@ -32,6 +34,8 @@ type UserHandler interface {
 type userHandler struct {
 	userService user_service.UserService
 }
+
+const defaultContactSearchLimit = 50
 
 // Get a user
 // @Summary Get a user
@@ -198,14 +202,47 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 
 	contacts, meta, err := u.userService.GetContacts(ctx.Request.Context(), instance)
 	if err != nil {
-		if errors.Is(err, projection_service.ErrContactsProjectionNotReady) {
-			ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeContactReadError(ctx, err)
 		return
 	}
 
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": contacts, "meta": meta})
+}
+
+// Search projected contacts
+// @Summary Search projected contacts
+// @Description Prefix-search normalized contacts from the persisted instance projection without querying WhatsApp
+// @Tags User
+// @Produce json
+// @Param q query string false "Case-insensitive prefix matched against normalized contact fields" maxlength(128)
+// @Param limit query int false "Page size (1-200)" minimum(1) maximum(200) default(50)
+// @Param cursor query string false "Opaque cursor bound to the normalized search query"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]user_service.ContactInfo} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid search or cursor"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /user/contacts/search [get]
+func (u *userHandler) SearchContacts(ctx *gin.Context) {
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		return
+	}
+	limit := defaultContactSearchLimit
+	if value := ctx.Query("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 200 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 200", "code": "invalid_pagination"})
+			return
+		}
+		limit = parsed
+	}
+	contacts, meta, err := u.userService.SearchContacts(ctx.Request.Context(), instance, ctx.Query("q"), limit, ctx.Query("cursor"))
+	if err != nil {
+		writeContactReadError(ctx, err)
+		return
+	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": contacts, "meta": meta})
 }
 
@@ -253,12 +290,16 @@ func isContactJID(jid types.JID) bool {
 
 func writeContactReadError(ctx *gin.Context, err error) {
 	switch {
+	case errors.Is(err, projection_service.ErrInvalidContactCursor):
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid contact search cursor", "code": "invalid_cursor"})
+	case errors.Is(err, projection_service.ErrInvalidContactSearch):
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid contact search query", "code": "invalid_search"})
 	case errors.Is(err, projection_service.ErrContactsProjectionNotReady):
-		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "contacts projection is not ready", "code": "projection_not_ready"})
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "contact not found"})
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "contact not found", "code": "not_found"})
 	default:
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}
 }
 

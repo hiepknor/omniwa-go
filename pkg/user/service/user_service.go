@@ -25,6 +25,7 @@ type UserService interface {
 	CheckUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*CheckUserCollection, error)
 	GetAvatar(ctx context.Context, data *GetAvatarStruct, instance *instance_model.Instance) (*types.ProfilePictureInfo, error)
 	GetContacts(context.Context, *instance_model.Instance) ([]ContactInfo, *projection_service.ProjectionReadMeta, error)
+	SearchContacts(context.Context, *instance_model.Instance, string, int, string) ([]ContactInfo, *projection_service.ProjectionReadMeta, error)
 	GetContact(context.Context, *instance_model.Instance, string) (*ContactInfo, *projection_service.ProjectionReadMeta, error)
 	GetPrivacy(ctx context.Context, instance *instance_model.Instance) (types.PrivacySettings, error)
 	SetPrivacy(ctx context.Context, data *PrivacyStruct, instance *instance_model.Instance) (*types.PrivacySettings, error)
@@ -403,6 +404,21 @@ func (u *userService) GetContacts(ctx context.Context, instance *instance_model.
 		return nil, nil, errors.New("contact projection reader and instance are required")
 	}
 	contacts, meta, err := u.contactReader.List(ctx, instance.Id)
+	if err != nil {
+		return nil, nil, err
+	}
+	result := make([]ContactInfo, len(contacts))
+	for index := range contacts {
+		result[index] = contactInfoFromProjection(&contacts[index])
+	}
+	return result, meta, nil
+}
+
+func (u *userService) SearchContacts(ctx context.Context, instance *instance_model.Instance, term string, limit int, cursor string) ([]ContactInfo, *projection_service.ProjectionReadMeta, error) {
+	if instance == nil || u.contactReader == nil {
+		return nil, nil, errors.New("contact projection reader and instance are required")
+	}
+	contacts, meta, err := u.contactReader.Search(ctx, instance.Id, term, limit, cursor)
 	if err != nil {
 		return nil, nil, err
 	}

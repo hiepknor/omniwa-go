@@ -487,6 +487,38 @@ CREATE TABLE campaign_audit_events (
 );
 CREATE INDEX campaign_audit_history_idx ON campaign_audit_events (instance_id, campaign_id, occurred_at ASC, id ASC);`,
 	},
+	{
+		Version: 13,
+		Name:    "index_contacts_projection_search",
+		SQL: `CREATE INDEX projected_contacts_search_sort_idx
+ON projected_contacts (
+    instance_id,
+    (LOWER(preferred_jid)),
+    contact_id
+)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_jid_idx
+ON projected_contacts (instance_id, (LOWER(preferred_jid)) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_first_name_idx
+ON projected_contacts (instance_id, (LOWER(COALESCE(first_name, ''))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_full_name_idx
+ON projected_contacts (instance_id, (LOWER(COALESCE(full_name, ''))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_push_name_idx
+ON projected_contacts (instance_id, (LOWER(COALESCE(push_name, ''))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_business_name_idx
+ON projected_contacts (instance_id, (LOWER(COALESCE(business_name, ''))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_username_idx
+ON projected_contacts (instance_id, (LOWER(COALESCE(username, ''))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_redacted_phone_idx
+ON projected_contacts (instance_id, (LOWER(COALESCE(redacted_phone, ''))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {
