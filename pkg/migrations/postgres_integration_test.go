@@ -1,8 +1,12 @@
 package migrations_test
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"testing"
+	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
@@ -40,6 +44,20 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := repository.Upsert(state); err != nil {
 		t.Fatal(err)
 	}
+	eventRepository := projection_repository.NewEventRepository(db)
+	event := &projection_model.Event{
+		InstanceID: instance.Id, Resource: "groups", EventKey: "event-1", EntityKey: "group-1",
+		EventType: "group_info", OccurredAt: time.Now(), Payload: json.RawMessage(`{"id":"group-1"}`),
+	}
+	inserted, err := eventRepository.Enqueue(context.Background(), event)
+	if err != nil || !inserted {
+		t.Fatalf("first enqueue = %v, %v", inserted, err)
+	}
+	duplicate := *event
+	inserted, err = eventRepository.Enqueue(context.Background(), &duplicate)
+	if err != nil || inserted {
+		t.Fatalf("duplicate enqueue = %v, %v", inserted, err)
+	}
 
 	raw, _ := db.DB()
 	_ = raw.Close()
@@ -53,5 +71,21 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	}
 	if stored.SyncStatus != projection_model.SyncStatusNotStarted || stored.SchemaVersion != 1 {
 		t.Fatalf("unexpected stored state: %#v", stored)
+	}
+	claimed, err := projection_repository.NewEventRepository(reopened).ClaimPending(context.Background(), 10, time.Minute)
+	if err != nil || len(claimed) != 1 || claimed[0].EventKey != "event-1" {
+		t.Fatalf("claimed after reconnect = %#v, %v", claimed, err)
+	}
+	if err := reopened.Model(&projection_model.Event{}).
+		Where("instance_id = ? AND resource = ? AND event_key = ?", instance.Id, "groups", "event-1").
+		Update("lease_until", time.Now().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	reclaimed, err := projection_repository.NewEventRepository(reopened).ClaimPending(context.Background(), 10, time.Minute)
+	if err != nil || len(reclaimed) != 1 || reclaimed[0].ClaimToken == nil || claimed[0].ClaimToken == nil || *reclaimed[0].ClaimToken == *claimed[0].ClaimToken {
+		t.Fatalf("reclaimed expired lease = %#v, %v", reclaimed, err)
+	}
+	if err := projection_repository.NewEventRepository(reopened).MarkProcessed(context.Background(), &claimed[0]); !errors.Is(err, projection_repository.ErrEventClaimLost) {
+		t.Fatalf("stale worker MarkProcessed() error = %v", err)
 	}
 }

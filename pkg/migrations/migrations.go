@@ -49,6 +49,35 @@ var registry = []Migration{
 );
 CREATE INDEX projection_states_status_idx ON projection_states (sync_status, updated_at);`,
 	},
+	{
+		Version: 2,
+		Name:    "create_projection_event_inbox",
+		SQL: `CREATE TABLE projection_event_inbox (
+    instance_id UUID NOT NULL,
+    resource VARCHAR(64) NOT NULL,
+    event_key VARCHAR(255) NOT NULL,
+    entity_key VARCHAR(255) NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    payload JSONB NOT NULL,
+    claim_token VARCHAR(64) NULL,
+    lease_until TIMESTAMPTZ NULL,
+    processed_at TIMESTAMPTZ NULL,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    last_error_code VARCHAR(64) NULL,
+    PRIMARY KEY (instance_id, resource, event_key),
+    CONSTRAINT projection_event_inbox_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT projection_event_inbox_status_check CHECK (status IN ('pending', 'processing', 'processed', 'failed')),
+    CONSTRAINT projection_event_inbox_retry_count_check CHECK (retry_count >= 0)
+);
+CREATE INDEX projection_event_inbox_work_idx ON projection_event_inbox (available_at, occurred_at, ingested_at)
+    WHERE status IN ('pending', 'failed');
+CREATE INDEX projection_event_inbox_expired_lease_idx ON projection_event_inbox (lease_until)
+    WHERE status = 'processing';`,
+	},
 }
 
 func Run(db *gorm.DB) error {
