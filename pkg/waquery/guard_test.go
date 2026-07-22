@@ -300,6 +300,37 @@ func TestWhatsAppRateLimitClassifierHandlesTypedAndWrappedErrors(t *testing.T) {
 	}
 }
 
+func TestObserveMutationRateLimitOpensCircuitWithoutRunningQuery(t *testing.T) {
+	guard, err := New(testSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = guard.ObserveError("instance-a", whatsmeow.ErrIQRateOverLimit)
+	assertRateLimitSource(t, err, LimitSourceUpstream)
+
+	var calls atomic.Int32
+	_, err = guard.Do(context.Background(), "instance-a", OperationGroupInfo, "group-a", func(context.Context) (any, error) {
+		calls.Add(1)
+		return "unexpected", nil
+	})
+	assertRateLimitSource(t, err, LimitSourceCircuitOpen)
+	if calls.Load() != 0 {
+		t.Fatalf("upstream calls = %d, want 0 during cooldown", calls.Load())
+	}
+}
+
+func TestObserveNonRateLimitErrorDoesNotCreateState(t *testing.T) {
+	guard, _ := New(testSettings())
+	want := errors.New("mutation failed")
+	if got := guard.ObserveError("instance-a", want); !errors.Is(got, want) {
+		t.Fatalf("ObserveError() = %v, want original error", got)
+	}
+	if _, ok := guard.Snapshot("instance-a"); ok {
+		t.Fatal("non-rate-limit mutation error created guard state")
+	}
+}
+
 func TestSettingsRejectNonFiniteRate(t *testing.T) {
 	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
 		settings := testSettings()

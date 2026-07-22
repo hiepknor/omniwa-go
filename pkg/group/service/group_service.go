@@ -221,6 +221,7 @@ func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInv
 		// Reset is a mutation, so it must never be single-flighted or consume the
 		// information-query budget.
 		resp, err = client.GetGroupInviteLink(ctx, recipient, true)
+		err = g.queryGuard.ObserveError(instance.Id, err)
 	} else {
 		resp, err = waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupInviteLink, recipient.String(), func(queryCtx context.Context) (string, error) {
 			return client.GetGroupInviteLink(queryCtx, recipient, false)
@@ -363,7 +364,7 @@ func (g *groupService) CreateGroup(ctx context.Context, data *CreateGroupStruct,
 	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create group: %v", instance.Id, err)
-		return nil, err
+		return nil, g.queryGuard.ObserveError(instance.Id, err)
 	}
 
 	var failed []types.JID

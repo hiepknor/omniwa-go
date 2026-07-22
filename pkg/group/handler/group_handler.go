@@ -301,6 +301,7 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SuccessResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Mutation or information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /group/create [post]
 func (g *groupHandler) CreateGroup(ctx *gin.Context) {

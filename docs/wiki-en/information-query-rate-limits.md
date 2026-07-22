@@ -49,6 +49,12 @@ header in delta seconds, and this additive error body:
 machine-readable `code`, wait for the larger of the header or `retryAfter`, add
 jitter, and avoid automatic retries for mutations whose outcome is uncertain.
 
+Mutations are never token-bucket limited or single-flighted by the information
+query guard. If WhatsApp returns 429 from a related mutation, OmniWA GO still
+opens the instance breaker and returns the same public 429 contract. Clients
+must not assume that a mutation returning 429 had no effect; reconcile state or
+require an explicit user retry after `Retry-After`.
+
 The guard is process-local. A deployment must keep one active owner for an
 instance until distributed ownership and coordination are implemented.
 

@@ -53,8 +53,25 @@ type Query func(context.Context) (any, error)
 
 type Guard interface {
 	Do(ctx context.Context, instanceID, operation, resource string, query Query) (any, error)
+	ObserveError(instanceID string, err error) error
 	RemoveInstance(instanceID string)
 	Snapshot(instanceID string) (Snapshot, bool)
+}
+
+// ObserveError classifies an error from an operation that must remain outside
+// the information-query limiter (for example, a mutation). An upstream 429
+// still opens the shared per-instance breaker and is normalized for HTTP
+// callers, without consuming a token or single-flighting the operation.
+func (g *QueryGuard) ObserveError(instanceID string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if strings.TrimSpace(instanceID) == "" || !g.classifier(err) {
+		return err
+	}
+
+	g.instance(instanceID).breaker.open(g.now(), g.settings.Cooldown)
+	return &RateLimitError{RetryAfter: g.settings.Cooldown, Source: LimitSourceUpstream, Cause: err}
 }
 
 // Do converts the untyped Guard boundary into a type-safe call for services.

@@ -702,6 +702,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Mutation or information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
