@@ -56,6 +56,7 @@ type instances struct {
 	whatsmeowService   whatsmeow_service.WhatsmeowService
 	loggerWrapper      *logger_wrapper.LoggerManager
 	queryGuard         waquery.Guard
+	identityResolver   waquery.IdentityResolver
 }
 
 type ProxyConfig struct {
@@ -362,6 +363,7 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 		delete(i.clientPointer, instance.Id)
 		delete(i.killChannel, instance.Id)
 		i.queryGuard.RemoveInstance(instance.Id)
+		i.identityResolver.RemoveInstance(instance.Id)
 
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Logout successful", instance.Id)
 		return instance, nil
@@ -378,6 +380,7 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 		delete(i.clientPointer, instance.Id)
 		delete(i.killChannel, instance.Id)
 		i.queryGuard.RemoveInstance(instance.Id)
+		i.identityResolver.RemoveInstance(instance.Id)
 
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Disconnection successful", instance.Id)
 		return instance, nil
@@ -616,6 +619,7 @@ func (i instances) Delete(id string) error {
 		return err
 	}
 	i.queryGuard.RemoveInstance(instance.Id)
+	i.identityResolver.RemoveInstance(instance.Id)
 
 	return nil
 }
@@ -922,6 +926,7 @@ func NewInstanceService(
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	config *config.Config,
 	queryGuard waquery.Guard,
+	identityResolver waquery.IdentityResolver,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) InstanceService {
 	return &instances{
@@ -931,6 +936,7 @@ func NewInstanceService(
 		whatsmeowService:   whatsmeowService,
 		config:             config,
 		queryGuard:         queryGuard,
+		identityResolver:   identityResolver,
 		loggerWrapper:      loggerWrapper,
 	}
 }

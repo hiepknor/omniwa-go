@@ -59,6 +59,7 @@ type sendService struct {
 	config           *config.Config
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
+	identityResolver waquery.IdentityResolver
 }
 
 type SendDataStruct struct {
@@ -573,8 +574,8 @@ func (s *sendService) checkSingleUserExists(client *whatsmeow.Client, phone stri
 	}
 
 	// Check if the number exists on WhatsApp
-	resp, err := waquery.Do(context.Background(), s.queryGuard, instanceId, waquery.OperationUserExists, waquery.ResourceKey(phoneNumbers...), func(queryCtx context.Context) ([]types.IsOnWhatsAppResponse, error) {
-		return client.IsOnWhatsApp(queryCtx, phoneNumbers)
+	resp, err := s.identityResolver.Resolve(context.Background(), instanceId, phoneNumbers, func(queryCtx context.Context, missing []string) ([]types.IsOnWhatsAppResponse, error) {
+		return client.IsOnWhatsApp(queryCtx, missing)
 	})
 	if err != nil {
 		return "", false, fmt.Errorf("failed to check if number %s exists on WhatsApp: %v", phoneNumbers[0], err)
@@ -3376,6 +3377,7 @@ func NewSendService(
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	config *config.Config,
 	queryGuard waquery.Guard,
+	identityResolver waquery.IdentityResolver,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) SendService {
 	return &sendService{
@@ -3383,6 +3385,7 @@ func NewSendService(
 		whatsmeowService: whatsmeowService,
 		config:           config,
 		queryGuard:       queryGuard,
+		identityResolver: identityResolver,
 		loggerWrapper:    loggerWrapper,
 	}
 }
