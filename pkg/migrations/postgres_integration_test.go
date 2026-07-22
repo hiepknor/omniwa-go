@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -136,5 +138,63 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	}
 	if _, _, err := groupRepository.Get(context.Background(), instance.Id, "group@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("tombstoned group remained readable: %v", err)
+	}
+
+	pendingDelta := &projection_model.Event{
+		InstanceID: instance.Id, Resource: "groups", EventKey: "pending-delta", EntityKey: "worker@g.us",
+		EventType: "group_info", OccurredAt: time.Unix(800, 0), Payload: json.RawMessage(`{"groupId":"worker@g.us"}`),
+	}
+	if inserted, err := projection_repository.NewEventRepository(reopened).Enqueue(context.Background(), pendingDelta); err != nil || !inserted {
+		t.Fatalf("pending delta enqueue = %v, %v", inserted, err)
+	}
+	joinedSnapshot := &projection_model.Event{
+		InstanceID: instance.Id, Resource: "groups", EventKey: "joined-snapshot", EntityKey: "worker@g.us",
+		EventType: "joined_group", OccurredAt: time.Unix(800, 0),
+		Payload: json.RawMessage(`{"groupId":"worker@g.us","name":{"name":"Worker group","setAt":"1970-01-01T00:13:20Z"},"locked":false,"announce":{"enabled":false},"ephemeral":{"enabled":false,"timer":0},"joinApprovalRequired":false,"suspended":false,"joined":{"type":"new"},"participants":[{"id":"worker-admin@s.whatsapp.net","admin":true}]}`),
+	}
+	if inserted, err := projection_repository.NewEventRepository(reopened).Enqueue(context.Background(), joinedSnapshot); err != nil || !inserted {
+		t.Fatalf("joined snapshot enqueue = %v, %v", inserted, err)
+	}
+	stateService := projection_service.NewStateService(projection_repository.NewStateRepository(reopened))
+	projector := projection_service.NewGroupProjector(groupRepository, stateService)
+	eventService := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second)
+	batch, err := eventService.ProcessBatchFor(context.Background(), "groups", []string{"joined_group"}, 10, projector.Handle)
+	if err != nil || batch.Claimed != 1 || batch.Processed != 1 || batch.Failed != 0 {
+		t.Fatalf("joined snapshot batch = %#v, %v", batch, err)
+	}
+	workerGroup, workerParticipants, err := groupRepository.Get(context.Background(), instance.Id, "worker@g.us")
+	if err != nil || workerGroup.Name == nil || *workerGroup.Name != "Worker group" || len(workerParticipants) != 1 || workerParticipants[0].Role != projection_model.ParticipantRoleAdmin {
+		t.Fatalf("worker projection = %#v, %#v, %v", workerGroup, workerParticipants, err)
+	}
+	state, err = stateService.Get(instance.Id, "groups")
+	if err != nil || state.SyncStatus != projection_model.SyncStatusNotStarted || state.LastEventAt == nil || !state.LastEventAt.Equal(time.Unix(800, 0)) {
+		t.Fatalf("groups projection state = %#v, %v", state, err)
+	}
+	var pendingCount int64
+	if err := reopened.Model(&projection_model.Event{}).
+		Where("instance_id = ? AND resource = ? AND event_key = ? AND status = ?", instance.Id, "groups", "pending-delta", projection_model.EventStatusPending).
+		Count(&pendingCount).Error; err != nil || pendingCount != 1 {
+		t.Fatalf("unsupported delta was claimed: count=%d error=%v", pendingCount, err)
+	}
+	var stateWrites sync.WaitGroup
+	stateErrors := make(chan error, 50)
+	for index := 0; index < 50; index++ {
+		index := index
+		stateWrites.Add(1)
+		go func() {
+			defer stateWrites.Done()
+			stateErrors <- stateService.RecordEvent(instance.Id, "contacts", int64(index%3+1), time.Unix(int64(index), 0))
+		}()
+	}
+	stateWrites.Wait()
+	close(stateErrors)
+	for err := range stateErrors {
+		if err != nil {
+			t.Fatalf("concurrent state update: %v", err)
+		}
+	}
+	contactState, err := stateService.Get(instance.Id, "contacts")
+	if err != nil || contactState.LastEventAt == nil || !contactState.LastEventAt.Equal(time.Unix(49, 0)) || contactState.SchemaVersion != 3 {
+		t.Fatalf("monotonic concurrent state = %#v, %v", contactState, err)
 	}
 }

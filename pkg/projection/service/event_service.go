@@ -22,6 +22,7 @@ type EventBatchResult struct {
 type EventService interface {
 	Ingest(ctx context.Context, event *projection_model.Event) (bool, error)
 	ProcessBatch(ctx context.Context, limit int, handler EventHandler) (EventBatchResult, error)
+	ProcessBatchFor(ctx context.Context, resource string, eventTypes []string, limit int, handler EventHandler) (EventBatchResult, error)
 }
 
 type eventService struct {
@@ -43,6 +44,17 @@ func (s *eventService) Ingest(ctx context.Context, event *projection_model.Event
 }
 
 func (s *eventService) ProcessBatch(ctx context.Context, limit int, handler EventHandler) (EventBatchResult, error) {
+	return s.processBatch(ctx, "", nil, limit, handler)
+}
+
+func (s *eventService) ProcessBatchFor(ctx context.Context, resource string, eventTypes []string, limit int, handler EventHandler) (EventBatchResult, error) {
+	if resource == "" || len(eventTypes) == 0 {
+		return EventBatchResult{}, errors.New("projection resource and event types are required")
+	}
+	return s.processBatch(ctx, resource, eventTypes, limit, handler)
+}
+
+func (s *eventService) processBatch(ctx context.Context, resource string, eventTypes []string, limit int, handler EventHandler) (EventBatchResult, error) {
 	var result EventBatchResult
 	if s.repository == nil {
 		return result, errors.New("projection event repository is required")
@@ -53,7 +65,13 @@ func (s *eventService) ProcessBatch(ctx context.Context, limit int, handler Even
 	if s.leaseDuration <= 0 || s.retryDelay < 0 {
 		return result, errors.New("projection event lease and retry durations are invalid")
 	}
-	events, err := s.repository.ClaimPending(ctx, limit, s.leaseDuration)
+	var events []projection_model.Event
+	var err error
+	if resource == "" {
+		events, err = s.repository.ClaimPending(ctx, limit, s.leaseDuration)
+	} else {
+		events, err = s.repository.ClaimPendingFor(ctx, resource, eventTypes, limit, s.leaseDuration)
+	}
 	if err != nil {
 		return result, err
 	}

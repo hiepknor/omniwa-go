@@ -67,15 +67,7 @@ func (s *stateService) Ensure(instanceID, resource string, schemaVersion int64) 
 }
 
 func (s *stateService) RecordEvent(instanceID, resource string, schemaVersion int64, occurredAt time.Time) error {
-	state, err := s.Ensure(instanceID, resource, schemaVersion)
-	if err != nil {
-		return err
-	}
-	if state.LastEventAt == nil || occurredAt.After(*state.LastEventAt) {
-		occurredAt = occurredAt.UTC()
-		state.LastEventAt = &occurredAt
-	}
-	return s.repository.Upsert(state)
+	return s.repository.RecordEvent(instanceID, resource, schemaVersion, occurredAt)
 }
 
 func (s *stateService) MarkSyncing(instanceID, resource string, schemaVersion int64) error {

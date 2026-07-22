@@ -33,6 +33,10 @@ func (r *memoryEventRepository) ClaimPending(_ context.Context, limit int, _ tim
 	return append([]projection_model.Event(nil), r.events...), nil
 }
 
+func (r *memoryEventRepository) ClaimPendingFor(ctx context.Context, _ string, _ []string, limit int, lease time.Duration) ([]projection_model.Event, error) {
+	return r.ClaimPending(ctx, limit, lease)
+}
+
 func (r *memoryEventRepository) MarkProcessed(_ context.Context, _ *projection_model.Event) error {
 	r.processed++
 	return nil

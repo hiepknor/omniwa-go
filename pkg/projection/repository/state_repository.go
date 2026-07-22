@@ -3,6 +3,7 @@ package projection_repository
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	"gorm.io/gorm"
@@ -13,6 +14,7 @@ type StateRepository interface {
 	Get(instanceID, resource string) (*projection_model.State, error)
 	ListByInstance(instanceID string) ([]projection_model.State, error)
 	Upsert(state *projection_model.State) error
+	RecordEvent(instanceID, resource string, schemaVersion int64, occurredAt time.Time) error
 }
 
 type stateRepository struct{ db *gorm.DB }
@@ -46,6 +48,25 @@ func (r *stateRepository) Upsert(state *projection_model.State) error {
 		Columns: []clause.Column{{Name: "instance_id"}, {Name: "resource"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"sync_status", "last_event_at", "last_reconciled_at", "stale_since", "schema_version", "updated_at",
+		}),
+	}).Create(state).Error
+}
+
+func (r *stateRepository) RecordEvent(instanceID, resource string, schemaVersion int64, occurredAt time.Time) error {
+	if instanceID == "" || resource == "" || schemaVersion <= 0 || occurredAt.IsZero() {
+		return errors.New("projection event state is invalid")
+	}
+	occurredAt = occurredAt.UTC()
+	state := &projection_model.State{
+		InstanceID: instanceID, Resource: resource, SyncStatus: projection_model.SyncStatusNotStarted,
+		LastEventAt: &occurredAt, SchemaVersion: schemaVersion,
+	}
+	return r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "instance_id"}, {Name: "resource"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"last_event_at":  gorm.Expr("CASE WHEN projection_states.last_event_at IS NULL OR projection_states.last_event_at < EXCLUDED.last_event_at THEN EXCLUDED.last_event_at ELSE projection_states.last_event_at END"),
+			"schema_version": gorm.Expr("GREATEST(projection_states.schema_version, EXCLUDED.schema_version)"),
+			"updated_at":     gorm.Expr("NOW()"),
 		}),
 	}).Create(state).Error
 }

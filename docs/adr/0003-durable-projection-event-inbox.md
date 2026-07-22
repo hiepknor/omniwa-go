@@ -56,5 +56,6 @@ introduced; no cleanup policy is implied by this decision.
 - Crashed work becomes resumable after its lease expires.
 - Inbox persistence and projection mutation are not yet one transaction;
   projectors remain responsible for idempotency.
-- Wiring additional producers, worker lifecycle, metrics, retention, and
-  resource-specific projection logic are separate increments.
+- Wiring additional producers, metrics, retention, and remaining
+  resource-specific projection logic are separate increments. The first worker
+  lifecycle is enabled only for registered `JoinedGroup` snapshot handling.

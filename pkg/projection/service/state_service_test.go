@@ -37,6 +37,22 @@ func (r *memoryStateRepository) Upsert(state *projection_model.State) error {
 	r.states[stateKey(state.InstanceID, state.Resource)] = *state
 	return nil
 }
+func (r *memoryStateRepository) RecordEvent(instanceID, resource string, schemaVersion int64, occurredAt time.Time) error {
+	key := stateKey(instanceID, resource)
+	state, exists := r.states[key]
+	if !exists {
+		state = projection_model.State{InstanceID: instanceID, Resource: resource, SyncStatus: projection_model.SyncStatusNotStarted}
+	}
+	if state.LastEventAt == nil || occurredAt.After(*state.LastEventAt) {
+		occurredAt = occurredAt.UTC()
+		state.LastEventAt = &occurredAt
+	}
+	if schemaVersion > state.SchemaVersion {
+		state.SchemaVersion = schemaVersion
+	}
+	r.states[key] = state
+	return nil
+}
 
 func TestStateLifecyclePreservesNewestEventAndControlsCapabilities(t *testing.T) {
 	repository := newMemoryRepository()
