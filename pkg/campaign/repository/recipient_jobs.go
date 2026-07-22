@@ -84,6 +84,14 @@ func (r *campaignRepository) MarkSent(ctx context.Context, recipient *campaign_m
 }
 
 func (r *campaignRepository) MarkRetry(ctx context.Context, recipient *campaign_model.Recipient, errorCode string, retryAt time.Time) error {
+	return r.reschedule(ctx, recipient, errorCode, retryAt, true, "recipient_retry_scheduled")
+}
+
+func (r *campaignRepository) MarkDeferred(ctx context.Context, recipient *campaign_model.Recipient, errorCode string, retryAt time.Time) error {
+	return r.reschedule(ctx, recipient, errorCode, retryAt, false, "recipient_deferred")
+}
+
+func (r *campaignRepository) reschedule(ctx context.Context, recipient *campaign_model.Recipient, errorCode string, retryAt time.Time, countAttempt bool, eventType string) error {
 	if err := r.validateClaimMutation(ctx, recipient); err != nil {
 		return err
 	}
@@ -91,9 +99,11 @@ func (r *campaignRepository) MarkRetry(ctx context.Context, recipient *campaign_
 	if !safeCampaignErrorCode.MatchString(errorCode) || retryAt.IsZero() || !retryAt.After(now) {
 		return errors.New("safe campaign error code and retry time are required")
 	}
-	return r.finishClaim(ctx, recipient, campaign_model.RecipientStatusPending, "recipient_retry_scheduled", map[string]any{
-		"next_attempt_at": retryAt.UTC(), "attempt_count": gorm.Expr("attempt_count + 1"), "last_error_code": errorCode,
-	}, now)
+	updates := map[string]any{"next_attempt_at": retryAt.UTC(), "last_error_code": errorCode}
+	if countAttempt {
+		updates["attempt_count"] = gorm.Expr("attempt_count + 1")
+	}
+	return r.finishClaim(ctx, recipient, campaign_model.RecipientStatusPending, eventType, updates, now)
 }
 
 func (r *campaignRepository) MarkFailed(ctx context.Context, recipient *campaign_model.Recipient, errorCode string) error {

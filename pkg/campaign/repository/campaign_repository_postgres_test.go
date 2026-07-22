@@ -52,6 +52,10 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+	loaded, err := repository.GetCampaign(context.Background(), instance.Id, campaign.ID)
+	if err != nil || loaded.ID != campaign.ID || loaded.InstanceID != instance.Id {
+		t.Fatalf("scoped campaign lookup = %#v, %v", loaded, err)
+	}
 	startsAt := time.Now().UTC()
 	if _, err := repository.Transition(context.Background(), instance.Id, campaign.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"}); err != nil {
 		t.Fatal(err)
@@ -141,7 +145,7 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 		t.Fatalf("stale claim completion error = %v", err)
 	}
 	retryAt := time.Now().Add(25 * time.Millisecond)
-	if err := repository.MarkRetry(context.Background(), &claimed[1], "temporary_failure", retryAt); err != nil {
+	if err := repository.MarkDeferred(context.Background(), &claimed[1], "outbound_rate_limited", retryAt); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.MarkFailed(context.Background(), &claimed[2], "permanent_failure"); err != nil {
@@ -158,6 +162,18 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 	if err != nil || len(retried) != 1 || retried[0].ID != claimed[1].ID {
 		t.Fatalf("retried claim = %#v, %v", retried, err)
 	}
+	if retried[0].AttemptCount != 0 {
+		t.Fatalf("rate-limit deferral consumed an attempt: %d", retried[0].AttemptCount)
+	}
+	retryAt = time.Now().Add(25 * time.Millisecond)
+	if err := repository.MarkRetry(context.Background(), &retried[0], "temporary_failure", retryAt); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(30 * time.Millisecond)
+	retried, err = repository.ClaimReadyForInstance(context.Background(), instance.Id, 1, time.Minute)
+	if err != nil || len(retried) != 1 || retried[0].AttemptCount != 1 {
+		t.Fatalf("counted retry claim = %#v, %v", retried, err)
+	}
 	if err := repository.MarkSent(context.Background(), &retried[0], "provider-2"); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +182,7 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 		t.Fatalf("completed campaign = %#v, %v", completed, err)
 	}
 	audit, err = repository.ListAudit(context.Background(), instance.Id, campaign.ID)
-	if err != nil || len(audit) != 11 {
+	if err != nil || len(audit) != 12 {
 		t.Fatalf("recipient audit = %#v, %v", audit, err)
 	}
 

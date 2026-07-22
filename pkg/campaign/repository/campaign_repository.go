@@ -47,12 +47,14 @@ type DraftInput struct {
 type CampaignRepository interface {
 	CreateDraft(context.Context, string, DraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error)
 	Get(context.Context, string, string) (*campaign_model.Campaign, []campaign_model.Recipient, error)
+	GetCampaign(context.Context, string, string) (*campaign_model.Campaign, error)
 	Transition(context.Context, string, string, campaign_model.CampaignStatus, *time.Time, Actor) (*campaign_model.Campaign, error)
 	ListAudit(context.Context, string, string) ([]campaign_model.AuditEvent, error)
 	ClaimReady(context.Context, int, time.Duration) ([]campaign_model.Recipient, error)
 	ClaimReadyForInstance(context.Context, string, int, time.Duration) ([]campaign_model.Recipient, error)
 	MarkSent(context.Context, *campaign_model.Recipient, string) error
 	MarkRetry(context.Context, *campaign_model.Recipient, string, time.Time) error
+	MarkDeferred(context.Context, *campaign_model.Recipient, string, time.Time) error
 	MarkFailed(context.Context, *campaign_model.Recipient, string) error
 }
 
@@ -113,6 +115,15 @@ func (r *campaignRepository) Get(ctx context.Context, instanceID, campaignID str
 		return nil, nil, err
 	}
 	return &campaign, recipients, nil
+}
+
+func (r *campaignRepository) GetCampaign(ctx context.Context, instanceID, campaignID string) (*campaign_model.Campaign, error) {
+	if r == nil || r.db == nil || ctx == nil || uuid.Validate(instanceID) != nil || uuid.Validate(campaignID) != nil {
+		return nil, errors.New("campaign repository and identities are required")
+	}
+	var campaign campaign_model.Campaign
+	err := r.db.WithContext(ctx).Where("instance_id = ? AND id = ?", instanceID, campaignID).First(&campaign).Error
+	return &campaign, err
 }
 
 func (r *campaignRepository) Transition(ctx context.Context, instanceID, campaignID string, target campaign_model.CampaignStatus, startsAt *time.Time, actor Actor) (*campaign_model.Campaign, error) {

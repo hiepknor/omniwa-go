@@ -20,6 +20,11 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_OUTBOUND_RATE, "")
 	t.Setenv(config_env.WA_OUTBOUND_BURST, "")
 	t.Setenv(config_env.WA_OUTBOUND_MAX_WAIT, "")
+	t.Setenv(config_env.WA_CAMPAIGN_BATCH, "")
+	t.Setenv(config_env.WA_CAMPAIGN_LEASE, "")
+	t.Setenv(config_env.WA_CAMPAIGN_POLL_INTERVAL, "")
+	t.Setenv(config_env.WA_CAMPAIGN_MAX_ATTEMPTS, "")
+	t.Setenv(config_env.WA_CAMPAIGN_RETRY_BASE, "")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
@@ -46,6 +51,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if math.Abs(config.WAOutboundRatePerSecond-(30.0/60.0)) > 1e-12 || config.WAOutboundBurst != 5 || config.WAOutboundMaxWait != 5*time.Second {
 		t.Fatalf("outbound defaults = %v/%d/%v", config.WAOutboundRatePerSecond, config.WAOutboundBurst, config.WAOutboundMaxWait)
 	}
+	if config.CampaignBatchSize != 10 || config.CampaignLease != 2*time.Minute || config.CampaignPollInterval != time.Second || config.CampaignMaxAttempts != 3 || config.CampaignRetryBase != 30*time.Second {
+		t.Fatalf("campaign defaults = %d/%v/%v/%d/%v", config.CampaignBatchSize, config.CampaignLease, config.CampaignPollInterval, config.CampaignMaxAttempts, config.CampaignRetryBase)
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -60,6 +68,11 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_OUTBOUND_RATE, "120/hour")
 	t.Setenv(config_env.WA_OUTBOUND_BURST, "7")
 	t.Setenv(config_env.WA_OUTBOUND_MAX_WAIT, "2s")
+	t.Setenv(config_env.WA_CAMPAIGN_BATCH, "20")
+	t.Setenv(config_env.WA_CAMPAIGN_LEASE, "3m")
+	t.Setenv(config_env.WA_CAMPAIGN_POLL_INTERVAL, "2s")
+	t.Setenv(config_env.WA_CAMPAIGN_MAX_ATTEMPTS, "5")
+	t.Setenv(config_env.WA_CAMPAIGN_RETRY_BASE, "45s")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(12.0/3600.0)) > 1e-12 {
@@ -79,6 +92,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if math.Abs(config.WAOutboundRatePerSecond-(120.0/3600.0)) > 1e-12 || config.WAOutboundBurst != 7 || config.WAOutboundMaxWait != 2*time.Second {
 		t.Fatalf("outbound overrides = %v/%d/%v", config.WAOutboundRatePerSecond, config.WAOutboundBurst, config.WAOutboundMaxWait)
+	}
+	if config.CampaignBatchSize != 20 || config.CampaignLease != 3*time.Minute || config.CampaignPollInterval != 2*time.Second || config.CampaignMaxAttempts != 5 || config.CampaignRetryBase != 45*time.Second {
+		t.Fatalf("campaign overrides = %d/%v/%v/%d/%v", config.CampaignBatchSize, config.CampaignLease, config.CampaignPollInterval, config.CampaignMaxAttempts, config.CampaignRetryBase)
 	}
 }
 
