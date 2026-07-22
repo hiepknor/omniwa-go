@@ -15,9 +15,16 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=dev
-RUN CGO_ENABLED=1 go build -ldflags "-X main.version=${VERSION}" -o server ./cmd/evolution-go
+ARG REVISION=unknown
+RUN CGO_ENABLED=1 go build -ldflags "-X main.version=${VERSION} -X main.revision=${REVISION}" -o server ./cmd/evolution-go
 
 FROM alpine:3.19.1 AS final
+
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.source="https://github.com/hiepknor/omniwa-go"
 
 # poppler-utils provides pdftoppm, used to rasterize PDF page 1 for /send/media document thumbnails
 RUN apk update && apk add --no-cache tzdata ffmpeg libjpeg-turbo libwebp poppler-utils

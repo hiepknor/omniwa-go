@@ -14,11 +14,27 @@ ghcr.io` first). Run the commands **from this `docker/` directory**.
 ## Development
 
 ```bash
+export OMNIWA_IMAGE=ghcr.io/hiepknor/omniwa-go:sha-<40-character-main-commit>
+docker compose -f docker-compose.dev.yml pull omniwa-go
 docker compose -f docker-compose.dev.yml up -d
-curl http://localhost:4000/health
+curl http://localhost:4000/server/ok
 ```
 
-Pin a version: `IMAGE_TAG=0.7.2 docker compose -f docker-compose.dev.yml up -d`.
+`OMNIWA_IMAGE` is required and must identify the intended build with an
+immutable `sha-<40-character-commit>` tag or, preferably, a digest such as
+`ghcr.io/hiepknor/omniwa-go@sha256:...`. The development stack intentionally
+has no `latest` fallback.
+
+Verify the running source revision against the container label and API metadata:
+
+```bash
+docker inspect omniwa-go --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+curl -s -H 'apikey: dev-global-api-key-change-me' \
+  http://localhost:4000/server/capabilities
+```
+
+The expected commit, OCI revision label, and `data.revision` response must be
+identical before the deployment is accepted.
 
 ## Production (base)
 

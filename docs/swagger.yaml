@@ -63,6 +63,9 @@ definitions:
         items:
           type: string
         type: array
+      revision:
+        example: 0123456789abcdef0123456789abcdef01234567
+        type: string
       version:
         example: 1.2.3
         type: string

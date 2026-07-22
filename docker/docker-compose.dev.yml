@@ -8,12 +8,10 @@
 # omniwa-go > Package settings > Change visibility > Public). Otherwise run
 # `docker login ghcr.io -u hiepknor` with a read:packages token first.
 #
-# Usage (from this docker/ directory):
-#   docker compose -f docker-compose.dev.yml up -d
-#   curl http://localhost:4000/health
-#
-# Pin a specific version by setting IMAGE_TAG (defaults to latest):
-#   IMAGE_TAG=0.7.2 docker compose -f docker-compose.dev.yml up -d
+# Usage (from this docker/ directory, with an immutable tag or digest):
+#   OMNIWA_IMAGE=ghcr.io/hiepknor/omniwa-go:sha-<40-character-commit> \
+#     docker compose -f docker-compose.dev.yml up -d
+#   curl http://localhost:4000/server/ok
 
 # Compose project name (the "stack" shown in Docker Desktop). Without this,
 # Compose falls back to the directory name ("docker"). Kept distinct from the
@@ -22,7 +20,7 @@ name: omniwa-dev
 
 services:
   omniwa-go:
-    image: ghcr.io/hiepknor/omniwa-go:${IMAGE_TAG:-latest}
+    image: ${OMNIWA_IMAGE:?Set OMNIWA_IMAGE to an immutable sha-<commit> tag or sha256 digest}
     container_name: omniwa-go
     restart: unless-stopped
     ports:

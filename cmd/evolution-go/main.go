@@ -79,6 +79,7 @@ import (
 var devMode = flag.Bool("dev", false, "Enable development mode")
 
 var version = "0.0.0"
+var revision = "unknown"
 
 func init() {
 	// ldflags -X main.version= sets this at compile time.
@@ -463,7 +464,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),
 		pollHandler,
-		server_handler.NewServerHandler(version, projectionStateService, durableEventReader, overviewService, healthService),
+		server_handler.NewServerHandler(version, revision, projectionStateService, durableEventReader, overviewService, healthService),
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {
@@ -580,7 +581,7 @@ func main() {
 
 	cfg := config.Load()
 
-	logger.LogInfo("Starting OmniWA GO version %s", version)
+	logger.LogInfo("Starting OmniWA GO version %s revision %s", version, revision)
 
 	startTime := time.Now()
 
