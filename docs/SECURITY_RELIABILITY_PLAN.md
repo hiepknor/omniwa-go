@@ -103,7 +103,10 @@ must remain deployable.
     builds the production Dockerfile and verifies artifact identity, non-root
     execution, liveness, migration completeness, restart survival, and
     migration idempotency against isolated PostgreSQL.
-23. Replace mutable build-and-push behavior with digest promotion.
+23. Replace mutable build-and-push behavior with digest promotion. Completed:
+    successful main CI publishes one immutable SHA image with SBOM and
+    provenance, while Git releases promote that existing digest without a
+    rebuild or movable release alias.
 24. Bound webhook delivery workers without claiming a public durable-history
     contract.
 

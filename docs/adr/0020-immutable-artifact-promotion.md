@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Implemented
 
 ## Context
 
@@ -22,9 +22,10 @@ provenance complete before promotion. A separate promotion step accepts an
 existing digest, verifies its source revision against the expected `main` HEAD
 or Git release tag, and attaches release aliases without rebuilding.
 
-Semantic version aliases are created only from Git releases. Deployments record
-and use image digests. `latest` may remain a convenience alias but is never a
-deployment source of truth.
+Semantic version aliases are created only from Git releases. An existing alias
+may be reused only when it already resolves to the same digest; promotion fails
+instead of moving it. Deployments record and use image digests. No `latest`
+application alias is published or accepted by the maintained deployment files.
 
 The application reports its source revision through non-sensitive capability
 metadata, and the OCI revision label uses the same value. Deployment

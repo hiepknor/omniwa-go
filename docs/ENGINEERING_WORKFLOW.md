@@ -232,6 +232,16 @@ Container base images must remain on supported release branches. Treat a base
 image reaching end of support as a release blocker, then rerun the complete
 container smoke test after upgrading it.
 
+The image workflow runs only after CI succeeds for the exact `main` commit. It
+publishes an immutable SHA tag, digest, SBOM, and provenance. GitHub releases
+promote that existing digest to an immutable semantic-version alias without
+rebuilding. Production and development deployments use the digest, verify OCI
+and runtime revisions, and retain the prior digest for rollback.
+
+CI validates all workflow files with pinned `actionlint`, parses every CI shell
+script, and exercises the fail-closed image/tag validation paths. Release
+automation changes are not accepted based on YAML parsing alone.
+
 ## 10. Mandatory self-review
 
 Read the complete diff before committing and verify:

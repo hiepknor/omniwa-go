@@ -1,74 +1,108 @@
 name: Build and Publish Docker Image
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
 
 concurrency:
-  group: publish-main
-  cancel-in-progress: true
+  group: publish-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/hiepknor/omniwa-go
 
 jobs:
-  build_deploy:
+  build:
     name: Build immutable image
-    # Only publish from this fork; skip on any further fork so it never fails there.
-    if: github.repository == 'hiepknor/omniwa-go'
+    if: >-
+      github.repository == 'hiepknor/omniwa-go' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout verified source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          submodules: recursive
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
 
-      - name: Read version
-        id: version
-        run: echo "version=$(cat VERSION 2>/dev/null || echo '0.0.0')" >> $GITHUB_OUTPUT
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/hiepknor/omniwa-go
-          tags: |
-            type=sha,format=long,prefix=sha-
+      - name: Verify checkout and read version
+        id: source
+        env:
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$EXPECTED_SHA"
+          version="$(tr -d '[:space:]' < VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          echo "sha=$actual_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
-        id: docker_build
-        uses: docker/build-push-action@v5
+      - name: Check for an existing immutable image
+        id: existing
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          image_ref="$IMAGE_NAME:sha-$SOURCE_SHA"
+          if docker buildx imagetools inspect "$image_ref" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push immutable image
+        if: steps.existing.outputs.exists != 'true'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.IMAGE_NAME }}:sha-${{ steps.source.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          sbom: true
+          provenance: mode=max
           build-args: |
-            VERSION=${{ steps.version.outputs.version }}
-            REVISION=${{ github.sha }}
+            VERSION=${{ steps.source.outputs.version }}
+            REVISION=${{ steps.source.outputs.sha }}
+
+      - name: Resolve and verify immutable digest
+        id: image
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          image_ref="$IMAGE_NAME:sha-$SOURCE_SHA"
+          digest="$(docker buildx imagetools inspect "$image_ref" | awk '$1 == "Digest:" { print $2; exit }')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          bash scripts/ci/verify-image.sh "$IMAGE_NAME@$digest" "$SOURCE_SHA" "$SOURCE_VERSION"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Record immutable image
         env:
-          IMAGE_DIGEST: ${{ steps.docker_build.outputs.digest }}
-          SOURCE_SHA: ${{ github.sha }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
           echo "### Immutable image" >> "$GITHUB_STEP_SUMMARY"
-          printf '`%s@%s`\n' 'ghcr.io/hiepknor/omniwa-go' "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          printf '`%s@%s`\n' "$IMAGE_NAME" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
           echo "Source revision: \`$SOURCE_SHA\`" >> "$GITHUB_STEP_SUMMARY"
