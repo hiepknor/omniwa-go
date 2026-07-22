@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -12,6 +13,28 @@ import (
 	"github.com/gomessguii/logger"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+var sensitiveLogPatterns = []struct {
+	pattern     *regexp.Regexp
+	replacement string
+}{
+	{
+		pattern:     regexp.MustCompile(`(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+`),
+		replacement: `${1}[REDACTED]`,
+	},
+	{
+		pattern:     regexp.MustCompile(`(?i)(\b(?:api[_-]?key|access[_-]?token|token|password|passwd|secret|authorization)\b["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^,;\s]+)`),
+		replacement: `${1}[REDACTED]`,
+	},
+	{
+		pattern:     regexp.MustCompile(`(?i)([?&](?:api[_-]?key|access[_-]?token|token|password|passwd|secret|signature|sig|x-amz-signature|x-amz-credential|x-amz-security-token|googleaccessid)=)[^&#\s]+`),
+		replacement: `${1}[REDACTED]`,
+	},
+	{
+		pattern:     regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://[^:/@\s]+:)[^@/\s]+(@)`),
+		replacement: `${1}[REDACTED]${2}`,
+	},
+}
 
 type LoggerManager struct {
 	config  *config.Config
@@ -92,26 +115,41 @@ func newLogger(instanceId string, config *config.Config) *Logger {
 }
 
 func (l *Logger) LogInfo(format string, args ...interface{}) {
-	l.log("INFO", format, args...)
-	logger.LogInfo(format, args...)
+	message := RedactSensitive(fmt.Sprintf(format, args...))
+	l.log("INFO", message)
+	logger.LogInfo("%s", message)
 }
 
 func (l *Logger) LogError(format string, args ...interface{}) {
-	l.log("ERROR", format, args...)
-	logger.LogError(format, args...)
+	message := RedactSensitive(fmt.Sprintf(format, args...))
+	l.log("ERROR", message)
+	logger.LogError("%s", message)
 }
 
 func (l *Logger) LogWarn(format string, args ...interface{}) {
-	l.log("WARN", format, args...)
-	logger.LogWarn(format, args...)
+	message := RedactSensitive(fmt.Sprintf(format, args...))
+	l.log("WARN", message)
+	logger.LogWarn("%s", message)
 }
 
 func (l *Logger) LogDebug(format string, args ...interface{}) {
-	l.log("DEBUG", format, args...)
-	logger.LogDebug(format, args...)
+	message := RedactSensitive(fmt.Sprintf(format, args...))
+	l.log("DEBUG", message)
+	logger.LogDebug("%s", message)
 }
 
-func (l *Logger) log(level string, format string, args ...interface{}) {
+// RedactSensitive removes common bearer credentials from structured and
+// human-readable log messages. Callers must still avoid passing secrets to the
+// logger: this is a defense-in-depth boundary, not a substitute for safe call
+// sites.
+func RedactSensitive(message string) string {
+	for _, item := range sensitiveLogPatterns {
+		message = item.pattern.ReplaceAllString(message, item.replacement)
+	}
+	return message
+}
+
+func (l *Logger) log(level string, message string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -119,7 +157,7 @@ func (l *Logger) log(level string, format string, args ...interface{}) {
 		Timestamp:  time.Now(),
 		Level:      level,
 		InstanceId: l.instanceId,
-		Message:    fmt.Sprintf(format, args...),
+		Message:    message,
 	}
 
 	jsonEntry, err := json.Marshal(entry)
