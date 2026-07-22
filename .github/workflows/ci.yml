@@ -80,6 +80,19 @@ jobs:
           --exit-code 1
           .
 
+      - name: Check release automation
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          bash -n scripts/ci/*.sh
+          if bash scripts/ci/verify-image.sh example.invalid/image:latest 0000000000000000000000000000000000000000 0.0.0 >/dev/null 2>&1; then
+            echo "verify-image accepted a mutable tag" >&2
+            exit 1
+          fi
+          if bash scripts/ci/promote-image.sh example.invalid/image not-a-version >/dev/null 2>&1; then
+            echo "promote-image accepted an invalid release tag" >&2
+            exit 1
+          fi
+
       - name: Smoke test container startup
         env:
           SOURCE_SHA: ${{ github.sha }}

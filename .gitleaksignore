@@ -1,7 +1,6 @@
 # Pre-existing documentation and test-fixture findings. Review additions as
 # security-sensitive; never add a fingerprint merely to make CI pass.
 .env.example:generic-api-key:8
-docker/README.md:curl-auth-header:32
 docs/wiki-en/getting-started.md:curl-auth-header:103
 docs/wiki-en/getting-started.md:curl-auth-header:55
 docs/wiki-en/getting-started.md:curl-auth-header:61

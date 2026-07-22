@@ -6,7 +6,7 @@ name: omniwa-go
 
 services:
   omniwa-go:
-    image: ghcr.io/hiepknor/omniwa-go:${IMAGE_TAG:-latest}
+    image: ${OMNIWA_IMAGE:?Set OMNIWA_IMAGE to an immutable sha256 digest}
     container_name: omniwa-go
     restart: unless-stopped
     ports:
