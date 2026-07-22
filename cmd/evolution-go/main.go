@@ -183,6 +183,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	groupProjectionRepository := projection_repository.NewGroupRepository(db)
 	groupProjector := projection_service.NewGroupProjector(groupProjectionRepository, projectionStateService)
 	groupReconciler := projection_service.NewGroupReconciler(queryGuard, groupProjectionRepository, projectionStateService)
+	groupReader := projection_service.NewGroupReader(groupProjectionRepository, projectionStateService)
 	groupWorker := projection_service.NewWorker(
 		projectionEventService, "groups", []string{"joined_group", "group_info"}, 50, time.Second, groupProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
@@ -236,7 +237,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	userService := user_service.NewUserService(clientPointer, whatsmeowService, queryGuard, identityResolver, loggerWrapper)
 	messageService := message_service.NewMessageService(clientPointer, messageRepository, whatsmeowService, loggerWrapper)
 	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)
-	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, queryGuard, loggerWrapper)
+	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, queryGuard, groupReader, loggerWrapper)
 	callService := call_service.NewCallService(clientPointer, whatsmeowService, loggerWrapper)
 	communityService := community_service.NewCommunityService(clientPointer, whatsmeowService, loggerWrapper)
 	labelService := label_service.NewLabelService(clientPointer, whatsmeowService, labelRepository, loggerWrapper)

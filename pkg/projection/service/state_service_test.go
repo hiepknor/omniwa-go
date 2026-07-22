@@ -88,6 +88,13 @@ func TestStateLifecyclePreservesNewestEventAndControlsCapabilities(t *testing.T)
 	if len(capabilities) != 1 || capabilities[0] != CapabilityRateLimitRetryAfter {
 		t.Fatalf("capabilities = %v", capabilities)
 	}
+	if err := service.MarkReady("instance-a", "groups", GroupsProjectionSchemaVersion, time.Unix(500, 0)); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, _ = service.Capabilities("instance-a")
+	if len(capabilities) != 2 || capabilities[0] != "groups_projection" || capabilities[1] != CapabilityRateLimitRetryAfter {
+		t.Fatalf("groups capability = %v", capabilities)
+	}
 }
 
 func TestAdminCapabilitiesOnlyExposeServerFeatures(t *testing.T) {

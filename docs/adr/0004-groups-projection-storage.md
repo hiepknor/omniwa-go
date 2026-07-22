@@ -38,11 +38,8 @@ the authority for `not_started`, `syncing`, `ready`, `stale`, and `failed`.
 Migrations 3 and 4 are additive. A lease-based background worker applies
 `JoinedGroup` snapshots and `GroupInfo` metadata, settings, participant,
 invite-link, and delete deltas, and shuts down through the application context.
-It claims only event types with a registered projector. Existing group API
-reads remain unchanged. A completed initial reconciliation makes internal state
-`ready`, but the public `groups_projection` capability remains unpublished
-until the compatible read cutover is delivered. Write-through mutations must
-also still be completed.
+It claims only event types with a registered projector. Write-through mutations
+must still be completed.
 
 Initial reconciliation starts asynchronously after a client connects and uses
 the shared information-query guard. It marks the instance `syncing`, captures a
@@ -67,6 +64,16 @@ membership approval mode that are present in the existing `GroupInfo`
 response. Snapshot and delta field versions cover the related metadata as one
 atomic logical field, preventing a late event from mixing values from
 different versions.
+
+`GET /group/list` and `POST /group/info` use a projection reader once an
+instance has completed reconciliation with schema version 3 or newer. Before
+that point they retain the guarded live-query fallback, so deployment and
+reconnection cannot produce a false empty result. A ready, stale, or currently
+resyncing projection with prior reconciled data is served without probing
+WhatsApp and includes additive `source`, `syncStatus`, and `lastSyncedAt`
+metadata. The `groups_projection` capability is published only for a ready
+schema-3 projection. List reads load groups and participants in two bounded
+database queries rather than one query per group.
 
 Application rollback leaves the new tables unused. Instance deletion cascades
 to groups, and group deletion cascades to participants. Physical cleanup is not

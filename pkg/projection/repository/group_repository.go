@@ -18,6 +18,12 @@ type GroupRepository interface {
 	Tombstone(ctx context.Context, instanceID, groupID, eventKey string, occurredAt time.Time) (bool, error)
 	TombstoneMissing(ctx context.Context, instanceID string, activeGroupIDs []string, eventKey string, occurredAt time.Time) (int, error)
 	Get(ctx context.Context, instanceID, groupID string) (*projection_model.Group, []projection_model.GroupParticipant, error)
+	List(ctx context.Context, instanceID string) ([]GroupRecord, error)
+}
+
+type GroupRecord struct {
+	Group        projection_model.Group
+	Participants []projection_model.GroupParticipant
 }
 
 func (r *groupRepository) TombstoneMissing(ctx context.Context, instanceID string, activeGroupIDs []string, eventKey string, occurredAt time.Time) (int, error) {
@@ -470,6 +476,34 @@ func (r *groupRepository) Get(ctx context.Context, instanceID, groupID string) (
 		return nil, nil, err
 	}
 	return &group, participants, nil
+}
+
+func (r *groupRepository) List(ctx context.Context, instanceID string) ([]GroupRecord, error) {
+	if instanceID == "" {
+		return nil, errors.New("group instance identity is required")
+	}
+	var groups []projection_model.Group
+	if err := r.db.WithContext(ctx).Where("instance_id = ? AND tombstoned_at IS NULL", instanceID).
+		Order("name ASC NULLS LAST, group_id ASC").Find(&groups).Error; err != nil {
+		return nil, err
+	}
+	if len(groups) == 0 {
+		return []GroupRecord{}, nil
+	}
+	var participants []projection_model.GroupParticipant
+	if err := r.db.WithContext(ctx).Where("instance_id = ? AND tombstoned_at IS NULL", instanceID).
+		Order("group_id ASC, participant_id ASC").Find(&participants).Error; err != nil {
+		return nil, err
+	}
+	byGroup := make(map[string][]projection_model.GroupParticipant, len(groups))
+	for _, participant := range participants {
+		byGroup[participant.GroupID] = append(byGroup[participant.GroupID], participant)
+	}
+	records := make([]GroupRecord, len(groups))
+	for index := range groups {
+		records[index] = GroupRecord{Group: groups[index], Participants: byGroup[groups[index].GroupID]}
+	}
+	return records, nil
 }
 
 type snapshotGroupField struct {

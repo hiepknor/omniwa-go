@@ -9,6 +9,8 @@
 package apidocs
 
 import (
+	"time"
+
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 )
 
@@ -19,8 +21,15 @@ import (
 // `data` is present only on endpoints that return a payload; action endpoints
 // (disconnect, logout, delete, reconnect...) return just `message`.
 type SuccessResponse struct {
-	Message string      `json:"message" example:"success"`
-	Data    interface{} `json:"data,omitempty"`
+	Message string          `json:"message" example:"success"`
+	Data    interface{}     `json:"data,omitempty"`
+	Meta    *ProjectionMeta `json:"meta,omitempty"`
+}
+
+type ProjectionMeta struct {
+	Source       string     `json:"source" example:"projection"`
+	SyncStatus   string     `json:"syncStatus" example:"ready"`
+	LastSyncedAt *time.Time `json:"lastSyncedAt,omitempty"`
 }
 
 // ErrorResponse is the standard error envelope returned on 4xx/5xx:

@@ -5251,6 +5251,22 @@ const docTemplate = `{
                 }
             }
         },
+        "apidocs.ProjectionMeta": {
+            "type": "object",
+            "properties": {
+                "lastSyncedAt": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string",
+                    "example": "projection"
+                },
+                "syncStatus": {
+                    "type": "string",
+                    "example": "ready"
+                }
+            }
+        },
         "apidocs.QRCodeData": {
             "type": "object",
             "properties": {
@@ -5384,6 +5400,9 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "success"
+                },
+                "meta": {
+                    "$ref": "#/definitions/apidocs.ProjectionMeta"
                 }
             }
         },

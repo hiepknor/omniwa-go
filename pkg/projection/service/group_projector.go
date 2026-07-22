@@ -11,7 +11,7 @@ import (
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 )
 
-const groupsProjectionSchemaVersion int64 = 3
+const groupsProjectionSchemaVersion int64 = GroupsProjectionSchemaVersion
 
 type groupSnapshotRepository interface {
 	ApplySnapshot(context.Context, *projection_model.Group, []projection_model.GroupParticipant) (bool, error)

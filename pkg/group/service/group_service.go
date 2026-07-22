@@ -11,6 +11,7 @@ import (
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
@@ -22,7 +23,9 @@ import (
 
 type GroupService interface {
 	ListGroups(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, error)
+	ListGroupsRead(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error)
+	GetGroupInfoRead(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error)
 	SetGroupPhoto(data *SetGroupPhotoStruct, instance *instance_model.Instance) (string, error)
 	SetGroupName(data *SetGroupNameStruct, instance *instance_model.Instance) error
@@ -42,6 +45,7 @@ type groupService struct {
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
+	groupReader      *projection_service.GroupReader
 }
 
 type SimpleGroupInfo struct {
@@ -158,15 +162,29 @@ func (g *groupService) ensureClientConnected(instanceId string) (*whatsmeow.Clie
 }
 
 func (g *groupService) ListGroups(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, error) {
+	groups, _, err := g.ListGroupsRead(ctx, instance)
+	return groups, err
+}
+
+func (g *groupService) ListGroupsRead(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error) {
+	if g.groupReader != nil {
+		groups, meta, err := g.groupReader.List(ctx, instance.Id)
+		if err == nil {
+			return groups, meta, nil
+		}
+		if !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
+			return nil, nil, err
+		}
+	}
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	resp, err := waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupsList, "", client.GetJoinedGroups)
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error getting groups: %v", instance.Id, err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	gc := new(GroupCollection)
@@ -178,19 +196,32 @@ func (g *groupService) ListGroups(ctx context.Context, instance *instance_model.
 		gc.Groups = append(gc.Groups, simpleGroup)
 	}
 
-	return resp, nil
+	return resp, nil, nil
 }
 
 func (g *groupService) GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error) {
-	client, err := g.ensureClientConnected(instance.Id)
-	if err != nil {
-		return nil, err
-	}
+	info, _, err := g.GetGroupInfoRead(ctx, data, instance)
+	return info, err
+}
 
+func (g *groupService) GetGroupInfoRead(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, *projection_service.ProjectionReadMeta, error) {
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return nil, errors.New("invalid group jid")
+		return nil, nil, errors.New("invalid group jid")
+	}
+	if g.groupReader != nil {
+		info, meta, err := g.groupReader.Get(ctx, instance.Id, recipient.String())
+		if err == nil {
+			return info, meta, nil
+		}
+		if !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
+			return nil, nil, err
+		}
+	}
+	client, err := g.ensureClientConnected(instance.Id)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	resp, err := waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupInfo, recipient.String(), func(queryCtx context.Context) (*types.GroupInfo, error) {
@@ -198,10 +229,10 @@ func (g *groupService) GetGroupInfo(ctx context.Context, data *GetGroupInfoStruc
 	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error mute chat: %v", instance.Id, err)
-		return nil, err
+		return nil, nil, err
 	}
 
-	return resp, nil
+	return resp, nil, nil
 }
 
 func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {
@@ -673,12 +704,14 @@ func NewGroupService(
 	clientPointer map[string]*whatsmeow.Client,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
+	groupReader *projection_service.GroupReader,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) GroupService {
 	return &groupService{
 		clientPointer:    clientPointer,
 		whatsmeowService: whatsmeowService,
 		queryGuard:       queryGuard,
+		groupReader:      groupReader,
 		loggerWrapper:    loggerWrapper,
 	}
 }
