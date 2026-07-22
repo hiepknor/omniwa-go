@@ -175,7 +175,7 @@ type MessageStatusData struct {
 }
 
 // LabelItem mirrors a WhatsApp label. GET /label/list returns a bare JSON array
-// of these (no envelope). Mirrors label_model.Label.
+// of these (no envelope). For projection-backed reads, id is the stable label_id.
 type LabelItem struct {
 	Id           string `json:"id"`
 	InstanceID   string `json:"instance_id"`

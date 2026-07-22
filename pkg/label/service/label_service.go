@@ -3,12 +3,15 @@ package label_service
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
@@ -21,13 +24,15 @@ type LabelService interface {
 	EditLabel(data *EditLabelStruct, instance *instance_model.Instance) error
 	ChatUnlabel(data *ChatLabelStruct, instance *instance_model.Instance) error
 	MessageUnlabel(data *MessageLabelStruct, instance *instance_model.Instance) error
-	GetLabels(instance *instance_model.Instance) ([]label_model.Label, error)
+	GetLabels(context.Context, *instance_model.Instance) ([]label_model.Label, error)
+	GetLabel(context.Context, *instance_model.Instance, string) (*label_model.Label, *projection_service.ProjectionReadMeta, error)
 }
 
 type labelService struct {
 	clientPointer    map[string]*whatsmeow.Client
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	labelRepository  label_repository.LabelRepository
+	projectionReader *projection_service.LabelReader
 	loggerWrapper    *logger_wrapper.LoggerManager
 }
 
@@ -210,31 +215,62 @@ func (l *labelService) MessageUnlabel(data *MessageLabelStruct, instance *instan
 	return nil
 }
 
-func (l *labelService) GetLabels(instance *instance_model.Instance) ([]label_model.Label, error) {
-	_, err := l.ensureClientConnected(instance.Id)
+func (l *labelService) GetLabels(ctx context.Context, instance *instance_model.Instance) ([]label_model.Label, error) {
+	if instance == nil || l.projectionReader == nil {
+		return nil, errors.New("label projection reader and instance are required")
+	}
+	labels, _, err := l.projectionReader.List(ctx, instance.Id)
 	if err != nil {
 		return nil, err
 	}
-
-	labels, err := l.labelRepository.GetAllLabelsByInstanceID(instance.Id)
-	if err != nil {
-		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error fetching labels from database: %v", instance.Id, err)
-		return nil, err
+	result := make([]label_model.Label, len(labels))
+	for index := range labels {
+		result[index] = legacyLabelFromProjection(instance.Id, &labels[index])
 	}
+	return result, nil
+}
 
-	return labels, nil
+func (l *labelService) GetLabel(ctx context.Context, instance *instance_model.Instance, labelID string) (*label_model.Label, *projection_service.ProjectionReadMeta, error) {
+	if instance == nil || l.projectionReader == nil {
+		return nil, nil, errors.New("label projection reader and instance are required")
+	}
+	label, meta, err := l.projectionReader.Get(ctx, instance.Id, labelID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if label == nil {
+		return nil, nil, errors.New("projected label is missing")
+	}
+	result := legacyLabelFromProjection(instance.Id, label)
+	return &result, meta, nil
+}
+
+func legacyLabelFromProjection(instanceID string, label *projection_model.Label) label_model.Label {
+	result := label_model.Label{Id: label.LabelID, InstanceID: instanceID, LabelID: label.LabelID}
+	if label.Name != nil {
+		result.LabelName = *label.Name
+	}
+	if label.Color != nil {
+		result.LabelColor = strconv.FormatInt(int64(*label.Color), 10)
+	}
+	if label.PredefinedID != nil {
+		result.PredefinedId = strconv.FormatInt(int64(*label.PredefinedID), 10)
+	}
+	return result
 }
 
 func NewLabelService(
 	clientPointer map[string]*whatsmeow.Client,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	labelRepository label_repository.LabelRepository,
+	projectionReader *projection_service.LabelReader,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) LabelService {
 	return &labelService{
 		clientPointer:    clientPointer,
 		whatsmeowService: whatsmeowService,
 		labelRepository:  labelRepository,
+		projectionReader: projectionReader,
 		loggerWrapper:    loggerWrapper,
 	}
 }

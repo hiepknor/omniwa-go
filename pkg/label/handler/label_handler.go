@@ -1,11 +1,14 @@
 package label_handler
 
 import (
+	"errors"
 	"net/http"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	label_service "github.com/evolution-foundation/evolution-go/pkg/label/service"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type LabelHandler interface {
@@ -15,6 +18,7 @@ type LabelHandler interface {
 	ChatUnlabel(ctx *gin.Context)
 	MessageUnlabel(ctx *gin.Context)
 	GetLabels(ctx *gin.Context)
+	GetLabel(ctx *gin.Context)
 }
 
 type labelHandler struct {
@@ -273,6 +277,7 @@ func (l *labelHandler) MessageUnlabel(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {array} apidocs.LabelItem "success"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /label/list [get]
@@ -285,13 +290,55 @@ func (l *labelHandler) GetLabels(ctx *gin.Context) {
 		return
 	}
 
-	labels, err := l.labelService.GetLabels(instance)
+	labels, err := l.labelService.GetLabels(ctx.Request.Context(), instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeLabelReadError(ctx, err)
 		return
 	}
 
 	ctx.JSON(http.StatusOK, labels)
+}
+
+// Get label details
+// @Summary Get label details
+// @Description Get one label from the persisted instance projection
+// @Tags Label
+// @Produce json
+// @Param labelId path string true "Label ID"
+// @Success 200 {object} apidocs.SuccessResponse{data=apidocs.LabelItem} "success"
+// @Failure 404 {object} apidocs.ErrorResponse "Label not found"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /label/info/{labelId} [get]
+func (l *labelHandler) GetLabel(ctx *gin.Context) {
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		return
+	}
+	labelID := ctx.Param("labelId")
+	if labelID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "label id is required"})
+		return
+	}
+	label, meta, err := l.labelService.GetLabel(ctx.Request.Context(), instance, labelID)
+	if err != nil {
+		writeLabelReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": label, "meta": meta})
+}
+
+func writeLabelReadError(ctx *gin.Context, err error) {
+	switch {
+	case errors.Is(err, projection_service.ErrLabelsProjectionNotReady):
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "label not found"})
+	default:
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 func NewLabelHandler(
