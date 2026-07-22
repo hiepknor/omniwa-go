@@ -613,6 +613,29 @@ CREATE INDEX projection_event_inbox_instance_dead_letter_admin_idx
 ON projection_event_inbox (instance_id, dead_lettered_at DESC, resource DESC, event_key DESC)
 WHERE status = 'dead_letter';`,
 	},
+	{
+		Version: 18,
+		Name:    "add_instance_token_lookup_digests",
+		SQL: `ALTER TABLE instances
+    ADD COLUMN token_digest VARCHAR(64) NULL,
+    ADD COLUMN token_key_version INTEGER NULL;
+
+ALTER TABLE instances
+    ADD CONSTRAINT instances_token_digest_pair_check
+    CHECK ((token_digest IS NULL) = (token_key_version IS NULL)),
+    ADD CONSTRAINT instances_token_digest_format_check
+    CHECK (token_digest IS NULL OR token_digest ~ '^[0-9a-f]{64}$'),
+    ADD CONSTRAINT instances_token_key_version_check
+    CHECK (token_key_version IS NULL OR token_key_version > 0);
+
+CREATE UNIQUE INDEX instances_token_digest_unique_idx
+ON instances (token_key_version, token_digest)
+WHERE token_digest IS NOT NULL;
+
+CREATE INDEX instances_token_digest_backfill_idx
+ON instances (id)
+WHERE token_digest IS NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

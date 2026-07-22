@@ -35,6 +35,10 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_TIMEOUT, "")
 	t.Setenv(config_env.WEBHOOK_MAX_REQUEST_BYTES, "")
 	t.Setenv(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "")
+	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, "")
+	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "")
+	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "")
+	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
@@ -70,6 +74,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.Webhook.Timeout != 10*time.Second || config.Webhook.MaxRequestBytes != 4*1024*1024 || config.Webhook.MaxResponseBytes != 64*1024 || config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 0 || len(config.Webhook.AllowedPorts) != 2 {
 		t.Fatalf("webhook defaults are invalid")
 	}
+	if len(config.InstanceTokenHMACKey) != 0 || config.InstanceTokenHMACKeyVersion != 0 || config.InstanceTokenBackfillBatch != 100 || config.InstanceTokenBackfillMaxBatches != 10 {
+		t.Fatalf("instance token digest defaults are invalid")
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -99,6 +106,10 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_TIMEOUT, "4s")
 	t.Setenv(config_env.WEBHOOK_MAX_REQUEST_BYTES, "2048")
 	t.Setenv(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "1024")
+	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "7")
+	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "25")
+	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "4")
 
 	config := Load()
 	if config.RemoteMedia.Policy != "allowlist" || config.RemoteMedia.Timeout != 3*time.Second || config.RemoteMedia.MaxBytes != 4096 || len(config.RemoteMedia.AllowedHosts) != 2 {
@@ -127,6 +138,21 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if config.CampaignBatchSize != 20 || config.CampaignLease != 3*time.Minute || config.CampaignPollInterval != 2*time.Second || config.CampaignMaxAttempts != 5 || config.CampaignRetryBase != 45*time.Second {
 		t.Fatalf("campaign overrides = %d/%v/%v/%d/%v", config.CampaignBatchSize, config.CampaignLease, config.CampaignPollInterval, config.CampaignMaxAttempts, config.CampaignRetryBase)
+	}
+	if len(config.InstanceTokenHMACKey) != 32 || config.InstanceTokenHMACKeyVersion != 7 || config.InstanceTokenBackfillBatch != 25 || config.InstanceTokenBackfillMaxBatches != 4 {
+		t.Fatalf("instance token digest overrides are invalid")
+	}
+}
+
+func TestParseOptionalBase64Key(t *testing.T) {
+	if key, err := parseOptionalBase64Key("", 32); err != nil || key != nil {
+		t.Fatalf("disabled key = %v, %v", key, err)
+	}
+	if _, err := parseOptionalBase64Key("not-base64", 32); err == nil {
+		t.Fatal("invalid base64 key was accepted")
+	}
+	if _, err := parseOptionalBase64Key("c2hvcnQ=", 32); err == nil {
+		t.Fatal("short key was accepted")
 	}
 }
 

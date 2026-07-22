@@ -88,6 +88,10 @@ DATABASE_SAVE_MESSAGES=false
 | `SERVER_PORT` | Server port | `8080` |
 | `CLIENT_NAME` | Client identifier | `omniwa` |
 | `GLOBAL_API_KEY` | API authentication key | **Required** |
+| `INSTANCE_TOKEN_HMAC_KEY` | Optional base64 HMAC key for instance-token lookup digests (minimum 32 decoded bytes) | disabled |
+| `INSTANCE_TOKEN_HMAC_KEY_VERSION` | Positive version shared with the HMAC key across replicas | `1` when enabled |
+| `INSTANCE_TOKEN_BACKFILL_BATCH` | Legacy-token rows processed per backfill transaction | `100` |
+| `INSTANCE_TOKEN_BACKFILL_MAX_BATCHES` | Maximum backfill transactions per process start | `10` |
 | `DATABASE_SAVE_MESSAGES` | Enable message storage | `false` |
 | `LICENSE_GATE_ENABLED` | Enable the license activation gate | `true` |
 

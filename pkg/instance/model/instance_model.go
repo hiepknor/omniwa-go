@@ -11,6 +11,8 @@ type Instance struct {
 	Id               string    `json:"-" gorm:"type:uuid;primaryKey"`
 	Name             string    `json:"-"`
 	Token            string    `json:"-" gorm:"unique"`
+	TokenDigest      *string   `json:"-" gorm:"column:token_digest;-:migration"`
+	TokenKeyVersion  *int      `json:"-" gorm:"column:token_key_version;-:migration"`
 	Webhook          string    `json:"-"`
 	RabbitmqEnable   string    `json:"-"`
 	WebSocketEnable  string    `json:"-"`
