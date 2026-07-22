@@ -6,6 +6,7 @@ import (
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
@@ -25,7 +26,7 @@ type ChatService interface {
 }
 
 type chatService struct {
-	clientPointer    map[string]*whatsmeow.Client
+	clients          instance_runtime.ClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 }
@@ -40,7 +41,7 @@ type HistorySyncRequestStruct struct {
 }
 
 func (c *chatService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	client := c.clientPointer[instanceId]
+	client := c.clients.Get(instanceId)
 	c.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
 	if client == nil {
@@ -54,7 +55,7 @@ func (c *chatService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 		c.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
 		time.Sleep(2 * time.Second)
 
-		client = c.clientPointer[instanceId]
+		client = c.clients.Get(instanceId)
 		c.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,
@@ -247,12 +248,12 @@ func (c *chatService) HistorySyncRequest(data *HistorySyncRequestStruct, instanc
 }
 
 func NewChatService(
-	clientPointer map[string]*whatsmeow.Client,
+	clients instance_runtime.ClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) ChatService {
 	return &chatService{
-		clientPointer:    clientPointer,
+		clients:          clients,
 		whatsmeowService: whatsmeowService,
 		loggerWrapper:    loggerWrapper,
 	}

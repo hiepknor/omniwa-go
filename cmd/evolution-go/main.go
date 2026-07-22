@@ -45,6 +45,7 @@ import (
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
+	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
 	label_handler "github.com/evolution-foundation/evolution-go/pkg/label/handler"
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
@@ -98,6 +99,7 @@ func init() {
 func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *sync.WaitGroup) *gin.Engine {
 	killChannel := make(map[string](chan bool))
 	clientPointer := make(map[string]*whatsmeow.Client)
+	runtimeRegistry := instance_runtime.NewRegistry[*whatsmeow_service.MyClient](appCtx)
 
 	loggerWrapper := logger_wrapper.NewLoggerManager(config)
 	queryGuard, err := waquery.New(waquery.Settings{
@@ -371,6 +373,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		config,
 		killChannel,
 		clientPointer,
+		runtimeRegistry,
 		rabbitmqProducer,
 		webhookProducer,
 		websocketProducer,
@@ -426,7 +429,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			logger.LogFatal("component=audio_converter action=initialize result=failed error=%v", err)
 		}
 	}
-	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, audioConverterRequester, loggerWrapper)
+	sendMessageService := send_service.NewSendService(runtimeRegistry, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, audioConverterRequester, loggerWrapper)
 	campaignRepository := campaign_repository.NewCampaignRepository(db)
 	campaignWorker := campaign_service.NewWorker(
 		campaignRepository,
@@ -450,14 +453,14 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			logger.LogError("component=campaign action=worker result=stopped error_code=invalid_worker_configuration")
 		}
 	}()
-	userService := user_service.NewUserService(clientPointer, whatsmeowService, queryGuard, identityResolver, contactReader, remoteMediaFetcher, loggerWrapper)
-	messageService := message_service.NewMessageService(clientPointer, messageRepository, whatsmeowService, loggerWrapper)
-	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)
-	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, queryGuard, groupReader, groupWriter, remoteMediaFetcher, loggerWrapper)
-	callService := call_service.NewCallService(clientPointer, whatsmeowService, loggerWrapper)
-	communityService := community_service.NewCommunityService(clientPointer, whatsmeowService, loggerWrapper)
-	labelService := label_service.NewLabelService(clientPointer, whatsmeowService, labelRepository, labelReader, labelWriter, loggerWrapper)
-	newsletterService := newsletter_service.NewNewsletterService(clientPointer, whatsmeowService, queryGuard, loggerWrapper)
+	userService := user_service.NewUserService(runtimeRegistry, whatsmeowService, queryGuard, identityResolver, contactReader, remoteMediaFetcher, loggerWrapper)
+	messageService := message_service.NewMessageService(runtimeRegistry, messageRepository, whatsmeowService, loggerWrapper)
+	chatService := chat_service.NewChatService(runtimeRegistry, whatsmeowService, loggerWrapper)
+	groupService := group_service.NewGroupService(runtimeRegistry, whatsmeowService, queryGuard, groupReader, groupWriter, remoteMediaFetcher, loggerWrapper)
+	callService := call_service.NewCallService(runtimeRegistry, whatsmeowService, loggerWrapper)
+	communityService := community_service.NewCommunityService(runtimeRegistry, whatsmeowService, loggerWrapper)
+	labelService := label_service.NewLabelService(runtimeRegistry, whatsmeowService, labelRepository, labelReader, labelWriter, loggerWrapper)
+	newsletterService := newsletter_service.NewNewsletterService(runtimeRegistry, whatsmeowService, queryGuard, loggerWrapper)
 
 	// NOVO: PollHandler usando PollService já inicializado no whatsmeowService (evita dupla inicialização)
 	pollHandler := poll_handler.NewPollHandler(whatsmeowService.GetPollService(), loggerWrapper)

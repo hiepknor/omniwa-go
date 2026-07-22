@@ -39,6 +39,7 @@ import (
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
+	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	"github.com/evolution-foundation/evolution-go/pkg/internal/event_types"
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
@@ -94,6 +95,7 @@ type whatsmeowService struct {
 	userInfoCache      *cache.Cache
 	clientPointer      map[string]*whatsmeow.Client
 	myClientPointer    map[string]*MyClient
+	runtimeRegistry    *instance_runtime.Registry[*MyClient]
 	rabbitmqProducer   producer_interfaces.Producer
 	webhookProducer    producer_interfaces.Producer
 	websocketProducer  producer_interfaces.Producer
@@ -162,6 +164,7 @@ type MyClient struct {
 	appCtx             context.Context
 	reconcileMu        sync.Mutex
 	reconcileRunning   bool
+	runtimeGeneration  uint64
 	loopCancel         context.CancelFunc
 	loopDone           chan struct{}
 }
@@ -498,7 +501,19 @@ type ProxyConfig struct {
 }
 
 func (w whatsmeowService) ReconnectClient(instanceId string) error {
+	if w.runtimeRegistry != nil {
+		return w.runtimeRegistry.Reconnect(instanceId, func() error {
+			return w.reconnectClient(instanceId)
+		})
+	}
+	return w.reconnectClient(instanceId)
+}
+
+func (w whatsmeowService) reconnectClient(instanceId string) error {
 	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Starting reconnection process - simulating restart", instanceId)
+	if w.runtimeRegistry != nil {
+		w.runtimeRegistry.RemoveCurrent(instanceId)
+	}
 
 	// Passo 1: Limpar conexão existente se houver
 	if client, exists := w.clientPointer[instanceId]; exists {
@@ -903,6 +918,25 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		}
 
 	}
+	if w.runtimeRegistry != nil {
+		cleanup := func() {
+			mycli.stopGroupReconciliationLoop()
+			if mycli.eventHandlerID != 0 {
+				client.RemoveEventHandler(mycli.eventHandlerID)
+			}
+			if client.IsConnected() {
+				client.Disconnect()
+			}
+		}
+		runtime, runtimeErr := w.runtimeRegistry.Install(cd.Instance.Id, client, mycli, cleanup)
+		if runtimeErr != nil {
+			cleanup()
+			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to install client runtime: %v", cd.Instance.Id, runtimeErr)
+			return
+		}
+		mycli.runtimeGeneration = runtime.Generation
+		mycli.appCtx = runtime.Context
+	}
 
 	// Removed auto-reconnect logic to prevent infinite loops
 
@@ -910,11 +944,25 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		select {
 		case <-w.killChannel[cd.Instance.Id]:
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Received kill signal for user '%s'", cd.Instance.Id)
-			mycli.stopGroupReconciliationLoop()
-			client.Disconnect()
+			if w.runtimeRegistry != nil {
+				if !w.runtimeRegistry.RemoveIfCurrent(cd.Instance.Id, mycli.runtimeGeneration) {
+					mycli.stopGroupReconciliationLoop()
+					client.RemoveEventHandler(mycli.eventHandlerID)
+					client.Disconnect()
+					w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Stale runtime stopped without removing its replacement", cd.Instance.Id)
+					return
+				}
+			} else {
+				mycli.stopGroupReconciliationLoop()
+				client.Disconnect()
+			}
 
-			delete(w.clientPointer, cd.Instance.Id)
-			delete(w.myClientPointer, cd.Instance.Id)
+			if w.clientPointer[cd.Instance.Id] == client {
+				delete(w.clientPointer, cd.Instance.Id)
+			}
+			if w.myClientPointer[cd.Instance.Id] == mycli {
+				delete(w.myClientPointer, cd.Instance.Id)
+			}
 
 			// Limpar cache de userInfo para esta instância
 			w.userInfoCache.Delete(cd.Instance.Token)
@@ -1633,7 +1681,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				fmt.Printf("[POLL DEBUG] ✅ mycli.WAClient is initialized: %s\n", mycli.WAClient.Store.ID)
 			}
 
-			decrypted, err := mycli.clientPointer[mycli.userID].DecryptPollVote(context.Background(), evt)
+			decrypted, err := mycli.WAClient.DecryptPollVote(context.Background(), evt)
 			if err != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to decrypt vote: %v", mycli.userID, err)
 			} else {
@@ -3171,6 +3219,9 @@ func (w whatsmeowService) ClearInstanceCache(instanceId string, token string) er
 		delete(w.clientPointer, instanceId)
 		w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Client pointer cleared", instanceId)
 	}
+	if w.runtimeRegistry != nil {
+		w.runtimeRegistry.RemoveCurrent(instanceId)
+	}
 
 	// Limpar killChannel se existir
 	if killChan, exists := w.killChannel[instanceId]; exists {
@@ -3197,6 +3248,7 @@ func NewWhatsmeowService(
 	config *config.Config,
 	killChannel map[string](chan bool),
 	clientPointer map[string]*whatsmeow.Client,
+	runtimeRegistry *instance_runtime.Registry[*MyClient],
 	rabbitmqProducer producer_interfaces.Producer,
 	webhookProducer producer_interfaces.Producer,
 	websocketProducer producer_interfaces.Producer,
@@ -3229,6 +3281,7 @@ func NewWhatsmeowService(
 		userInfoCache:      cache.New(5*time.Minute, 10*time.Minute),
 		clientPointer:      clientPointer,
 		myClientPointer:    make(map[string]*MyClient),
+		runtimeRegistry:    runtimeRegistry,
 		rabbitmqProducer:   rabbitmqProducer,
 		webhookProducer:    webhookProducer,
 		websocketProducer:  websocketProducer,
@@ -3262,11 +3315,22 @@ func (w *whatsmeowService) PasskeyCeremonyStore() *ceremony.Store {
 	return w.passkeyCeremony
 }
 
+func (w *whatsmeowService) activeClient(instanceID string) *whatsmeow.Client {
+	if w.runtimeRegistry != nil {
+		if client := w.runtimeRegistry.Get(instanceID); client != nil {
+			return client
+		}
+	}
+	// Transitional fallback while StartClient still constructs the client before
+	// atomically publishing the complete runtime. Removed with the legacy maps.
+	return w.clientPointer[instanceID]
+}
+
 // SubmitPasskeyResponse forwards the browser's WebAuthn assertion to WhatsApp
 // for the given instance. Called by POST /passkey-ceremony/{token}/response.
 func (w *whatsmeowService) SubmitPasskeyResponse(instanceId string, resp *types.WebAuthnResponse) error {
-	client, ok := w.clientPointer[instanceId]
-	if !ok || client == nil {
+	client := w.activeClient(instanceId)
+	if client == nil {
 		return fmt.Errorf("no active client for instance %s", instanceId)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -3284,8 +3348,8 @@ func (w *whatsmeowService) SubmitPasskeyResponse(instanceId string, resp *types.
 // ConfirmPasskey finishes the pairing after the user verified the code.
 // Called by POST /passkey-ceremony/{token}/confirm.
 func (w *whatsmeowService) ConfirmPasskey(instanceId string) error {
-	client, ok := w.clientPointer[instanceId]
-	if !ok || client == nil {
+	client := w.activeClient(instanceId)
+	if client == nil {
 		return fmt.Errorf("no active client for instance %s", instanceId)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)

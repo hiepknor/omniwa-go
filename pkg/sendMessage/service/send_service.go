@@ -22,6 +22,7 @@ import (
 	"github.com/chai2010/webp"
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
@@ -55,7 +56,7 @@ type SendService interface {
 }
 
 type sendService struct {
-	clientPointer    map[string]*whatsmeow.Client
+	clients          instance_runtime.ClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	config           *config.Config
 	loggerWrapper    *logger_wrapper.LoggerManager
@@ -389,7 +390,7 @@ type MessageSendStruct struct {
 }
 
 func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	client := s.clientPointer[instanceId]
+	client := s.clients.Get(instanceId)
 	s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
 	if client == nil {
@@ -403,7 +404,7 @@ func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
 		time.Sleep(2 * time.Second)
 
-		client = s.clientPointer[instanceId]
+		client = s.clients.Get(instanceId)
 		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,
@@ -2354,6 +2355,11 @@ func (s *sendService) SendList(data *ListStruct, instance *instance_model.Instan
 func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.Message, messageType string, data *SendDataStruct) (*MessageSendStruct, error) {
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound send started type=%s", instance.Id, messageType)
 
+	client, err := s.ensureClientConnected(instance.Id)
+	if err != nil {
+		return nil, err
+	}
+
 	recipient, err := s.validateAndCheckUserExists(data.Number, data.FormatJid, &data.Quoted.MessageID, &data.Quoted.MessageID, instance)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Outbound recipient validation failed error_code=recipient_validation_failed", instance.Id)
@@ -2364,7 +2370,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 
 	var message string
 	if data.Id == "" {
-		message = s.clientPointer[instance.Id].GenerateMessageID()
+		message = client.GenerateMessageID()
 	} else {
 		message = data.Id
 	}
@@ -2375,14 +2381,14 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 			media = "audio"
 		}
 
-		err := s.clientPointer[instance.Id].SendChatPresence(context.Background(), recipient, types.ChatPresence("composing"), types.ChatPresenceMedia(media))
+		err := client.SendChatPresence(context.Background(), recipient, types.ChatPresence("composing"), types.ChatPresenceMedia(media))
 		if err != nil {
 			return nil, err
 		}
 
 		time.Sleep(time.Duration(data.Delay) * time.Millisecond)
 
-		err = s.clientPointer[instance.Id].SendChatPresence(context.Background(), recipient, types.ChatPresence("paused"), types.ChatPresenceMedia(media))
+		err = client.SendChatPresence(context.Background(), recipient, types.ChatPresence("paused"), types.ChatPresenceMedia(media))
 		if err != nil {
 			return nil, err
 		}
@@ -2636,7 +2642,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	if isGroup && !isNewsletter {
 		if data.MentionAll {
 			groupInfo, err := waquery.Do(context.Background(), s.queryGuard, instance.Id, waquery.OperationGroupInfo, recipient.String(), func(queryCtx context.Context) (*types.GroupInfo, error) {
-				return s.clientPointer[instance.Id].GetGroupInfo(queryCtx, recipient)
+				return client.GetGroupInfo(queryCtx, recipient)
 			})
 			if err != nil {
 				return nil, err
@@ -2779,7 +2785,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	if err := s.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
 		return nil, err
 	}
-	response, err := s.clientPointer[instance.Id].SendMessage(context.Background(), recipient, msg, sendExtra)
+	response, err := client.SendMessage(context.Background(), recipient, msg, sendExtra)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Outbound message failed error_code=send_failed", instance.Id)
 		return nil, err
@@ -2791,7 +2797,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	if sentAt.IsZero() {
 		sentAt = time.Now().UTC()
 	}
-	sender := *s.clientPointer[instance.Id].Store.ID
+	sender := *client.Store.ID
 	if !response.Sender.IsEmpty() {
 		sender = response.Sender
 	}
@@ -2854,15 +2860,15 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		sticker := msg.GetStickerMessage()
 
 		if img != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), img)
+			data, err = client.Download(context.Background(), img)
 		} else if audio != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), audio)
+			data, err = client.Download(context.Background(), audio)
 		} else if document != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), document)
+			data, err = client.Download(context.Background(), document)
 		} else if video != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), video)
+			data, err = client.Download(context.Background(), video)
 		} else if sticker != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), sticker)
+			data, err = client.Download(context.Background(), sticker)
 
 			webpReader := bytes.NewReader(data)
 			img, err := webp.Decode(webpReader)
@@ -3392,7 +3398,7 @@ func (s *sendService) sendStatusWebhook(messageSent *MessageSendStruct, instance
 }
 
 func NewSendService(
-	clientPointer map[string]*whatsmeow.Client,
+	clients instance_runtime.ClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	config *config.Config,
 	queryGuard waquery.Guard,
@@ -3403,7 +3409,7 @@ func NewSendService(
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) SendService {
 	return &sendService{
-		clientPointer:    clientPointer,
+		clients:          clients,
 		whatsmeowService: whatsmeowService,
 		config:           config,
 		queryGuard:       queryGuard,

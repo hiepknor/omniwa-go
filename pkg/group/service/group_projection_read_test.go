@@ -24,7 +24,7 @@ func TestGroupServiceNotReadyReadsNeverFallbackToWhatsApp(t *testing.T) {
 	reader := projection_service.NewGroupReader(repository, groupServiceReadState{state: projection_model.State{
 		SyncStatus: projection_model.SyncStatusNotStarted, SchemaVersion: projection_service.GroupsProjectionSchemaVersion,
 	}})
-	service := &groupService{groupReader: reader, clientPointer: nil}
+	service := &groupService{groupReader: reader}
 	instance := &instance_model.Instance{Id: "instance-a"}
 	if _, _, err := service.ListGroupsRead(context.Background(), instance); !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
 		t.Fatalf("ListGroupsRead() error = %v", err)
@@ -43,7 +43,7 @@ func TestGroupServiceMissingCachedInviteLinkDoesNotQueryWhatsApp(t *testing.T) {
 	reader := projection_service.NewGroupReader(repository, groupServiceReadState{state: projection_model.State{
 		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: projection_service.GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
 	}})
-	service := &groupService{groupReader: reader, clientPointer: nil}
+	service := &groupService{groupReader: reader}
 	_, err := service.GetGroupInviteLink(context.Background(), &GetGroupInviteLinkStruct{GroupJID: "group@g.us"}, &instance_model.Instance{Id: "instance-a"})
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("GetGroupInviteLink() error = %v", err)
@@ -82,7 +82,7 @@ func TestGroupServiceReadyReadsDoNotRequireWhatsAppClient(t *testing.T) {
 	reader := projection_service.NewGroupReader(repository, groupServiceReadState{state: projection_model.State{
 		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: projection_service.GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
 	}})
-	service := &groupService{groupReader: reader, clientPointer: nil}
+	service := &groupService{groupReader: reader}
 	instance := &instance_model.Instance{Id: "instance-a"}
 
 	groups, listMeta, err := service.ListGroupsRead(context.Background(), instance)
@@ -102,7 +102,7 @@ func TestGroupServiceSearchDoesNotRequireWhatsAppClient(t *testing.T) {
 	reader := projection_service.NewGroupReader(repository, groupServiceReadState{state: projection_model.State{
 		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: projection_service.GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
 	}})
-	service := &groupService{groupReader: reader, clientPointer: nil}
+	service := &groupService{groupReader: reader}
 	groups, meta, err := service.SearchGroupsRead(context.Background(), &instance_model.Instance{Id: "instance-a"}, "database", 25, "")
 	if err != nil || len(groups) != 1 || groups[0].Name != name || meta == nil || repository.listCalls != 1 {
 		t.Fatalf("SearchGroupsRead() = %#v, %#v, %v calls=%d", groups, meta, err, repository.listCalls)
@@ -116,7 +116,7 @@ func TestGroupServiceCachedInviteLinkDoesNotRequireWhatsAppClient(t *testing.T) 
 	reader := projection_service.NewGroupReader(repository, groupServiceReadState{state: projection_model.State{
 		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: projection_service.GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
 	}})
-	service := &groupService{groupReader: reader, clientPointer: nil}
+	service := &groupService{groupReader: reader}
 	got, err := service.GetGroupInviteLink(context.Background(), &GetGroupInviteLinkStruct{GroupJID: "group@g.us"}, &instance_model.Instance{Id: "instance-a"})
 	if err != nil || got != inviteLink {
 		t.Fatalf("GetGroupInviteLink() = %q, %v", got, err)

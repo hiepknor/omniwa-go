@@ -8,6 +8,7 @@ import (
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
@@ -42,7 +43,7 @@ type GroupService interface {
 }
 
 type groupService struct {
-	clientPointer    map[string]*whatsmeow.Client
+	clients          instance_runtime.ClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
@@ -129,7 +130,7 @@ type UpdateGroupRequestParticipantsStruct struct {
 }
 
 func (g *groupService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	client := g.clientPointer[instanceId]
+	client := g.clients.Get(instanceId)
 	g.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
 	if client == nil {
@@ -143,7 +144,7 @@ func (g *groupService) ensureClientConnected(instanceId string) (*whatsmeow.Clie
 		g.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
 		time.Sleep(2 * time.Second)
 
-		client = g.clientPointer[instanceId]
+		client = g.clients.Get(instanceId)
 		g.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,
@@ -744,7 +745,7 @@ func (g *groupService) UpdateGroupRequestParticipants(data *UpdateGroupRequestPa
 }
 
 func NewGroupService(
-	clientPointer map[string]*whatsmeow.Client,
+	clients instance_runtime.ClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
 	groupReader *projection_service.GroupReader,
@@ -753,7 +754,7 @@ func NewGroupService(
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) GroupService {
 	return &groupService{
-		clientPointer:    clientPointer,
+		clients:          clients,
 		whatsmeowService: whatsmeowService,
 		queryGuard:       queryGuard,
 		groupReader:      groupReader,
