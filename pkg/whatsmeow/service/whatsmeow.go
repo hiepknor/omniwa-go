@@ -262,9 +262,9 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
 	if mycli == nil || mycli.projectionEvents == nil {
 		return
 	}
-	event, relevant, err := projection_service.NormalizeGroupEvent(mycli.userID, rawEvent)
+	event, relevant, err := projection_service.NormalizeProjectionEvent(mycli.userID, rawEvent)
 	if err != nil {
-		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=projection action=normalize instance_id=%s result=failed error_code=invalid_group_event", mycli.userID)
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=projection action=normalize instance_id=%s result=failed error_code=invalid_projection_event", mycli.userID)
 		return
 	}
 	if !relevant {
@@ -2160,6 +2160,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		doWebhook = true
 		postMap["event"] = "LabelEdit"
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Got label edit %+v", mycli.userID, evt.Action)
+		if evt.Action == nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=labels action=legacy_upsert instance_id=%s result=skipped error_code=missing_action", mycli.userID)
+			break
+		}
 
 		label := label_model.Label{
 			InstanceID:   mycli.userID,
