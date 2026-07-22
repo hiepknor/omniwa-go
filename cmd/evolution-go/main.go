@@ -97,6 +97,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if err != nil {
 		log.Fatal(err)
 	}
+	identityResolver, err := waquery.NewIdentityResolver(queryGuard, waquery.DefaultIdentityCacheSettings())
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	var rabbitmqProducer producer_interfaces.Producer
 	if conn != nil {
@@ -196,10 +200,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		whatsmeowService,
 		config,
 		queryGuard,
+		identityResolver,
 		loggerWrapper,
 	)
-	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, loggerWrapper)
-	userService := user_service.NewUserService(clientPointer, whatsmeowService, queryGuard, loggerWrapper)
+	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, loggerWrapper)
+	userService := user_service.NewUserService(clientPointer, whatsmeowService, queryGuard, identityResolver, loggerWrapper)
 	messageService := message_service.NewMessageService(clientPointer, messageRepository, whatsmeowService, loggerWrapper)
 	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)
 	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, queryGuard, loggerWrapper)

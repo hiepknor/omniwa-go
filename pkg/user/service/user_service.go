@@ -38,6 +38,7 @@ type userService struct {
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
+	identityResolver waquery.IdentityResolver
 }
 
 type ContactInfo struct {
@@ -246,8 +247,8 @@ func (u *userService) performCheckUser(ctx context.Context, client *whatsmeow.Cl
 		return nil, false, nil
 	}
 
-	resp, err := waquery.Do(ctx, u.queryGuard, instanceId, waquery.OperationUserExists, waquery.ResourceKey(phoneNumbers...), func(queryCtx context.Context) ([]types.IsOnWhatsAppResponse, error) {
-		return client.IsOnWhatsApp(queryCtx, phoneNumbers)
+	resp, err := u.identityResolver.Resolve(ctx, instanceId, phoneNumbers, func(queryCtx context.Context, missing []string) ([]types.IsOnWhatsAppResponse, error) {
+		return client.IsOnWhatsApp(queryCtx, missing)
 	})
 	if err != nil {
 		u.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to check users on WhatsApp: %v", instanceId, err)
@@ -581,12 +582,14 @@ func NewUserService(
 	clientPointer map[string]*whatsmeow.Client,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
+	identityResolver waquery.IdentityResolver,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) UserService {
 	return &userService{
 		clientPointer:    clientPointer,
 		whatsmeowService: whatsmeowService,
 		queryGuard:       queryGuard,
+		identityResolver: identityResolver,
 		loggerWrapper:    loggerWrapper,
 	}
 }

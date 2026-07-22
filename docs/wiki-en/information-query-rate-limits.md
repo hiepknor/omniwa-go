@@ -20,6 +20,17 @@ upstream 429 opens that instance's breaker immediately. No trial query is sent
 during cooldown, and only one query is admitted when the breaker becomes
 half-open.
 
+## Identity lookup cache
+
+`IsOnWhatsApp` results are shared by user checks and message-send preflight
+within the process. The cache is isolated per instance and bounded to 10,000
+entries per instance. Positive results expire after five minutes; negative
+results expire after 30 seconds so a newly registered number is not hidden for
+long. Logout and instance deletion remove the corresponding cache immediately.
+
+The cache stores normalized lookup results only. It does not store tokens or
+message content, and it does not replace the longer-lived contacts projection.
+
 ## HTTP 429 contract
 
 Existing paths and successful response envelopes are unchanged. A guarded
