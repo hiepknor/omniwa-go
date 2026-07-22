@@ -6,5 +6,8 @@ func NormalizeProjectionEvent(instanceID string, rawEvent any) (*projection_mode
 	if event, relevant, err := NormalizeGroupEvent(instanceID, rawEvent); relevant || err != nil {
 		return event, relevant, err
 	}
-	return NormalizeLabelEvent(instanceID, rawEvent)
+	if event, relevant, err := NormalizeLabelEvent(instanceID, rawEvent); relevant || err != nil {
+		return event, relevant, err
+	}
+	return NormalizeContactEvent(instanceID, rawEvent)
 }
