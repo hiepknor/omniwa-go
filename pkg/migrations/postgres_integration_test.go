@@ -14,6 +14,8 @@ import (
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
+	"github.com/evolution-foundation/evolution-go/pkg/waquery"
+	"go.mau.fi/whatsmeow/types"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -232,4 +234,43 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || contactState.LastEventAt == nil || !contactState.LastEventAt.Equal(time.Unix(49, 0)) || contactState.SchemaVersion != 3 {
 		t.Fatalf("monotonic concurrent state = %#v, %v", contactState, err)
 	}
+	guard, err := waquery.New(waquery.Settings{RatePerSecond: 100, Burst: 10, MaxWait: time.Second, Cooldown: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciler := projection_service.NewGroupReconciler(guard, groupRepository, stateService)
+	queryCalls := 0
+	if err := reconciler.Reconcile(context.Background(), instance.Id, func(context.Context) ([]*types.GroupInfo, error) {
+		queryCalls++
+		return []*types.GroupInfo{{
+			JID: types.NewJID("authoritative", types.GroupServer), GroupName: types.GroupName{Name: "Authoritative group"},
+			Participants: []types.GroupParticipant{{JID: types.NewJID("authoritative-admin", types.DefaultUserServer), IsAdmin: true}},
+		}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if queryCalls != 1 {
+		t.Fatalf("reconciliation upstream calls = %d", queryCalls)
+	}
+	if _, _, err := groupRepository.Get(context.Background(), instance.Id, "worker@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("missing group was not tombstoned: %v", err)
+	}
+	authoritativeGroup, authoritativeParticipants, err := groupRepository.Get(context.Background(), instance.Id, "authoritative@g.us")
+	if err != nil || authoritativeGroup.Name == nil || *authoritativeGroup.Name != "Authoritative group" || len(authoritativeParticipants) != 1 || authoritativeParticipants[0].Role != projection_model.ParticipantRoleAdmin {
+		t.Fatalf("authoritative group = %#v, %#v, %v", authoritativeGroup, authoritativeParticipants, err)
+	}
+	groupsState, err := stateService.Get(instance.Id, "groups")
+	capabilities, capabilityErr := stateService.Capabilities(instance.Id)
+	if err != nil || capabilityErr != nil || groupsState.SyncStatus != projection_model.SyncStatusReady || groupsState.LastReconciledAt == nil || containsString(capabilities, "groups_projection") {
+		t.Fatalf("ready groups state = %#v capabilities=%v errors=%v/%v", groupsState, capabilities, err, capabilityErr)
+	}
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }

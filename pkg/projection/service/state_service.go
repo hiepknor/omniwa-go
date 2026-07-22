@@ -13,7 +13,6 @@ import (
 const CapabilityRateLimitRetryAfter = "rate_limit_retry_after"
 
 var resourceCapabilities = map[string]string{
-	"groups":   "groups_projection",
 	"labels":   "labels_projection",
 	"contacts": "contacts_projection",
 	"chats":    "chats_projection",

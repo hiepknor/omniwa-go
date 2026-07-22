@@ -101,6 +101,8 @@ type whatsmeowService struct {
 	passkeyCeremony    *ceremony.Store
 	queryGuard         waquery.Guard
 	projectionEvents   projection_service.EventService
+	groupReconciler    *projection_service.GroupReconciler
+	appCtx             context.Context
 }
 
 type MyClient struct {
@@ -136,9 +138,45 @@ type MyClient struct {
 	passkeyCeremony    *ceremony.Store
 	queryGuard         waquery.Guard
 	projectionEvents   projection_service.EventService
+	groupReconciler    *projection_service.GroupReconciler
+	appCtx             context.Context
+	reconcileMu        sync.Mutex
+	reconcileRunning   bool
 }
 
 const projectionIngestTimeout = 2 * time.Second
+const groupReconcileTimeout = 2 * time.Minute
+
+func (mycli *MyClient) triggerGroupReconciliation() {
+	if mycli == nil || mycli.groupReconciler == nil || mycli.WAClient == nil || !mycli.WAClient.IsConnected() {
+		return
+	}
+	mycli.reconcileMu.Lock()
+	if mycli.reconcileRunning {
+		mycli.reconcileMu.Unlock()
+		return
+	}
+	mycli.reconcileRunning = true
+	mycli.reconcileMu.Unlock()
+	go func() {
+		defer func() {
+			mycli.reconcileMu.Lock()
+			mycli.reconcileRunning = false
+			mycli.reconcileMu.Unlock()
+		}()
+		parent := mycli.appCtx
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(parent, groupReconcileTimeout)
+		defer cancel()
+		if err := mycli.groupReconciler.Reconcile(ctx, mycli.userID, mycli.WAClient.GetJoinedGroups); err != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=reconcile instance_id=%s resource=groups result=failed error_code=reconciliation_failed", mycli.userID)
+			return
+		}
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=reconcile instance_id=%s resource=groups result=ready", mycli.userID)
+	}()
+}
 
 func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
 	if mycli == nil || mycli.projectionEvents == nil {
@@ -530,6 +568,8 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		passkeyCeremony:    w.passkeyCeremony,
 		queryGuard:         w.queryGuard,
 		projectionEvents:   w.projectionEvents,
+		groupReconciler:    w.groupReconciler,
+		appCtx:             w.appCtx,
 	}
 
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
@@ -915,6 +955,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 	case *events.Connected, *events.PushNameSetting:
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] events.Connected to Whatsapp for user '%s'", mycli.userID, mycli.WAClient.Store.PushName)
+		mycli.triggerGroupReconciliation()
 		if len(mycli.WAClient.Store.PushName) > 0 {
 			doWebhook = true
 			postMap["event"] = "Connected"
@@ -2848,6 +2889,8 @@ func NewWhatsmeowService(
 	natsProducer producer_interfaces.Producer,
 	queryGuard waquery.Guard,
 	projectionEvents projection_service.EventService,
+	groupReconciler *projection_service.GroupReconciler,
+	appCtx context.Context,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) WhatsmeowService {
 	// Inicializar PollService de forma segura
@@ -2874,6 +2917,8 @@ func NewWhatsmeowService(
 		natsProducer:       natsProducer,
 		queryGuard:         queryGuard,
 		projectionEvents:   projectionEvents,
+		groupReconciler:    groupReconciler,
+		appCtx:             appCtx,
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),
 	}
