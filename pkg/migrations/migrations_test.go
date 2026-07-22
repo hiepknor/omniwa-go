@@ -81,7 +81,7 @@ func TestProjectionOverviewWindowIndexesAreVersioned(t *testing.T) {
 }
 
 func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
-	migration := registry[len(registry)-7]
+	migration := registry[len(registry)-8]
 	if migration.Version != 12 || migration.Name != "create_campaign_persistence" {
 		t.Fatalf("campaign migration = %#v", migration)
 	}
@@ -96,7 +96,7 @@ func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
 }
 
 func TestContactsSearchIndexesAreVersioned(t *testing.T) {
-	migration := registry[len(registry)-6]
+	migration := registry[len(registry)-7]
 	if migration.Version != 13 || migration.Name != "index_contacts_projection_search" {
 		t.Fatalf("contacts search migration = %#v", migration)
 	}
@@ -111,7 +111,7 @@ func TestContactsSearchIndexesAreVersioned(t *testing.T) {
 }
 
 func TestGroupsSearchIndexesAreVersioned(t *testing.T) {
-	migration := registry[len(registry)-5]
+	migration := registry[len(registry)-6]
 	if migration.Version != 14 || migration.Name != "index_groups_projection_search" {
 		t.Fatalf("groups search migration = %#v", migration)
 	}
@@ -123,7 +123,7 @@ func TestGroupsSearchIndexesAreVersioned(t *testing.T) {
 }
 
 func TestProjectionFailureMetadataMigrationIsAdditiveAndIndexed(t *testing.T) {
-	migration := registry[len(registry)-4]
+	migration := registry[len(registry)-5]
 	if migration.Version != 15 || migration.Name != "add_projection_event_failure_metadata" {
 		t.Fatalf("projection failure migration = %#v", migration)
 	}
@@ -139,7 +139,7 @@ func TestProjectionFailureMetadataMigrationIsAdditiveAndIndexed(t *testing.T) {
 }
 
 func TestProjectionWorkHealthIndexIsVersionedAndPartial(t *testing.T) {
-	migration := registry[len(registry)-3]
+	migration := registry[len(registry)-4]
 	if migration.Version != 16 || migration.Name != "index_projection_work_health" {
 		t.Fatalf("projection work health migration = %#v", migration)
 	}
@@ -153,7 +153,7 @@ func TestProjectionWorkHealthIndexIsVersionedAndPartial(t *testing.T) {
 }
 
 func TestProjectionFailureOperationsMigrationIsAuditedAndTerminal(t *testing.T) {
-	migration := registry[len(registry)-2]
+	migration := registry[len(registry)-3]
 	if migration.Version != 17 || migration.Name != "create_projection_failure_operations" {
 		t.Fatalf("projection failure operations migration = %#v", migration)
 	}
@@ -170,7 +170,7 @@ func TestProjectionFailureOperationsMigrationIsAuditedAndTerminal(t *testing.T) 
 }
 
 func TestInstanceTokenDigestMigrationIsAdditiveAndConstrained(t *testing.T) {
-	migration := registry[len(registry)-1]
+	migration := registry[len(registry)-2]
 	if migration.Version != 18 || migration.Name != "add_instance_token_lookup_digests" {
 		t.Fatalf("instance token digest migration = %#v", migration)
 	}
@@ -180,6 +180,22 @@ func TestInstanceTokenDigestMigrationIsAdditiveAndConstrained(t *testing.T) {
 	} {
 		if !strings.Contains(migration.SQL, expected) {
 			t.Fatalf("instance token digest migration does not contain %q", expected)
+		}
+	}
+}
+
+func TestInstanceTokenRotationMigrationUsesCASAndSafeAudit(t *testing.T) {
+	migration := registry[len(registry)-1]
+	if migration.Version != 19 || migration.Name != "create_instance_token_rotation_audit" {
+		t.Fatalf("instance token rotation migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"ADD COLUMN token_generation", "ADD COLUMN token_rotated_at", "CREATE TABLE instance_token_rotation_audit",
+		"new_generation = previous_generation + 1", "actor_reference_hash", "UNIQUE (instance_id, request_id)",
+		"instance_token_rotation_audit_history_idx",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("instance token rotation migration does not contain %q", expected)
 		}
 	}
 }

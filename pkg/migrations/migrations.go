@@ -636,6 +636,34 @@ CREATE INDEX instances_token_digest_backfill_idx
 ON instances (id)
 WHERE token_digest IS NULL;`,
 	},
+	{
+		Version: 19,
+		Name:    "create_instance_token_rotation_audit",
+		SQL: `ALTER TABLE instances
+    ADD COLUMN token_generation BIGINT NOT NULL DEFAULT 1,
+    ADD COLUMN token_rotated_at TIMESTAMPTZ NULL;
+
+ALTER TABLE instances
+    ADD CONSTRAINT instances_token_generation_check CHECK (token_generation > 0);
+
+CREATE TABLE instance_token_rotation_audit (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    previous_generation BIGINT NOT NULL,
+    new_generation BIGINT NOT NULL,
+    reason VARCHAR(500) NOT NULL,
+    actor_reference_hash VARCHAR(64) NOT NULL,
+    request_id VARCHAR(64) NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT instance_token_rotation_audit_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT instance_token_rotation_audit_generation_check CHECK (previous_generation > 0 AND new_generation = previous_generation + 1),
+    CONSTRAINT instance_token_rotation_audit_reason_check CHECK (char_length(reason) BETWEEN 1 AND 500),
+    CONSTRAINT instance_token_rotation_audit_actor_hash_check CHECK (actor_reference_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT instance_token_rotation_audit_request_unique UNIQUE (instance_id, request_id)
+);
+CREATE INDEX instance_token_rotation_audit_history_idx
+ON instance_token_rotation_audit (instance_id, occurred_at DESC, id DESC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

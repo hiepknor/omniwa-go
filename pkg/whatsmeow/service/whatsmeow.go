@@ -69,6 +69,7 @@ type WhatsmeowService interface {
 	ForceUpdateJid(instanceId string, number string) error
 	UpdateInstanceSettings(instanceId string) error
 	UpdateInstanceAdvancedSettings(instanceId string) error
+	UpdateInstanceToken(instanceId string, token string)
 	GetPollService() poll_service.PollService // NOVO: Acesso ao serviço de polls
 
 	// Passkey (WebAuthn) pairing bridge — read by the public ceremony endpoint,
@@ -139,6 +140,7 @@ type MyClient struct {
 	pollService        poll_service.PollService // NOVO: Serviço de enquetes
 	runtimeRegistry    *instance_runtime.Registry[*MyClient]
 	stateMu            sync.RWMutex
+	tokenMu            sync.RWMutex
 	qrMu               sync.Mutex
 	userInfoCache      *cache.Cache
 	config             *config.Config
@@ -164,6 +166,20 @@ type MyClient struct {
 	runtimeGeneration  uint64
 	loopCancel         context.CancelFunc
 	loopDone           chan struct{}
+}
+
+func (m *MyClient) currentToken() string {
+	m.tokenMu.RLock()
+	defer m.tokenMu.RUnlock()
+	return m.token
+}
+
+func (m *MyClient) replaceToken(token string) string {
+	m.tokenMu.Lock()
+	defer m.tokenMu.Unlock()
+	previous := m.token
+	m.token = token
+	return previous
 }
 
 const projectionIngestTimeout = 2 * time.Second
@@ -1040,7 +1056,7 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 					"count":    mycli.qrcodeCount,
 					"maxCount": mycli.config.QrcodeMaxCount,
 				},
-				"instanceToken": mycli.token,
+				"instanceToken": mycli.currentToken(),
 				"instanceId":    instanceID,
 				"instanceName":  instance.Name,
 			}
@@ -1113,7 +1129,7 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 	postMap := map[string]interface{}{
 		"event":         "QRTimeout",
 		"data":          data,
-		"instanceToken": mycli.token,
+		"instanceToken": mycli.currentToken(),
 		"instanceId":    instanceID,
 		"instanceName":  instance.Name,
 	}
@@ -1286,7 +1302,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Instance successfully updated", mycli.userID)
 		}
 
-		myUserInfo, found := mycli.userInfoCache.Get(mycli.token)
+		myUserInfo, found := mycli.userInfoCache.Get(mycli.currentToken())
 
 		if !found {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] No user info cached on pairing?", mycli.userID)
@@ -2021,7 +2037,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					"timestamp":  evt.Info.Timestamp.Unix(),
 					"extraData":  buttonClickData,
 				},
-				"instanceToken": mycli.token,
+				"instanceToken": mycli.currentToken(),
 				"instanceId":    mycli.userID,
 				"instanceName":  mycli.Instance.Name,
 			}
@@ -2152,7 +2168,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Logged out for reason %s", mycli.userID, evt.Reason.String())
 
 		// Limpar cache de userInfo para esta instância
-		mycli.userInfoCache.Delete(mycli.Instance.Token)
+		mycli.userInfoCache.Delete(mycli.currentToken())
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] UserInfo cache cleared", mycli.userID)
 
 		mycli.Instance.DisconnectReason = evt.Reason.String()
@@ -2186,7 +2202,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		dataMap["reason"] = evt.Reason.String()
 
 		// Enviar evento LoggedOut para webhook/RabbitMQ ANTES de matar o canal
-		postMap["instanceToken"] = mycli.Instance.Token
+		postMap["instanceToken"] = mycli.currentToken()
 		postMap["instanceId"] = mycli.userID
 		postMap["instanceName"] = mycli.Instance.Name
 
@@ -2278,7 +2294,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Connection failed with reason %s", mycli.userID, evt.Reason.String())
 
 		// Limpar cache de userInfo para esta instância
-		mycli.userInfoCache.Delete(mycli.Instance.Token)
+		mycli.userInfoCache.Delete(mycli.currentToken())
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] UserInfo cache cleared", mycli.userID)
 
 		mycli.Instance.DisconnectReason = evt.Reason.String()
@@ -2293,7 +2309,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postMap["event"] = "Disconnected"
 
 		// Limpar cache de userInfo para esta instância (mas não para reconexão automática)
-		mycli.userInfoCache.Delete(mycli.Instance.Token)
+		mycli.userInfoCache.Delete(mycli.currentToken())
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] UserInfo cache cleared", mycli.userID)
 
 		mycli.Instance.DisconnectReason = "Disconnected emitted because the websocket is closed by the server."
@@ -2389,7 +2405,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if !mycli.persistDurableEvent(rawEvt, eventType) {
 			return
 		}
-		postMap["instanceToken"] = mycli.token
+		postMap["instanceToken"] = mycli.currentToken()
 		postMap["instanceId"] = mycli.userID
 		postMap["instanceName"] = mycli.Instance.Name
 
@@ -3117,6 +3133,17 @@ func (w whatsmeowService) ClearInstanceCache(instanceId string, token string) er
 
 	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance cache completely cleared", instanceId)
 	return nil
+}
+
+func (w whatsmeowService) UpdateInstanceToken(instanceId string, token string) {
+	runtime, exists := w.runtimeRegistry.Lookup(instanceId)
+	if !exists || runtime.State == nil {
+		return
+	}
+	previous := runtime.State.replaceToken(token)
+	if previous != "" && previous != token {
+		w.userInfoCache.Delete(previous)
+	}
 }
 
 func NewWhatsmeowService(

@@ -229,6 +229,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		tokenDigester = digester
 	}
 	instanceRepository := instance_repository.NewInstanceRepositoryWithTokenDigester(db, tokenDigester)
+	var tokenRotator instance_repository.TokenRotator
+	var credentialCapabilities []string
 	if tokenDigester != nil {
 		backfiller, ok := instanceRepository.(instance_repository.TokenBackfiller)
 		if !ok {
@@ -244,6 +246,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			}
 			logger.LogInfo("Instance token digest backfill finished: updated=%d batches=%d complete=%t", result.Updated, result.Batches, result.Complete)
 		}()
+		rotator, ok := instanceRepository.(instance_repository.TokenRotator)
+		if !ok {
+			log.Fatal("instance repository does not support token rotation")
+		}
+		tokenRotator = rotator
+		credentialCapabilities = append(credentialCapabilities, "instance_token_rotation")
 	}
 	messageRepository := message_repository.NewMessageRepository(db)
 	labelRepository := label_repository.NewLabelRepository(db)
@@ -437,6 +445,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		identityResolver,
 		loggerWrapper,
 	)
+	var tokenRotationService *instance_credential.RotationService
+	if tokenRotator != nil {
+		tokenRotationService = instance_credential.NewRotationService(tokenRotator, instance_credential.WithRuntimeTokenUpdater(whatsmeowService))
+	}
 	remoteMediaFetcher, err := netguard.NewFetcher(netguard.Settings{
 		Policy:       netguard.Policy(config.RemoteMedia.Policy),
 		AllowedHosts: config.RemoteMedia.AllowedHosts,
@@ -534,7 +546,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	routes.NewRouter(
 		auth_middleware.NewMiddleware(config, instanceService),
-		instance_handler.NewInstanceHandler(instanceService, config),
+		instance_handler.NewInstanceHandler(instanceService, config, instance_handler.WithTokenRotation(tokenRotationService)),
 		user_handler.NewUserHandler(userService),
 		send_handler.NewSendHandler(sendMessageService),
 		message_handler.NewMessageHandler(messageService, chatMessageReader),
@@ -550,6 +562,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			version, revision, projectionStateService, durableEventReader, overviewService,
 			server_handler.WithHealthService(healthService),
 			server_handler.WithFailureService(projectionFailureService),
+			server_handler.WithAdminCapabilities(credentialCapabilities...),
 		),
 	).AssignRoutes(r)
 

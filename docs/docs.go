@@ -2927,6 +2927,88 @@ const docTemplate = `{
                 }
             }
         },
+        "/instance/rotate-token/{instanceId}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Atomically replaces an instance bearer token. The new token is returned only in this response.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Instance"
+                ],
+                "summary": "Rotate an instance token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance Id",
+                        "name": "instanceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Rotation reason and current credential version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pkg_instance_handler.RotateTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Token rotated; persist data.token immediately",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_credential.RotationResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Instance not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Credential version conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Rotation is not configured",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/instance/status": {
             "get": {
                 "security": [
@@ -6768,7 +6850,8 @@ const docTemplate = `{
                     "example": [
                         "campaign_orchestration",
                         "rate_limit_retry_after",
-                        "groups_projection"
+                        "groups_projection",
+                        "instance_token_rotation"
                     ]
                 },
                 "revision": {
@@ -7576,6 +7659,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "groupJid": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_instance_credential.RotationResult": {
+            "type": "object",
+            "properties": {
+                "credentialVersion": {
+                    "type": "integer"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "rotatedAt": {
+                    "type": "string"
+                },
+                "token": {
                     "type": "string"
                 }
             }
@@ -9467,6 +9567,9 @@ const docTemplate = `{
                 "createdAt": {
                     "type": "string"
                 },
+                "credentialVersion": {
+                    "type": "integer"
+                },
                 "disconnect_reason": {
                     "type": "string"
                 },
@@ -9522,6 +9625,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "websocketEnable": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_instance_handler.RotateTokenRequest": {
+            "type": "object",
+            "required": [
+                "expectedVersion",
+                "reason"
+            ],
+            "properties": {
+                "expectedVersion": {
+                    "type": "integer"
+                },
+                "reason": {
                     "type": "string"
                 }
             }

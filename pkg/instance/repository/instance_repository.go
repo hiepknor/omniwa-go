@@ -2,8 +2,14 @@ package instance_repository
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gomessguii/logger"
@@ -50,6 +56,35 @@ type TokenDigester interface {
 
 type TokenBackfiller interface {
 	BackfillTokenDigests(ctx context.Context, batchSize int) (int, error)
+}
+
+var (
+	ErrTokenRotationUnavailable = errors.New("instance token rotation is unavailable")
+	ErrTokenRotationNotFound    = errors.New("instance was not found")
+	ErrTokenRotationConflict    = errors.New("instance token rotation conflicted")
+	ErrInvalidTokenRotation     = errors.New("valid instance token rotation is required")
+)
+
+var safeTokenRotationRequestID = regexp.MustCompile(`^[A-Za-z0-9._-]{16,64}$`)
+
+type TokenRotation struct {
+	InstanceID         string
+	ExpectedGeneration int64
+	NewToken           string
+	Reason             string
+	ActorReferenceHash string
+	RequestID          string
+	OccurredAt         time.Time
+}
+
+type TokenRotationResult struct {
+	InstanceID      string
+	TokenGeneration int64
+	RotatedAt       time.Time
+}
+
+type TokenRotator interface {
+	RotateToken(ctx context.Context, rotation TokenRotation) (*TokenRotationResult, error)
 }
 
 func (i *instanceRepository) setTokenDigest(instance *instance_model.Instance) error {
@@ -190,6 +225,82 @@ FOR UPDATE SKIP LOCKED`, batchSize).Scan(&rows).Error; err != nil {
 		return 0, err
 	}
 	return updated, nil
+}
+
+func (i *instanceRepository) RotateToken(ctx context.Context, rotation TokenRotation) (*TokenRotationResult, error) {
+	rotation.Reason = strings.TrimSpace(rotation.Reason)
+	if i == nil || i.db == nil || i.tokenDigester == nil {
+		return nil, ErrTokenRotationUnavailable
+	}
+	if !validTokenRotation(rotation) {
+		return nil, ErrInvalidTokenRotation
+	}
+	digest, keyVersion, err := i.tokenDigester.Digest(rotation.NewToken)
+	if err != nil {
+		return nil, fmt.Errorf("derive rotated instance token digest: %w", err)
+	}
+	rotation.OccurredAt = rotation.OccurredAt.UTC()
+	newGeneration := rotation.ExpectedGeneration + 1
+	db := i.credentialDB().WithContext(ctx)
+	err = db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&instance_model.Instance{}).
+			Where("id = ? AND token_generation = ?", rotation.InstanceID, rotation.ExpectedGeneration).
+			Updates(map[string]interface{}{
+				"token": rotation.NewToken, "token_digest": digest, "token_key_version": keyVersion,
+				"token_generation": newGeneration, "token_rotated_at": rotation.OccurredAt,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			var count int64
+			if err := tx.Model(&instance_model.Instance{}).Where("id = ?", rotation.InstanceID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				return ErrTokenRotationNotFound
+			}
+			return ErrTokenRotationConflict
+		}
+		audit := instance_model.TokenRotationAudit{
+			ID: uuid.NewString(), InstanceID: rotation.InstanceID, PreviousGeneration: rotation.ExpectedGeneration,
+			NewGeneration: newGeneration, Reason: rotation.Reason, ActorReferenceHash: rotation.ActorReferenceHash,
+			RequestID: rotation.RequestID, OccurredAt: rotation.OccurredAt,
+		}
+		return tx.Create(&audit).Error
+	})
+	if err != nil {
+		if !errors.Is(err, ErrTokenRotationNotFound) && !errors.Is(err, ErrTokenRotationConflict) {
+			var count int64
+			if queryErr := db.Model(&instance_model.TokenRotationAudit{}).
+				Where("instance_id = ? AND request_id = ?", rotation.InstanceID, rotation.RequestID).Count(&count).Error; queryErr == nil && count > 0 {
+				return nil, ErrTokenRotationConflict
+			}
+		}
+		return nil, err
+	}
+	return &TokenRotationResult{InstanceID: rotation.InstanceID, TokenGeneration: newGeneration, RotatedAt: rotation.OccurredAt}, nil
+}
+
+func validTokenRotation(rotation TokenRotation) bool {
+	if uuid.Validate(rotation.InstanceID) != nil || rotation.ExpectedGeneration <= 0 || rotation.NewToken == "" || rotation.OccurredAt.IsZero() ||
+		!safeTokenRotationRequestID.MatchString(rotation.RequestID) || !validTokenRotationReason(rotation.Reason) {
+		return false
+	}
+	decoded, err := hex.DecodeString(rotation.ActorReferenceHash)
+	return err == nil && len(decoded) == 32 && rotation.ActorReferenceHash == strings.ToLower(rotation.ActorReferenceHash)
+}
+
+func validTokenRotationReason(reason string) bool {
+	if reason == "" || !utf8.ValidString(reason) || utf8.RuneCountInString(reason) > 500 {
+		return false
+	}
+	for _, value := range reason {
+		if unicode.IsControl(value) {
+			return false
+		}
+	}
+	return true
 }
 
 func (i *instanceRepository) UpdateConnected(userId string, status bool, disconnectReason string) error {

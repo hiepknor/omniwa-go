@@ -1,6 +1,7 @@
 package instance_handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -8,7 +9,9 @@ import (
 
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
+	instance_credential "github.com/evolution-foundation/evolution-go/pkg/instance/credential"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
 	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 )
@@ -31,11 +34,63 @@ type InstanceHandler interface {
 	GetLogs(ctx *gin.Context)
 	GetAdvancedSettings(ctx *gin.Context)
 	UpdateAdvancedSettings(ctx *gin.Context)
+	RotateToken(ctx *gin.Context)
 }
 
 type instanceHandler struct {
 	config          *config.Config
 	instanceService instance_service.InstanceService
+	tokenRotation   *instance_credential.RotationService
+}
+
+type RotateTokenRequest struct {
+	ExpectedVersion int64  `json:"expectedVersion" binding:"required,gt=0"`
+	Reason          string `json:"reason" binding:"required"`
+}
+
+// RotateToken replaces an instance bearer credential and returns it once.
+// @Summary Rotate an instance token
+// @Description Atomically replaces an instance bearer token. The new token is returned only in this response.
+// @Tags Instance
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance Id"
+// @Param request body RotateTokenRequest true "Rotation reason and current credential version"
+// @Success 200 {object} apidocs.SuccessResponse{data=instance_credential.RotationResult} "Token rotated; persist data.token immediately"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid request"
+// @Failure 404 {object} apidocs.ErrorResponse "Instance not found"
+// @Failure 409 {object} apidocs.ErrorResponse "Credential version conflict"
+// @Failure 503 {object} apidocs.ErrorResponse "Rotation is not configured"
+// @Security ApiKeyAuth
+// @Router /instance/rotate-token/{instanceId} [post]
+func (i *instanceHandler) RotateToken(ctx *gin.Context) {
+	if i.tokenRotation == nil {
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "capability_unavailable", "instance token rotation is not configured")
+		return
+	}
+	var request RotateTokenRequest
+	if ctx.Param("instanceId") == "" || ctx.ShouldBindJSON(&request) != nil {
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_rotation_request", "valid instanceId, expectedVersion, and reason are required")
+		return
+	}
+	result, err := i.tokenRotation.Rotate(ctx.Request.Context(), instance_credential.RotationRequest{
+		InstanceID: ctx.Param("instanceId"), ExpectedGeneration: request.ExpectedVersion, Reason: request.Reason,
+		ActorCredential: ctx.GetHeader("apikey"), RequestID: httpapi.RequestID(ctx),
+	})
+	switch {
+	case errors.Is(err, instance_credential.ErrInvalidRotationRequest):
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_rotation_request", "valid instanceId, expectedVersion, and reason are required")
+	case errors.Is(err, instance_repository.ErrTokenRotationNotFound):
+		httpapi.WriteError(ctx, http.StatusNotFound, "instance_not_found", "instance not found")
+	case errors.Is(err, instance_repository.ErrTokenRotationConflict):
+		httpapi.WriteError(ctx, http.StatusConflict, "credential_version_conflict", "instance credential version changed; refresh before retrying")
+	case errors.Is(err, instance_repository.ErrTokenRotationUnavailable):
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "capability_unavailable", "instance token rotation is not configured")
+	case err != nil:
+		httpapi.WriteInternal(ctx, err)
+	default:
+		ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": result})
+	}
 }
 
 // Create a new instance
@@ -673,6 +728,18 @@ func (h *instanceHandler) UpdateAdvancedSettings(c *gin.Context) {
 	})
 }
 
-func NewInstanceHandler(instanceService instance_service.InstanceService, config *config.Config) InstanceHandler {
-	return &instanceHandler{instanceService: instanceService, config: config}
+type Option func(*instanceHandler)
+
+func WithTokenRotation(service *instance_credential.RotationService) Option {
+	return func(handler *instanceHandler) { handler.tokenRotation = service }
+}
+
+func NewInstanceHandler(instanceService instance_service.InstanceService, config *config.Config, options ...Option) InstanceHandler {
+	handler := &instanceHandler{instanceService: instanceService, config: config}
+	for _, option := range options {
+		if option != nil {
+			option(handler)
+		}
+	}
+	return handler
 }
