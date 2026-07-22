@@ -15,7 +15,9 @@ import (
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
+	waSyncAction "go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -271,6 +273,26 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		t.Fatalf("joined snapshot enqueue = %v, %v", inserted, err)
 	}
 	stateService := projection_service.NewStateService(projection_repository.NewStateRepository(reopened))
+	inboxLabelName := "Inbox projected label"
+	inboxLabelEvent, relevant, err := projection_service.NormalizeProjectionEvent(instance.Id, &events.LabelEdit{
+		Timestamp: time.Unix(650, 0), LabelID: "label-1", Action: &waSyncAction.LabelEditAction{Name: &inboxLabelName},
+	})
+	if err != nil || !relevant {
+		t.Fatalf("normalize label inbox event = %#v, %v, %v", inboxLabelEvent, relevant, err)
+	}
+	if inserted, err := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second).Ingest(context.Background(), inboxLabelEvent); err != nil || !inserted {
+		t.Fatalf("label inbox ingest = %v, %v", inserted, err)
+	}
+	labelProjector := projection_service.NewLabelProjector(projection_repository.NewLabelProjectionRepository(reopened), stateService)
+	labelBatch, err := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second).
+		ProcessBatchFor(context.Background(), "labels", []string{"label_edit", "label_chat_association", "label_message_association"}, 10, labelProjector.Handle)
+	if err != nil || labelBatch.Claimed != 1 || labelBatch.Processed != 1 || labelBatch.Failed != 0 {
+		t.Fatalf("label projection batch = %#v, %v", labelBatch, err)
+	}
+	storedLabel, err = projection_repository.NewLabelProjectionRepository(reopened).GetLabel(context.Background(), instance.Id, "label-1")
+	if err != nil || storedLabel.Name == nil || *storedLabel.Name != inboxLabelName {
+		t.Fatalf("label projected through inbox = %#v, %v", storedLabel, err)
+	}
 	projector := projection_service.NewGroupProjector(groupRepository, stateService)
 	eventService := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second)
 	batch, err := eventService.ProcessBatchFor(context.Background(), "groups", []string{"joined_group", "group_info"}, 10, projector.Handle)
@@ -373,8 +395,9 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		t.Fatalf("write-through tombstone remained readable: %v", err)
 	}
 	health, err := stateService.Health(instance.Id)
-	if err != nil || health.Total != 2 || health.Status != "syncing" || health.ByStatus["ready"] != 1 || health.ByStatus["not_started"] != 1 ||
-		len(health.Resources) != 2 || !containsHealthResource(health.Resources, "groups", projection_model.SyncStatusReady) {
+	if err != nil || health.Total != 3 || health.Status != "syncing" || health.ByStatus["ready"] != 1 || health.ByStatus["not_started"] != 2 ||
+		len(health.Resources) != 3 || !containsHealthResource(health.Resources, "groups", projection_model.SyncStatusReady) ||
+		!containsHealthResource(health.Resources, "labels", projection_model.SyncStatusNotStarted) {
 		t.Fatalf("projection health = %#v, %v", health, err)
 	}
 }
