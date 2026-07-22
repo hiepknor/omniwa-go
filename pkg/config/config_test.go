@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/base64"
 	"math"
 	"testing"
 	"time"
@@ -35,6 +37,11 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_TIMEOUT, "")
 	t.Setenv(config_env.WEBHOOK_MAX_REQUEST_BYTES, "")
 	t.Setenv(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "")
+	t.Setenv(config_env.WEBHOOK_WORKERS, "")
+	t.Setenv(config_env.WEBHOOK_QUEUE_CAPACITY, "")
+	t.Setenv(config_env.WEBHOOK_MAX_PENDING_PER_INSTANCE, "")
+	t.Setenv(config_env.WEBHOOK_MAX_ATTEMPTS, "")
+	t.Setenv(config_env.WEBHOOK_RETRY_BASE, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "")
@@ -71,7 +78,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.RemoteMedia.Policy != "public_only" || config.RemoteMedia.Timeout != 15*time.Second || config.RemoteMedia.MaxBytes != 32*1024*1024 || len(config.RemoteMedia.AllowedHosts) != 0 {
 		t.Fatalf("remote media defaults = %+v", config.RemoteMedia)
 	}
-	if config.Webhook.Timeout != 10*time.Second || config.Webhook.MaxRequestBytes != 4*1024*1024 || config.Webhook.MaxResponseBytes != 64*1024 || config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 0 || len(config.Webhook.AllowedPorts) != 2 {
+	if config.Webhook.Timeout != 10*time.Second || config.Webhook.MaxRequestBytes != 4*1024*1024 || config.Webhook.MaxResponseBytes != 64*1024 || config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 0 || len(config.Webhook.AllowedPorts) != 2 || config.Webhook.Workers != 4 || config.Webhook.QueueCapacity != 256 || config.Webhook.MaxPendingPerInstance != 32 || config.Webhook.MaxAttempts != 3 || config.Webhook.RetryBase != time.Second {
 		t.Fatalf("webhook defaults are invalid")
 	}
 	if len(config.InstanceTokenHMACKey) != 0 || config.InstanceTokenHMACKeyVersion != 0 || config.InstanceTokenBackfillBatch != 100 || config.InstanceTokenBackfillMaxBatches != 10 {
@@ -106,7 +113,12 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_TIMEOUT, "4s")
 	t.Setenv(config_env.WEBHOOK_MAX_REQUEST_BYTES, "2048")
 	t.Setenv(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "1024")
-	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	t.Setenv(config_env.WEBHOOK_WORKERS, "8")
+	t.Setenv(config_env.WEBHOOK_QUEUE_CAPACITY, "100")
+	t.Setenv(config_env.WEBHOOK_MAX_PENDING_PER_INSTANCE, "20")
+	t.Setenv(config_env.WEBHOOK_MAX_ATTEMPTS, "4")
+	t.Setenv(config_env.WEBHOOK_RETRY_BASE, "250ms")
+	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "7")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "25")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "4")
@@ -115,7 +127,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	if config.RemoteMedia.Policy != "allowlist" || config.RemoteMedia.Timeout != 3*time.Second || config.RemoteMedia.MaxBytes != 4096 || len(config.RemoteMedia.AllowedHosts) != 2 {
 		t.Fatalf("remote media overrides = %+v", config.RemoteMedia)
 	}
-	if config.Webhook.Timeout != 4*time.Second || config.Webhook.MaxRequestBytes != 2048 || config.Webhook.MaxResponseBytes != 1024 || !config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 2 || len(config.Webhook.AllowedPorts) != 2 {
+	if config.Webhook.Timeout != 4*time.Second || config.Webhook.MaxRequestBytes != 2048 || config.Webhook.MaxResponseBytes != 1024 || !config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 2 || len(config.Webhook.AllowedPorts) != 2 || config.Webhook.Workers != 8 || config.Webhook.QueueCapacity != 100 || config.Webhook.MaxPendingPerInstance != 20 || config.Webhook.MaxAttempts != 4 || config.Webhook.RetryBase != 250*time.Millisecond {
 		t.Fatalf("webhook overrides are invalid")
 	}
 	if math.Abs(config.WAInfoRatePerSecond-(12.0/3600.0)) > 1e-12 {
