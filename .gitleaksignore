@@ -190,5 +190,4 @@ docs/wiki/recursos-avancados/events-system.md:curl-auth-header:840
 docs/wiki/referencia/environment-variables.md:generic-api-key:182
 docs/wiki/referencia/error-codes.md:curl-auth-header:204
 docs/wiki/referencia/error-codes.md:curl-auth-header:34
-pkg/config/config_test.go:generic-api-key:109
 pkg/events/websocket/websocket_handshake_test.go:generic-api-key:27

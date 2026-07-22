@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/base64"
 	"math"
 	"testing"
 	"time"
@@ -116,7 +118,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_MAX_PENDING_PER_INSTANCE, "20")
 	t.Setenv(config_env.WEBHOOK_MAX_ATTEMPTS, "4")
 	t.Setenv(config_env.WEBHOOK_RETRY_BASE, "250ms")
-	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "7")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "25")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "4")
