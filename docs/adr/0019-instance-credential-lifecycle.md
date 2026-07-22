@@ -55,3 +55,13 @@ token field remains temporarily populated on all three paths to avoid changing
 the contract before digest lookup, rotation, and console negotiation exist.
 Proxy credentials and QR ceremony material are not compatibility fields and are
 redacted immediately while retaining their existing JSON keys.
+
+The digest expansion is implemented next. Migration 18 adds a nullable,
+versioned HMAC-SHA-256 lookup digest with database constraints and partial
+indexes. When `INSTANCE_TOKEN_HMAC_KEY` is configured, creates and updates
+dual-write the current digest, authentication tries the digest before the
+legacy plaintext lookup, and a bounded `FOR UPDATE SKIP LOCKED` startup worker
+backfills legacy rows. The worker is finite per process start and restartable;
+it records only aggregate counts. Plaintext remains the rollback path during
+this phase. Operators must use the same base64-encoded key and key version on
+every replica and retain the old secret until a later measured rotation phase.

@@ -41,6 +41,7 @@ import (
 	group_handler "github.com/evolution-foundation/evolution-go/pkg/group/handler"
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
+	instance_credential "github.com/evolution-foundation/evolution-go/pkg/instance/credential"
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_ownership "github.com/evolution-foundation/evolution-go/pkg/instance/ownership"
@@ -219,7 +220,31 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 	}
 
-	instanceRepository := instance_repository.NewInstanceRepository(db)
+	var tokenDigester instance_repository.TokenDigester
+	if len(config.InstanceTokenHMACKey) > 0 {
+		digester, err := instance_credential.NewDigester(config.InstanceTokenHMACKey, config.InstanceTokenHMACKeyVersion)
+		if err != nil {
+			log.Fatal(err)
+		}
+		tokenDigester = digester
+	}
+	instanceRepository := instance_repository.NewInstanceRepositoryWithTokenDigester(db, tokenDigester)
+	if tokenDigester != nil {
+		backfiller, ok := instanceRepository.(instance_repository.TokenBackfiller)
+		if !ok {
+			log.Fatal("instance repository does not support token digest backfill")
+		}
+		backgroundWorkers.Add(1)
+		go func() {
+			defer backgroundWorkers.Done()
+			result, err := instance_credential.RunBoundedBackfill(appCtx, backfiller, config.InstanceTokenBackfillBatch, config.InstanceTokenBackfillMaxBatches)
+			if err != nil {
+				logger.LogError("Instance token digest backfill failed: %v", err)
+				return
+			}
+			logger.LogInfo("Instance token digest backfill finished: updated=%d batches=%d complete=%t", result.Updated, result.Batches, result.Complete)
+		}()
+	}
 	messageRepository := message_repository.NewMessageRepository(db)
 	labelRepository := label_repository.NewLabelRepository(db)
 	projectionHealthPolicy := projection_service.ProjectionHealthPolicy{}

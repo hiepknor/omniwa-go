@@ -38,6 +38,13 @@ services:
       # Security — change this for anything beyond local dev.
       GLOBAL_API_KEY: "dev-global-api-key-change-me"
 
+      # Optional token lookup digest. Supply a base64-encoded 32-byte secret
+      # from the shell/secret manager to exercise the staged credential rollout.
+      INSTANCE_TOKEN_HMAC_KEY: "${INSTANCE_TOKEN_HMAC_KEY:-}"
+      INSTANCE_TOKEN_HMAC_KEY_VERSION: "${INSTANCE_TOKEN_HMAC_KEY_VERSION:-1}"
+      INSTANCE_TOKEN_BACKFILL_BATCH: "100"
+      INSTANCE_TOKEN_BACKFILL_MAX_BATCHES: "10"
+
       # PostgreSQL (databases are auto-created on startup)
       POSTGRES_AUTH_DB: "postgresql://postgres:postgres@postgres:5432/omniwa_auth?sslmode=disable"
       POSTGRES_USERS_DB: "postgresql://postgres:postgres@postgres:5432/omniwa_users?sslmode=disable"

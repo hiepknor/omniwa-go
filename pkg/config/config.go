@@ -2,6 +2,8 @@ package config
 
 import (
 	"database/sql"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -18,60 +20,64 @@ import (
 )
 
 type Config struct {
-	PostgresAuthDB       string
-	postgresUsersDB      string
-	PostgresHost         string
-	PostgresPort         string
-	PostgresUser         string
-	PostgresPassword     string
-	PostgresDB           string
-	DatabaseSaveMessages bool
-	GlobalApiKey         string
-	WaDebug              string
-	LogType              string
-	WebhookFiles         bool
-	ConnectOnStartup     bool
-	OsName               string
-	AmqpUrl              string
-	AmqpGlobalEnabled    bool
-	WebhookUrl           string
-	Webhook              WebhookConfig
-	ClientName           string
-	ApiAudioConverter    string
-	ApiAudioConverterKey string
-	MinioEndpoint        string
-	MinioAccessKey       string
-	MinioSecretKey       string
-	MinioBucket          string
-	MinioUseSSL          bool
-	MinioEnabled         bool
-	MinioRegion          string
-	WhatsappVersionMajor int
-	WhatsappVersionMinor int
-	WhatsappVersionPatch int
-	ProxyProtocol        string
-	ProxyHost            string
-	ProxyPort            string
-	ProxyUsername        string
-	ProxyPassword        string
-	AmqpGlobalEvents     []string
-	AmqpSpecificEvents   []string
-	NatsUrl              string
-	NatsGlobalEnabled    bool
-	NatsGlobalEvents     []string
-	EventIgnoreGroup     bool
-	EventIgnoreStatus    bool
-	QrcodeMaxCount       int
-	CheckUserExists      bool
-	LicenseGateEnabled   bool
-	WAInfoRatePerSecond  float64
-	WAInfoBurst          int
-	WAInfoMaxWait        time.Duration
-	WAInfoCooldown       time.Duration
-	GroupSyncInterval    time.Duration
-	MessageRetention     time.Duration
-	EventRetention       time.Duration
-	RemoteMedia          RemoteMediaConfig
+	PostgresAuthDB                  string
+	postgresUsersDB                 string
+	PostgresHost                    string
+	PostgresPort                    string
+	PostgresUser                    string
+	PostgresPassword                string
+	PostgresDB                      string
+	DatabaseSaveMessages            bool
+	GlobalApiKey                    string
+	InstanceTokenHMACKey            []byte
+	InstanceTokenHMACKeyVersion     int
+	InstanceTokenBackfillBatch      int
+	InstanceTokenBackfillMaxBatches int
+	WaDebug                         string
+	LogType                         string
+	WebhookFiles                    bool
+	ConnectOnStartup                bool
+	OsName                          string
+	AmqpUrl                         string
+	AmqpGlobalEnabled               bool
+	WebhookUrl                      string
+	Webhook                         WebhookConfig
+	ClientName                      string
+	ApiAudioConverter               string
+	ApiAudioConverterKey            string
+	MinioEndpoint                   string
+	MinioAccessKey                  string
+	MinioSecretKey                  string
+	MinioBucket                     string
+	MinioUseSSL                     bool
+	MinioEnabled                    bool
+	MinioRegion                     string
+	WhatsappVersionMajor            int
+	WhatsappVersionMinor            int
+	WhatsappVersionPatch            int
+	ProxyProtocol                   string
+	ProxyHost                       string
+	ProxyPort                       string
+	ProxyUsername                   string
+	ProxyPassword                   string
+	AmqpGlobalEvents                []string
+	AmqpSpecificEvents              []string
+	NatsUrl                         string
+	NatsGlobalEnabled               bool
+	NatsGlobalEvents                []string
+	EventIgnoreGroup                bool
+	EventIgnoreStatus               bool
+	QrcodeMaxCount                  int
+	CheckUserExists                 bool
+	LicenseGateEnabled              bool
+	WAInfoRatePerSecond             float64
+	WAInfoBurst                     int
+	WAInfoMaxWait                   time.Duration
+	WAInfoCooldown                  time.Duration
+	GroupSyncInterval               time.Duration
+	MessageRetention                time.Duration
+	EventRetention                  time.Duration
+	RemoteMedia                     RemoteMediaConfig
 
 	WAOutboundRatePerSecond float64
 	WAOutboundBurst         int
@@ -264,6 +270,26 @@ func Load() *Config {
 
 	globalApiKey := os.Getenv(config_env.GLOBAL_API_KEY)
 	panicIfEmpty(config_env.GLOBAL_API_KEY, globalApiKey)
+
+	instanceTokenHMACKey, err := parseOptionalBase64Key(os.Getenv(config_env.INSTANCE_TOKEN_HMAC_KEY), 32)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.INSTANCE_TOKEN_HMAC_KEY, err)
+	}
+	instanceTokenHMACKeyVersion := 0
+	if len(instanceTokenHMACKey) > 0 {
+		instanceTokenHMACKeyVersion, err = parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION), "1"))
+		if err != nil {
+			logger.LogFatal("[CONFIG] invalid %s: %v", config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, err)
+		}
+	}
+	instanceTokenBackfillBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH), "100"))
+	if err != nil || instanceTokenBackfillBatch > 1000 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.INSTANCE_TOKEN_BACKFILL_BATCH)
+	}
+	instanceTokenBackfillMaxBatches, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES), "10"))
+	if err != nil || instanceTokenBackfillMaxBatches > 1000 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES)
+	}
 
 	clientName := os.Getenv(config_env.CLIENT_NAME)
 
@@ -557,18 +583,22 @@ func Load() *Config {
 	}
 
 	config := &Config{
-		PostgresAuthDB:       postgresAuthDB,
-		postgresUsersDB:      postgresUsersDB,
-		DatabaseSaveMessages: databaseSaveMessages == "true",
-		GlobalApiKey:         globalApiKey,
-		WaDebug:              waDebug,
-		LogType:              logType,
-		WebhookFiles:         webhookFiles == "true",
-		ConnectOnStartup:     connectOnStartup == "true",
-		OsName:               osName,
-		AmqpUrl:              amqpUrl,
-		AmqpGlobalEnabled:    amqpGlobalEnabled == "true",
-		WebhookUrl:           webhookUrl,
+		PostgresAuthDB:                  postgresAuthDB,
+		postgresUsersDB:                 postgresUsersDB,
+		DatabaseSaveMessages:            databaseSaveMessages == "true",
+		GlobalApiKey:                    globalApiKey,
+		InstanceTokenHMACKey:            instanceTokenHMACKey,
+		InstanceTokenHMACKeyVersion:     instanceTokenHMACKeyVersion,
+		InstanceTokenBackfillBatch:      instanceTokenBackfillBatch,
+		InstanceTokenBackfillMaxBatches: instanceTokenBackfillMaxBatches,
+		WaDebug:                         waDebug,
+		LogType:                         logType,
+		WebhookFiles:                    webhookFiles == "true",
+		ConnectOnStartup:                connectOnStartup == "true",
+		OsName:                          osName,
+		AmqpUrl:                         amqpUrl,
+		AmqpGlobalEnabled:               amqpGlobalEnabled == "true",
+		WebhookUrl:                      webhookUrl,
 		Webhook: WebhookConfig{
 			AllowedHosts: webhookAllowedHosts, AllowedPorts: webhookAllowedPorts, AllowPrivate: webhookAllowPrivate, Timeout: webhookTimeout,
 			MaxRequestBytes: webhookMaxRequestBytes, MaxResponseBytes: webhookMaxResponseBytes,
@@ -633,6 +663,27 @@ func Load() *Config {
 	}
 
 	return config
+}
+
+func defaultIfEmpty(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func parseOptionalBase64Key(value string, minimumBytes int) ([]byte, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, errors.New("must be standard base64")
+	}
+	if len(decoded) < minimumBytes {
+		return nil, fmt.Errorf("decoded key must contain at least %d bytes", minimumBytes)
+	}
+	return decoded, nil
 }
 
 func parseRatePerSecond(value string) (float64, error) {

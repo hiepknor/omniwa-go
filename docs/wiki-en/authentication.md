@@ -63,3 +63,21 @@ cross-origin requests here: the server also sends
 origin with credentials is rejected by browsers per the Fetch spec. The BFF
 pattern above sidesteps this entirely — the browser talks only to your own
 origin.
+
+## Instance token lookup protection
+
+Instance bearer tokens remain part of the compatibility API during the staged
+credential migration. Operators can enable keyed database lookup digests with:
+
+```env
+INSTANCE_TOKEN_HMAC_KEY=<base64-encoded secret of at least 32 bytes>
+INSTANCE_TOKEN_HMAC_KEY_VERSION=1
+INSTANCE_TOKEN_BACKFILL_BATCH=100
+INSTANCE_TOKEN_BACKFILL_MAX_BATCHES=10
+```
+
+Generate the key with `openssl rand -base64 32`, keep it in a secret manager,
+and configure the identical key and version on every replica. Never rotate or
+discard that secret ad hoc: the current rollout has a single active digest key
+and retains plaintext only as a measured rollback path. Backfill work is
+bounded per startup and safely resumes on a later restart.

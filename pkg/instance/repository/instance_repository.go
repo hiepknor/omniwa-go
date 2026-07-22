@@ -1,12 +1,15 @@
 package instance_repository
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gomessguii/logger"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	gorm_logger "gorm.io/gorm/logger"
 
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
@@ -35,21 +38,66 @@ type InstanceRepository interface {
 }
 
 type instanceRepository struct {
-	db          *gorm.DB
-	labelRepo   label_repository.LabelRepository
-	messageRepo message_repository.MessageRepository
+	db            *gorm.DB
+	tokenDigester TokenDigester
+	labelRepo     label_repository.LabelRepository
+	messageRepo   message_repository.MessageRepository
+}
+
+type TokenDigester interface {
+	Digest(token string) (digest string, keyVersion int, err error)
+}
+
+type TokenBackfiller interface {
+	BackfillTokenDigests(ctx context.Context, batchSize int) (int, error)
+}
+
+func (i *instanceRepository) setTokenDigest(instance *instance_model.Instance) error {
+	if i.tokenDigester == nil {
+		return nil
+	}
+	digest, version, err := i.tokenDigester.Digest(instance.Token)
+	if err != nil {
+		return err
+	}
+	instance.TokenDigest = &digest
+	instance.TokenKeyVersion = &version
+	return nil
+}
+
+func (i *instanceRepository) credentialDB() *gorm.DB {
+	return i.db.Session(&gorm.Session{Logger: i.db.Logger.LogMode(gorm_logger.Silent)})
 }
 
 func (i *instanceRepository) Create(instance instance_model.Instance) (*instance_model.Instance, error) {
-	if err := i.db.Create(&instance).Error; err != nil {
+	if err := i.setTokenDigest(&instance); err != nil {
+		return nil, fmt.Errorf("derive instance token digest: %w", err)
+	}
+	if err := i.credentialDB().Create(&instance).Error; err != nil {
 		return nil, err
 	}
 	return &instance, nil
 }
 
 func (i *instanceRepository) GetInstanceByToken(token string) (*instance_model.Instance, error) {
+	if token == "" {
+		return nil, errors.New("instance token is required")
+	}
 	var instance instance_model.Instance
-	err := i.db.Where("token = ?", token).First(&instance).Error
+	if i.tokenDigester != nil {
+		digest, version, err := i.tokenDigester.Digest(token)
+		if err != nil {
+			return nil, fmt.Errorf("derive instance token digest: %w", err)
+		}
+		err = i.credentialDB().Where("token_key_version = ? AND token_digest = ?", version, digest).First(&instance).Error
+		if err == nil {
+			return &instance, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+	err := i.credentialDB().Where("token = ?", token).First(&instance).Error
 	if err != nil {
 		return nil, err
 	}
@@ -93,11 +141,55 @@ func (i *instanceRepository) GetConnectedInstanceByID(instanceId string) (*insta
 }
 
 func (i *instanceRepository) Update(instance *instance_model.Instance) error {
-	err := i.db.Save(&instance).Error
+	if err := i.setTokenDigest(instance); err != nil {
+		return fmt.Errorf("derive instance token digest: %w", err)
+	}
+	err := i.credentialDB().Save(instance).Error
 	if err != nil {
 		logger.LogError("Error updating instance in DB: %v", err)
 	}
 	return err
+}
+
+func (i *instanceRepository) BackfillTokenDigests(ctx context.Context, batchSize int) (int, error) {
+	if i.tokenDigester == nil {
+		return 0, nil
+	}
+	if batchSize <= 0 || batchSize > 1000 {
+		return 0, errors.New("token digest backfill batch must be between 1 and 1000")
+	}
+	updated := 0
+	err := i.credentialDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var rows []struct {
+			ID    string
+			Token string
+		}
+		if err := tx.Raw(`SELECT id, token FROM instances
+WHERE token_digest IS NULL
+ORDER BY id
+LIMIT ?
+FOR UPDATE SKIP LOCKED`, batchSize).Scan(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			digest, version, err := i.tokenDigester.Digest(row.Token)
+			if err != nil {
+				return fmt.Errorf("derive token digest for instance %s: %w", row.ID, err)
+			}
+			result := tx.Model(&instance_model.Instance{}).
+				Where("id = ? AND token_digest IS NULL", row.ID).
+				Updates(map[string]interface{}{"token_digest": digest, "token_key_version": version})
+			if result.Error != nil {
+				return result.Error
+			}
+			updated += int(result.RowsAffected)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return updated, nil
 }
 
 func (i *instanceRepository) UpdateConnected(userId string, status bool, disconnectReason string) error {
@@ -217,7 +309,12 @@ func (i *instanceRepository) UpdateAdvancedSettings(instanceId string, settings 
 }
 
 func NewInstanceRepository(db *gorm.DB) InstanceRepository {
+	return NewInstanceRepositoryWithTokenDigester(db, nil)
+}
+
+func NewInstanceRepositoryWithTokenDigester(db *gorm.DB, digester TokenDigester) InstanceRepository {
 	return &instanceRepository{
-		db: db,
+		db:            db,
+		tokenDigester: digester,
 	}
 }
