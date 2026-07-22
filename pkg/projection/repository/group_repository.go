@@ -2,6 +2,7 @@ package projection_repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -13,8 +14,40 @@ import (
 
 type GroupRepository interface {
 	ApplySnapshot(ctx context.Context, group *projection_model.Group, participants []projection_model.GroupParticipant) (bool, error)
+	ApplyPatch(ctx context.Context, patch GroupPatch) (bool, error)
 	Tombstone(ctx context.Context, instanceID, groupID, eventKey string, occurredAt time.Time) (bool, error)
 	Get(ctx context.Context, instanceID, groupID string) (*projection_model.Group, []projection_model.GroupParticipant, error)
+}
+
+type GroupPatch struct {
+	InstanceID           string
+	GroupID              string
+	EventKey             string
+	OccurredAt           time.Time
+	Name                 *string
+	Topic                *string
+	Locked               *bool
+	Announce             *bool
+	EphemeralEnabled     *bool
+	EphemeralTimer       *int64
+	JoinApprovalRequired *bool
+	Suspended            *bool
+	ParticipantVersion   *string
+	ParentGroupID        *string
+	IsDefaultSubgroup    *bool
+	InviteLink           *string
+	ParticipantChanges   []GroupParticipantPatch
+}
+
+type GroupParticipantPatch struct {
+	ParticipantID string
+	Role          projection_model.ParticipantRole
+	Tombstone     bool
+}
+
+type groupFieldVersion struct {
+	OccurredAt time.Time `json:"occurredAt"`
+	EventKey   string    `json:"eventKey"`
 }
 
 type groupRepository struct {
@@ -34,16 +67,67 @@ func (r *groupRepository) ApplySnapshot(ctx context.Context, group *projection_m
 	group.SourceOccurredAt = group.SourceOccurredAt.UTC()
 	group.LastSyncedAt = now
 	group.TombstonedAt = nil
+	incoming := groupFieldVersion{OccurredAt: group.SourceOccurredAt, EventKey: group.SourceEventKey}
 	applied := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Clauses(newerGroupConflict(allGroupSnapshotColumns)).Create(group)
-		if result.Error != nil {
-			return result.Error
+		placeholder := &projection_model.Group{
+			InstanceID: group.InstanceID, GroupID: group.GroupID, SourceOccurredAt: group.SourceOccurredAt,
+			SourceEventKey: group.SourceEventKey, FieldVersions: json.RawMessage(`{}`), LastSyncedAt: now,
 		}
-		if result.RowsAffected == 0 {
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(placeholder).Error; err != nil {
+			return err
+		}
+		var stored projection_model.Group
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("instance_id = ? AND group_id = ?", group.InstanceID, group.GroupID).First(&stored).Error; err != nil {
+			return err
+		}
+		versions, err := decodeGroupVersions(stored.FieldVersions)
+		if err != nil {
+			return err
+		}
+		if tombstone, exists := versions["_snapshot"]; stored.TombstonedAt != nil && exists && !newerGroupVersion(incoming, tombstone) {
 			return nil
 		}
-		applied = true
+		base, hasBase := versions["_snapshot"]
+		if hasBase && !newerOrEqualGroupVersion(incoming, base) {
+			return nil
+		}
+		updates := make(map[string]any)
+		for _, field := range snapshotGroupFields(group) {
+			current, exists := versions[field.name]
+			if !exists {
+				current, exists = versions["_snapshot"]
+			}
+			if !exists || newerOrEqualGroupVersion(incoming, current) {
+				for column, value := range field.columns {
+					updates[column] = value
+				}
+				delete(versions, field.name)
+			}
+		}
+		if !hasBase || newerOrEqualGroupVersion(incoming, base) {
+			versions["_snapshot"] = incoming
+		}
+		if len(updates) > 0 {
+			encoded, err := json.Marshal(versions)
+			if err != nil {
+				return err
+			}
+			updates["field_versions"] = encoded
+			updates["last_synced_at"] = now
+			updates["tombstoned_at"] = nil
+			updates["updated_at"] = now
+			if newerGroupVersion(incoming, groupFieldVersion{OccurredAt: stored.SourceOccurredAt, EventKey: stored.SourceEventKey}) {
+				updates["source_occurred_at"] = group.SourceOccurredAt
+				updates["source_event_key"] = group.SourceEventKey
+			}
+			if err := tx.Model(&projection_model.Group{}).
+				Where("instance_id = ? AND group_id = ?", group.InstanceID, group.GroupID).Updates(updates).Error; err != nil {
+				return err
+			}
+			applied = true
+		}
 		participantIDs := make([]string, 0, len(participants))
 		for index := range participants {
 			participant := &participants[index]
@@ -53,8 +137,12 @@ func (r *groupRepository) ApplySnapshot(ctx context.Context, group *projection_m
 			participant.SourceEventKey = group.SourceEventKey
 			participant.LastSyncedAt = now
 			participant.TombstonedAt = nil
-			if err := tx.Clauses(newerParticipantConflict()).Create(participant).Error; err != nil {
-				return err
+			result := tx.Clauses(newerParticipantConflict()).Create(participant)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected > 0 {
+				applied = true
 			}
 			participantIDs = append(participantIDs, participant.ParticipantID)
 		}
@@ -63,13 +151,154 @@ func (r *groupRepository) ApplySnapshot(ctx context.Context, group *projection_m
 		if len(participantIDs) > 0 {
 			query = query.Where("participant_id NOT IN ?", participantIDs)
 		}
-		return query.Updates(map[string]any{
+		result := query.Updates(map[string]any{
 			"tombstoned_at": group.SourceOccurredAt, "source_occurred_at": group.SourceOccurredAt, "source_event_key": group.SourceEventKey,
 			"last_synced_at": now, "updated_at": now,
-		}).Error
+		})
+		if result.RowsAffected > 0 {
+			applied = true
+		}
+		return result.Error
 	})
 	if err != nil {
 		return false, fmt.Errorf("apply group projection snapshot: %w", err)
+	}
+	return applied, nil
+}
+
+func (r *groupRepository) ApplyPatch(ctx context.Context, patch GroupPatch) (bool, error) {
+	if err := validateGroupPatch(patch); err != nil {
+		return false, err
+	}
+	patch.OccurredAt = patch.OccurredAt.UTC()
+	now := r.now().UTC()
+	incoming := groupFieldVersion{OccurredAt: patch.OccurredAt, EventKey: patch.EventKey}
+	applied := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		placeholder := &projection_model.Group{
+			InstanceID: patch.InstanceID, GroupID: patch.GroupID, SourceOccurredAt: patch.OccurredAt,
+			SourceEventKey: patch.EventKey, FieldVersions: json.RawMessage(`{}`), LastSyncedAt: now,
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(placeholder).Error; err != nil {
+			return err
+		}
+		var stored projection_model.Group
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("instance_id = ? AND group_id = ?", patch.InstanceID, patch.GroupID).First(&stored).Error; err != nil {
+			return err
+		}
+		versions, err := decodeGroupVersions(stored.FieldVersions)
+		if err != nil {
+			return err
+		}
+		if tombstone, exists := versions["_snapshot"]; stored.TombstonedAt != nil && exists && !newerGroupVersion(incoming, tombstone) {
+			return nil
+		}
+		updates := make(map[string]any)
+		applyField := func(field, column string, value any) {
+			current, exists := versions[field]
+			if !exists {
+				current, exists = versions["_snapshot"]
+			}
+			if !exists || newerGroupVersion(incoming, current) {
+				updates[column] = value
+				versions[field] = incoming
+			}
+		}
+		if patch.Name != nil {
+			applyField("name", "name", *patch.Name)
+		}
+		if patch.Topic != nil {
+			applyField("topic", "topic", *patch.Topic)
+		}
+		if patch.Locked != nil {
+			applyField("locked", "locked", *patch.Locked)
+		}
+		if patch.Announce != nil {
+			applyField("announce", "announce", *patch.Announce)
+		}
+		if patch.EphemeralEnabled != nil {
+			applyField("ephemeral_enabled", "ephemeral_enabled", *patch.EphemeralEnabled)
+		}
+		if patch.EphemeralTimer != nil {
+			applyField("ephemeral_timer", "ephemeral_timer", *patch.EphemeralTimer)
+		}
+		if patch.JoinApprovalRequired != nil {
+			applyField("join_approval", "join_approval_required", *patch.JoinApprovalRequired)
+		}
+		if patch.Suspended != nil {
+			applyField("suspended", "suspended", *patch.Suspended)
+		}
+		if patch.ParticipantVersion != nil {
+			applyField("participant_version", "participant_version", *patch.ParticipantVersion)
+		}
+		if patch.ParentGroupID != nil {
+			applyField("parent_group_id", "parent_group_id", *patch.ParentGroupID)
+		}
+		if patch.IsDefaultSubgroup != nil {
+			applyField("is_default_subgroup", "is_default_subgroup", *patch.IsDefaultSubgroup)
+		}
+		if patch.InviteLink != nil {
+			applyField("invite_link", "invite_link", *patch.InviteLink)
+			if _, ok := updates["invite_link"]; ok {
+				updates["invite_link_updated_at"] = now
+			}
+		}
+		if len(updates) > 0 {
+			encoded, err := json.Marshal(versions)
+			if err != nil {
+				return err
+			}
+			updates["field_versions"] = encoded
+			updates["last_synced_at"] = now
+			updates["updated_at"] = now
+			updates["tombstoned_at"] = nil
+			if newerGroupVersion(incoming, groupFieldVersion{OccurredAt: stored.SourceOccurredAt, EventKey: stored.SourceEventKey}) {
+				updates["source_occurred_at"] = patch.OccurredAt
+				updates["source_event_key"] = patch.EventKey
+			}
+			if err := tx.Model(&projection_model.Group{}).
+				Where("instance_id = ? AND group_id = ?", patch.InstanceID, patch.GroupID).Updates(updates).Error; err != nil {
+				return err
+			}
+			applied = true
+		}
+		participantApplied := false
+		for _, participant := range patch.ParticipantChanges {
+			row := &projection_model.GroupParticipant{
+				InstanceID: patch.InstanceID, GroupID: patch.GroupID, ParticipantID: participant.ParticipantID,
+				Role: participant.Role, SourceOccurredAt: patch.OccurredAt, SourceEventKey: patch.EventKey, LastSyncedAt: now,
+			}
+			if participant.Tombstone {
+				row.TombstonedAt = &patch.OccurredAt
+			}
+			result := tx.Clauses(newerParticipantConflict()).Create(row)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected > 0 {
+				applied = true
+				participantApplied = true
+			}
+		}
+		if participantApplied && newerGroupVersion(incoming, groupFieldVersion{OccurredAt: stored.SourceOccurredAt, EventKey: stored.SourceEventKey}) {
+			participantGroupUpdates := map[string]any{
+				"source_occurred_at": patch.OccurredAt, "source_event_key": patch.EventKey,
+				"last_synced_at": now, "updated_at": now,
+			}
+			if stored.TombstonedAt != nil {
+				participantGroupUpdates["tombstoned_at"] = nil
+			}
+			if err := tx.Model(&projection_model.Group{}).
+				Where("instance_id = ? AND group_id = ?", patch.InstanceID, patch.GroupID).
+				Updates(participantGroupUpdates).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("apply group projection patch: %w", err)
 	}
 	return applied, nil
 }
@@ -84,9 +313,14 @@ func (r *groupRepository) Tombstone(ctx context.Context, instanceID, groupID, ev
 		InstanceID: instanceID, GroupID: groupID, SourceOccurredAt: occurredAt, SourceEventKey: eventKey,
 		LastSyncedAt: now, TombstonedAt: &occurredAt,
 	}
+	fieldVersions, err := encodeBaseGroupVersion(occurredAt, eventKey)
+	if err != nil {
+		return false, err
+	}
+	group.FieldVersions = fieldVersions
 	applied := false
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Clauses(newerGroupConflict([]string{"source_occurred_at", "source_event_key", "last_synced_at", "tombstoned_at", "updated_at"})).Create(group)
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(newerGroupConflict([]string{"source_occurred_at", "source_event_key", "field_versions", "last_synced_at", "tombstoned_at", "updated_at"})).Create(group)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -126,12 +360,31 @@ func (r *groupRepository) Get(ctx context.Context, instanceID, groupID string) (
 	return &group, participants, nil
 }
 
-var allGroupSnapshotColumns = []string{
-	"name", "topic", "owner_jid", "owner_phone_jid", "locked", "announce",
-	"ephemeral_enabled", "ephemeral_timer", "join_approval_required", "suspended",
-	"participant_version", "addressing_mode", "member_add_mode", "parent_group_id",
-	"is_parent", "is_default_subgroup", "invite_link", "invite_link_updated_at",
-	"provider_created_at", "source_occurred_at", "source_event_key", "last_synced_at", "tombstoned_at", "updated_at",
+type snapshotGroupField struct {
+	name    string
+	columns map[string]any
+}
+
+func snapshotGroupFields(group *projection_model.Group) []snapshotGroupField {
+	return []snapshotGroupField{
+		{name: "name", columns: map[string]any{"name": group.Name}},
+		{name: "topic", columns: map[string]any{"topic": group.Topic}},
+		{name: "owner", columns: map[string]any{"owner_jid": group.OwnerJID, "owner_phone_jid": group.OwnerPhoneJID}},
+		{name: "locked", columns: map[string]any{"locked": group.Locked}},
+		{name: "announce", columns: map[string]any{"announce": group.Announce}},
+		{name: "ephemeral_enabled", columns: map[string]any{"ephemeral_enabled": group.EphemeralEnabled}},
+		{name: "ephemeral_timer", columns: map[string]any{"ephemeral_timer": group.EphemeralTimer}},
+		{name: "join_approval", columns: map[string]any{"join_approval_required": group.JoinApprovalRequired}},
+		{name: "suspended", columns: map[string]any{"suspended": group.Suspended}},
+		{name: "participant_version", columns: map[string]any{"participant_version": group.ParticipantVersion}},
+		{name: "addressing_mode", columns: map[string]any{"addressing_mode": group.AddressingMode}},
+		{name: "member_add_mode", columns: map[string]any{"member_add_mode": group.MemberAddMode}},
+		{name: "parent_group_id", columns: map[string]any{"parent_group_id": group.ParentGroupID}},
+		{name: "is_parent", columns: map[string]any{"is_parent": group.IsParent}},
+		{name: "is_default_subgroup", columns: map[string]any{"is_default_subgroup": group.IsDefaultSubgroup}},
+		{name: "invite_link", columns: map[string]any{"invite_link": group.InviteLink, "invite_link_updated_at": group.InviteLinkUpdatedAt}},
+		{name: "provider_created_at", columns: map[string]any{"provider_created_at": group.ProviderCreatedAt}},
+	}
 }
 
 func newerGroupConflict(columns []string) clause.OnConflict {
@@ -184,4 +437,47 @@ func validParticipantRole(role projection_model.ParticipantRole) bool {
 	default:
 		return false
 	}
+}
+
+func validateGroupPatch(patch GroupPatch) error {
+	if patch.InstanceID == "" || patch.GroupID == "" || patch.EventKey == "" || patch.OccurredAt.IsZero() || len(patch.GroupID) > 255 || len(patch.EventKey) > 255 {
+		return errors.New("group patch identity and occurrence time are required")
+	}
+	if patch.EphemeralTimer != nil && *patch.EphemeralTimer < 0 {
+		return errors.New("group patch contains an invalid timer")
+	}
+	seen := make(map[string]struct{}, len(patch.ParticipantChanges))
+	for _, participant := range patch.ParticipantChanges {
+		if participant.ParticipantID == "" || len(participant.ParticipantID) > 255 || !validParticipantRole(participant.Role) {
+			return errors.New("group patch contains an invalid participant")
+		}
+		if _, exists := seen[participant.ParticipantID]; exists {
+			return errors.New("group patch contains duplicate participant changes")
+		}
+		seen[participant.ParticipantID] = struct{}{}
+	}
+	return nil
+}
+
+func encodeBaseGroupVersion(occurredAt time.Time, eventKey string) (json.RawMessage, error) {
+	return json.Marshal(map[string]groupFieldVersion{"_snapshot": {OccurredAt: occurredAt.UTC(), EventKey: eventKey}})
+}
+
+func decodeGroupVersions(raw json.RawMessage) (map[string]groupFieldVersion, error) {
+	versions := make(map[string]groupFieldVersion)
+	if len(raw) == 0 {
+		return versions, nil
+	}
+	if err := json.Unmarshal(raw, &versions); err != nil {
+		return nil, errors.New("invalid group field versions")
+	}
+	return versions, nil
+}
+
+func newerGroupVersion(left, right groupFieldVersion) bool {
+	return left.OccurredAt.After(right.OccurredAt) || (left.OccurredAt.Equal(right.OccurredAt) && left.EventKey > right.EventKey)
+}
+
+func newerOrEqualGroupVersion(left, right groupFieldVersion) bool {
+	return left.OccurredAt.After(right.OccurredAt) || (left.OccurredAt.Equal(right.OccurredAt) && left.EventKey >= right.EventKey)
 }

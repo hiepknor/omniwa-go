@@ -139,10 +139,45 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if _, _, err := groupRepository.Get(context.Background(), instance.Id, "group@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("tombstoned group remained readable: %v", err)
 	}
+	announce := true
+	applied, err = groupRepository.ApplyPatch(context.Background(), projection_repository.GroupPatch{
+		InstanceID: instance.Id, GroupID: "group@g.us", EventKey: "announce-900", OccurredAt: time.Unix(900, 0), Announce: &announce,
+		ParticipantChanges: []projection_repository.GroupParticipantPatch{{ParticipantID: "user-c@s.whatsapp.net", Role: projection_model.ParticipantRoleAdmin}},
+	})
+	if err != nil || !applied {
+		t.Fatalf("newer group patch = %v, %v", applied, err)
+	}
+	lateName := "Late valid name"
+	applied, err = groupRepository.ApplyPatch(context.Background(), projection_repository.GroupPatch{
+		InstanceID: instance.Id, GroupID: "group@g.us", EventKey: "name-800", OccurredAt: time.Unix(800, 0), Name: &lateName,
+	})
+	if err != nil || !applied {
+		t.Fatalf("older disjoint field patch = %v, %v", applied, err)
+	}
+	staleAnnounce := false
+	applied, err = groupRepository.ApplyPatch(context.Background(), projection_repository.GroupPatch{
+		InstanceID: instance.Id, GroupID: "group@g.us", EventKey: "announce-850", OccurredAt: time.Unix(850, 0), Announce: &staleAnnounce,
+	})
+	if err != nil || applied {
+		t.Fatalf("stale same-field patch = %v, %v", applied, err)
+	}
+	lateSnapshotName := "Snapshot name"
+	lateSnapshotAnnounce := false
+	applied, err = groupRepository.ApplySnapshot(context.Background(), &projection_model.Group{
+		InstanceID: instance.Id, GroupID: "group@g.us", Name: &lateSnapshotName, Announce: &lateSnapshotAnnounce,
+		SourceOccurredAt: time.Unix(750, 0), SourceEventKey: "snapshot-750",
+	}, []projection_model.GroupParticipant{{ParticipantID: "user-d@s.whatsapp.net", Role: projection_model.ParticipantRoleMember}})
+	if err != nil || !applied {
+		t.Fatalf("late partial-fill snapshot = %v, %v", applied, err)
+	}
+	patchedGroup, patchedParticipants, err := groupRepository.Get(context.Background(), instance.Id, "group@g.us")
+	if err != nil || patchedGroup.Name == nil || *patchedGroup.Name != lateName || patchedGroup.Announce == nil || !*patchedGroup.Announce || len(patchedParticipants) != 2 || patchedParticipants[0].ParticipantID != "user-c@s.whatsapp.net" || patchedParticipants[1].ParticipantID != "user-d@s.whatsapp.net" {
+		t.Fatalf("out-of-order merged group = %#v, %#v, %v", patchedGroup, patchedParticipants, err)
+	}
 
 	pendingDelta := &projection_model.Event{
 		InstanceID: instance.Id, Resource: "groups", EventKey: "pending-delta", EntityKey: "worker@g.us",
-		EventType: "group_info", OccurredAt: time.Unix(800, 0), Payload: json.RawMessage(`{"groupId":"worker@g.us"}`),
+		EventType: "group_info", OccurredAt: time.Unix(800, 0), Payload: json.RawMessage(`{"groupId":"worker@g.us","name":{"name":"Worker renamed","setAt":"1970-01-01T00:13:20Z"}}`),
 	}
 	if inserted, err := projection_repository.NewEventRepository(reopened).Enqueue(context.Background(), pendingDelta); err != nil || !inserted {
 		t.Fatalf("pending delta enqueue = %v, %v", inserted, err)
@@ -158,12 +193,12 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	stateService := projection_service.NewStateService(projection_repository.NewStateRepository(reopened))
 	projector := projection_service.NewGroupProjector(groupRepository, stateService)
 	eventService := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second)
-	batch, err := eventService.ProcessBatchFor(context.Background(), "groups", []string{"joined_group"}, 10, projector.Handle)
-	if err != nil || batch.Claimed != 1 || batch.Processed != 1 || batch.Failed != 0 {
+	batch, err := eventService.ProcessBatchFor(context.Background(), "groups", []string{"joined_group", "group_info"}, 10, projector.Handle)
+	if err != nil || batch.Claimed != 2 || batch.Processed != 2 || batch.Failed != 0 {
 		t.Fatalf("joined snapshot batch = %#v, %v", batch, err)
 	}
 	workerGroup, workerParticipants, err := groupRepository.Get(context.Background(), instance.Id, "worker@g.us")
-	if err != nil || workerGroup.Name == nil || *workerGroup.Name != "Worker group" || len(workerParticipants) != 1 || workerParticipants[0].Role != projection_model.ParticipantRoleAdmin {
+	if err != nil || workerGroup.Name == nil || *workerGroup.Name != "Worker renamed" || len(workerParticipants) != 1 || workerParticipants[0].Role != projection_model.ParticipantRoleAdmin {
 		t.Fatalf("worker projection = %#v, %#v, %v", workerGroup, workerParticipants, err)
 	}
 	state, err = stateService.Get(instance.Id, "groups")
@@ -172,9 +207,9 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	}
 	var pendingCount int64
 	if err := reopened.Model(&projection_model.Event{}).
-		Where("instance_id = ? AND resource = ? AND event_key = ? AND status = ?", instance.Id, "groups", "pending-delta", projection_model.EventStatusPending).
+		Where("instance_id = ? AND resource = ? AND event_key = ? AND status = ?", instance.Id, "groups", "pending-delta", projection_model.EventStatusProcessed).
 		Count(&pendingCount).Error; err != nil || pendingCount != 1 {
-		t.Fatalf("unsupported delta was claimed: count=%d error=%v", pendingCount, err)
+		t.Fatalf("group delta was not processed: count=%d error=%v", pendingCount, err)
 	}
 	var stateWrites sync.WaitGroup
 	stateErrors := make(chan error, 50)

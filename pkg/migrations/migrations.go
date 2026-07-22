@@ -136,6 +136,15 @@ CREATE TABLE projected_group_participants (
 );
 CREATE INDEX projected_group_participants_list_idx ON projected_group_participants (instance_id, group_id, role, participant_id) WHERE tombstoned_at IS NULL;`,
 	},
+	{
+		Version: 4,
+		Name:    "add_group_field_versions",
+		SQL: `ALTER TABLE projected_groups ADD COLUMN field_versions JSONB NOT NULL DEFAULT '{}'::jsonb;
+UPDATE projected_groups
+SET field_versions = jsonb_build_object(
+    '_snapshot', jsonb_build_object('occurredAt', source_occurred_at, 'eventKey', source_event_key)
+);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

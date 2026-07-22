@@ -4,15 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 )
 
-const groupsProjectionSchemaVersion int64 = 1
+const groupsProjectionSchemaVersion int64 = 2
 
 type groupSnapshotRepository interface {
 	ApplySnapshot(context.Context, *projection_model.Group, []projection_model.GroupParticipant) (bool, error)
+	ApplyPatch(context.Context, projection_repository.GroupPatch) (bool, error)
+	Tombstone(context.Context, string, string, string, time.Time) (bool, error)
 }
 
 type projectionEventState interface {
@@ -32,22 +36,96 @@ func (p *GroupProjector) Handle(ctx context.Context, event *projection_model.Eve
 	if p == nil || p.groups == nil || p.state == nil {
 		return errors.New("group projector dependencies are required")
 	}
-	if event == nil || event.Resource != groupResource || event.EventType != "joined_group" || event.InstanceID == "" || event.EventKey == "" {
+	if event == nil || event.Resource != groupResource || (event.EventType != "joined_group" && event.EventType != "group_info") || event.InstanceID == "" || event.EventKey == "" {
 		return errors.New("unsupported group projection event")
 	}
 	var payload groupEventPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return errors.New("invalid normalized group projection payload")
 	}
-	if payload.GroupID == "" || payload.GroupID != event.EntityKey || payload.Joined == nil {
+	if payload.GroupID == "" || payload.GroupID != event.EntityKey || (event.EventType == "joined_group" && payload.Joined == nil) {
 		return errors.New("group projection payload identity mismatch")
 	}
-	group := groupFromSnapshot(event, &payload)
-	participants := participantsFromSnapshot(&payload)
-	if _, err := p.groups.ApplySnapshot(ctx, group, participants); err != nil {
-		return err
+	if event.EventType == "joined_group" {
+		group := groupFromSnapshot(event, &payload)
+		participants := participantsFromSnapshot(&payload)
+		if _, err := p.groups.ApplySnapshot(ctx, group, participants); err != nil {
+			return err
+		}
+	} else if payload.Deleted != nil && payload.Deleted.Deleted {
+		if _, err := p.groups.Tombstone(ctx, event.InstanceID, payload.GroupID, event.EventKey, event.OccurredAt); err != nil {
+			return err
+		}
+	} else {
+		if _, err := p.groups.ApplyPatch(ctx, patchFromGroupEvent(event, &payload)); err != nil {
+			return err
+		}
 	}
 	return p.state.RecordEvent(event.InstanceID, groupResource, groupsProjectionSchemaVersion, event.OccurredAt)
+}
+
+func patchFromGroupEvent(event *projection_model.Event, payload *groupEventPayload) projection_repository.GroupPatch {
+	patch := projection_repository.GroupPatch{
+		InstanceID: event.InstanceID, GroupID: payload.GroupID, EventKey: event.EventKey, OccurredAt: event.OccurredAt,
+		Locked: boolPointerValue(payload.Locked), JoinApprovalRequired: boolPointerValue(payload.JoinApprovalRequired),
+		ParticipantChanges: participantChangesFromGroupEvent(payload),
+	}
+	if payload.Name != nil {
+		patch.Name = &payload.Name.Name
+	}
+	if payload.Topic != nil {
+		patch.Topic = &payload.Topic.Topic
+	}
+	if payload.Announce != nil {
+		patch.Announce = boolPointer(payload.Announce.Enabled)
+	}
+	if payload.Ephemeral != nil {
+		patch.EphemeralEnabled = boolPointer(payload.Ephemeral.Enabled)
+		timer := int64(payload.Ephemeral.Timer)
+		patch.EphemeralTimer = &timer
+	}
+	if payload.Suspended {
+		patch.Suspended = boolPointer(true)
+	} else if payload.Unsuspended {
+		patch.Suspended = boolPointer(false)
+	}
+	if payload.ParticipantVersion != "" {
+		patch.ParticipantVersion = &payload.ParticipantVersion
+	}
+	if payload.NewInviteLink != nil {
+		patch.InviteLink = payload.NewInviteLink
+	}
+	if payload.Link != nil {
+		patch.ParentGroupID = &payload.Link.GroupID
+		patch.IsDefaultSubgroup = boolPointer(payload.Link.IsDefaultSubgroup)
+	} else if payload.Unlink != nil {
+		empty := ""
+		patch.ParentGroupID = &empty
+		patch.IsDefaultSubgroup = boolPointer(false)
+	}
+	return patch
+}
+
+func participantChangesFromGroupEvent(payload *groupEventPayload) []projection_repository.GroupParticipantPatch {
+	changes := make(map[string]projection_repository.GroupParticipantPatch)
+	for _, participantID := range payload.JoinedParticipants {
+		changes[participantID] = projection_repository.GroupParticipantPatch{ParticipantID: participantID, Role: projection_model.ParticipantRoleMember}
+	}
+	for _, participantID := range payload.PromotedParticipants {
+		changes[participantID] = projection_repository.GroupParticipantPatch{ParticipantID: participantID, Role: projection_model.ParticipantRoleAdmin}
+	}
+	for _, participantID := range payload.DemotedParticipants {
+		changes[participantID] = projection_repository.GroupParticipantPatch{ParticipantID: participantID, Role: projection_model.ParticipantRoleMember}
+	}
+	for _, participantID := range payload.LeftParticipants {
+		changes[participantID] = projection_repository.GroupParticipantPatch{ParticipantID: participantID, Role: projection_model.ParticipantRoleMember, Tombstone: true}
+	}
+	result := make([]projection_repository.GroupParticipantPatch, 0, len(changes))
+	for _, change := range changes {
+		result = append(result, change)
+	}
+	sort.Slice(result, func(left, right int) bool { return result[left].ParticipantID < result[right].ParticipantID })
+	return result
 }
 
 func groupFromSnapshot(event *projection_model.Event, payload *groupEventPayload) *projection_model.Group {

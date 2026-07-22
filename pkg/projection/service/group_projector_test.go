@@ -6,6 +6,7 @@ import (
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -13,6 +14,18 @@ import (
 type captureGroupSnapshots struct {
 	group        *projection_model.Group
 	participants []projection_model.GroupParticipant
+	patch        *projection_repository.GroupPatch
+	tombstoned   bool
+}
+
+func (c *captureGroupSnapshots) ApplyPatch(_ context.Context, patch projection_repository.GroupPatch) (bool, error) {
+	c.patch = &patch
+	return true, nil
+}
+
+func (c *captureGroupSnapshots) Tombstone(context.Context, string, string, string, time.Time) (bool, error) {
+	c.tombstoned = true
+	return true, nil
 }
 
 func (c *captureGroupSnapshots) ApplySnapshot(_ context.Context, group *projection_model.Group, participants []projection_model.GroupParticipant) (bool, error) {
@@ -64,9 +77,23 @@ func TestGroupProjectorAppliesJoinedSnapshotAndRecordsState(t *testing.T) {
 	}
 }
 
-func TestGroupProjectorRejectsUnhandledDelta(t *testing.T) {
-	projector := NewGroupProjector(&captureGroupSnapshots{}, &captureProjectionState{})
-	if err := projector.Handle(context.Background(), &projection_model.Event{Resource: groupResource, EventType: "group_info"}); err == nil {
-		t.Fatal("unhandled group delta was accepted")
+func TestGroupProjectorMapsGroupDelta(t *testing.T) {
+	name := &types.GroupName{Name: "Renamed"}
+	raw := &events.GroupInfo{
+		JID: types.NewJID("group", types.GroupServer), Timestamp: time.Unix(700, 0), Name: name,
+		Join:    []types.JID{types.NewJID("user", types.DefaultUserServer)},
+		Promote: []types.JID{types.NewJID("user", types.DefaultUserServer)},
+	}
+	event, _, err := NormalizeGroupEvent("instance-a", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := &captureGroupSnapshots{}
+	projector := NewGroupProjector(groups, &captureProjectionState{})
+	if err := projector.Handle(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if groups.patch == nil || groups.patch.Name == nil || *groups.patch.Name != "Renamed" || len(groups.patch.ParticipantChanges) != 1 || groups.patch.ParticipantChanges[0].Role != projection_model.ParticipantRoleAdmin {
+		t.Fatalf("unexpected group patch: %#v", groups.patch)
 	}
 }
