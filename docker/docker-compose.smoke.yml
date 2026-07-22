@@ -1,0 +1,41 @@
+services:
+  omniwa-go:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${SMOKE_VERSION:?Set SMOKE_VERSION}
+        REVISION: ${SOURCE_SHA:?Set SOURCE_SHA}
+    environment:
+      SERVER_PORT: "4000"
+      CLIENT_NAME: omniwa-smoke
+      OS_NAME: OmniWA GO smoke test
+      LICENSE_GATE_ENABLED: "false"
+      GLOBAL_API_KEY: ${SMOKE_API_KEY:?Set SMOKE_API_KEY}
+      POSTGRES_AUTH_DB: postgresql://postgres:postgres@postgres:5432/omniwa_auth?sslmode=disable
+      POSTGRES_USERS_DB: postgresql://postgres:postgres@postgres:5432/omniwa_users?sslmode=disable
+      DATABASE_SAVE_MESSAGES: "false"
+      CONNECT_ON_STARTUP: "false"
+      AMQP_URL: ""
+      AMQP_GLOBAL_ENABLED: "false"
+      NATS_URL: ""
+      NATS_GLOBAL_ENABLED: "false"
+      MINIO_ENABLED: "false"
+      LOGTYPE: console
+    ports:
+      - "127.0.0.1::4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

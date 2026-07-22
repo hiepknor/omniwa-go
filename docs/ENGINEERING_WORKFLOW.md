@@ -221,6 +221,17 @@ CI resolves the latest security patch in the Go compatibility line declared by
 the project. Do not configure it to use the initial `.0` toolchain indefinitely;
 standard-library vulnerabilities are fixed by toolchain patch releases.
 
+CI also builds and starts the production Dockerfile against an isolated
+PostgreSQL service. The smoke test verifies liveness, non-root execution, the
+OCI and runtime version/revision identity, all expected migrations, restart
+survival, and idempotent migration startup. Update the expected migration state
+in `scripts/ci/container-smoke.sh` in the same pull request as every new
+versioned migration.
+
+Container base images must remain on supported release branches. Treat a base
+image reaching end of support as a release blocker, then rerun the complete
+container smoke test after upgrading it.
+
 ## 10. Mandatory self-review
 
 Read the complete diff before committing and verify:
