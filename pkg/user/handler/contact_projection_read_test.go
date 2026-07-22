@@ -27,6 +27,11 @@ type contactUserServiceStub struct {
 	term     string
 	limit    int
 	cursor   string
+	checked  *user_service.CheckUserCollection
+}
+
+func (s *contactUserServiceStub) CheckUser(context.Context, *user_service.CheckUserStruct, *instance_model.Instance) (*user_service.CheckUserCollection, error) {
+	return s.checked, s.err
 }
 
 func (s *contactUserServiceStub) GetContact(context.Context, *instance_model.Instance, string) (*user_service.ContactInfo, *projection_service.ProjectionReadMeta, error) {
@@ -156,5 +161,19 @@ func TestSearchContactsUsesStableSafeErrors(t *testing.T) {
 				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestCheckUserReturnsAdditiveStaleCacheMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &contactUserServiceStub{checked: &user_service.CheckUserCollection{Users: []user_service.User{{Query: "15550001", IsInWhatsapp: true}}, Stale: true}}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/user/check", strings.NewReader(`{"number":["15550001"]}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("instance", &instance_model.Instance{Id: "instance-a"})
+	(&userHandler{userService: service}).CheckUser(ctx)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"meta":{"source":"cache","stale":true}`) || strings.Contains(recorder.Body.String(), `"Stale"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

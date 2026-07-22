@@ -34,6 +34,13 @@ long. Logout and instance deletion remove the corresponding cache immediately.
 
 The cache stores normalized lookup results only. It does not store tokens or
 message content, and it does not replace the longer-lived contacts projection.
+Expired entries remain subject to the same 10,000-entry LRU bound, are retained
+for at most 90 additional seconds by default, and are used
+only as a complete fallback for the read-only `/user/check` endpoint when the
+query guard returns a rate-limit error. The response then remains HTTP 200 and
+adds `meta: {"source":"cache","stale":true}`. Partial cache results are never
+returned: when any requested identity is unavailable, the endpoint returns the
+normal HTTP 429 contract. Message-send preflight never consumes stale entries.
 
 ## HTTP 429 contract
 
