@@ -50,6 +50,7 @@ import (
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
 	message_service "github.com/evolution-foundation/evolution-go/pkg/message/service"
 	auth_middleware "github.com/evolution-foundation/evolution-go/pkg/middleware"
+	"github.com/evolution-foundation/evolution-go/pkg/migrations"
 	newsletter_handler "github.com/evolution-foundation/evolution-go/pkg/newsletter/handler"
 	newsletter_service "github.com/evolution-foundation/evolution-go/pkg/newsletter/service"
 	passkey_handler "github.com/evolution-foundation/evolution-go/pkg/passkey/handler"
@@ -289,6 +290,9 @@ func migrate(db *gorm.DB) {
 	err := db.AutoMigrate(&instance_model.Instance{}, &message_model.Message{}, &label_model.Label{})
 
 	if err != nil {
+		log.Fatal(err)
+	}
+	if err := migrations.Run(db); err != nil {
 		log.Fatal(err)
 	}
 }
