@@ -54,6 +54,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
 	newsletter_handler "github.com/evolution-foundation/evolution-go/pkg/newsletter/handler"
 	newsletter_service "github.com/evolution-foundation/evolution-go/pkg/newsletter/service"
+	"github.com/evolution-foundation/evolution-go/pkg/outbound"
 	passkey_handler "github.com/evolution-foundation/evolution-go/pkg/passkey/handler"
 	poll_handler "github.com/evolution-foundation/evolution-go/pkg/poll/handler"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
@@ -97,6 +98,14 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		Burst:         config.WAInfoBurst,
 		MaxWait:       config.WAInfoMaxWait,
 		Cooldown:      config.WAInfoCooldown,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	outboundGuard, err := outbound.New(outbound.Settings{
+		RatePerSecond: config.WAOutboundRatePerSecond,
+		Burst:         config.WAOutboundBurst,
+		MaxWait:       config.WAOutboundMaxWait,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -341,6 +350,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		mediaStorage,
 		natsProducer,
 		queryGuard,
+		outboundGuard,
 		projectionEventService,
 		groupReconciler,
 		labelSyncer,

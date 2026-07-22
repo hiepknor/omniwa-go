@@ -71,6 +71,10 @@ type Config struct {
 	MessageRetention     time.Duration
 	EventRetention       time.Duration
 
+	WAOutboundRatePerSecond float64
+	WAOutboundBurst         int
+	WAOutboundMaxWait       time.Duration
+
 	// Logger configurations
 	LogMaxSize    int
 	LogMaxBackups int
@@ -330,6 +334,31 @@ func Load() *Config {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_INFO_COOLDOWN, err)
 	}
 
+	waOutboundRateValue := os.Getenv(config_env.WA_OUTBOUND_RATE)
+	if waOutboundRateValue == "" {
+		waOutboundRateValue = "30/min"
+	}
+	waOutboundRatePerSecond, err := parseRatePerSecond(waOutboundRateValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_OUTBOUND_RATE, err)
+	}
+	waOutboundBurstValue := os.Getenv(config_env.WA_OUTBOUND_BURST)
+	if waOutboundBurstValue == "" {
+		waOutboundBurstValue = "5"
+	}
+	waOutboundBurst, err := parsePositiveInt(waOutboundBurstValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_OUTBOUND_BURST, err)
+	}
+	waOutboundMaxWaitValue := os.Getenv(config_env.WA_OUTBOUND_MAX_WAIT)
+	if waOutboundMaxWaitValue == "" {
+		waOutboundMaxWaitValue = "5s"
+	}
+	waOutboundMaxWait, err := parseNonNegativeDuration(waOutboundMaxWaitValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_OUTBOUND_MAX_WAIT, err)
+	}
+
 	waGroupReconcileIntervalValue := os.Getenv(config_env.WA_GROUP_RECONCILE_INTERVAL)
 	if waGroupReconcileIntervalValue == "" {
 		waGroupReconcileIntervalValue = "6h"
@@ -470,6 +499,10 @@ func Load() *Config {
 		LogMaxAge:            logMaxAge,
 		LogDirectory:         logDirectory,
 		LogCompress:          logCompress,
+
+		WAOutboundRatePerSecond: waOutboundRatePerSecond,
+		WAOutboundBurst:         waOutboundBurst,
+		WAOutboundMaxWait:       waOutboundMaxWait,
 	}
 
 	minioEnabled := os.Getenv(config_env.MINIO_ENABLED) == "true"

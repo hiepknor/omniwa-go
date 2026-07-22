@@ -234,6 +234,9 @@ func (c *chatService) HistorySyncRequest(data *HistorySyncRequestStruct, instanc
 
 	histRequest := client.BuildHistorySyncRequest(&messageInfo, data.Count)
 
+	if err := c.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
+		return nil, err
+	}
 	res, err := client.SendMessage(context.Background(), messageInfo.Chat, histRequest, whatsmeow.SendRequestExtra{Peer: true})
 	if err != nil {
 		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error history sync request: %v", instance.Id, err)

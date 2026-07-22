@@ -127,6 +127,18 @@ definitions:
         example: "2026-07-21T10:30:00Z"
         type: string
     type: object
+  apidocs.OutboundRateLimitResponse:
+    properties:
+      code:
+        example: outbound_rate_limited
+        type: string
+      error:
+        example: outbound_rate_limited
+        type: string
+      retryAfter:
+        example: 5
+        type: integer
+    type: object
   apidocs.PairData:
     properties:
       PairingCode:
@@ -8355,6 +8367,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Outbound rate limited
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9972,6 +9988,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Outbound rate limited
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10047,6 +10067,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Outbound rate limited
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10191,6 +10215,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Outbound rate limited
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10649,7 +10677,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
@@ -10701,7 +10729,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
@@ -10737,7 +10765,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
@@ -10773,7 +10801,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
@@ -10816,7 +10844,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
@@ -10852,7 +10880,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
@@ -10888,7 +10916,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
@@ -10924,7 +10952,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
@@ -10976,6 +11004,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Outbound rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -11008,6 +11040,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Outbound rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -11041,7 +11077,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
@@ -11077,7 +11113,7 @@ paths:
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
-          description: Information query rate limited; see Retry-After header
+          description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":

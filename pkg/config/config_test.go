@@ -17,6 +17,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_GROUP_RECONCILE_INTERVAL, "")
 	t.Setenv(config_env.WA_MSG_RETENTION, "")
 	t.Setenv(config_env.WA_EVENT_RETENTION, "")
+	t.Setenv(config_env.WA_OUTBOUND_RATE, "")
+	t.Setenv(config_env.WA_OUTBOUND_BURST, "")
+	t.Setenv(config_env.WA_OUTBOUND_MAX_WAIT, "")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
@@ -40,6 +43,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.EventRetention != 30*24*time.Hour {
 		t.Fatalf("EventRetention = %v, want 720h", config.EventRetention)
 	}
+	if math.Abs(config.WAOutboundRatePerSecond-(30.0/60.0)) > 1e-12 || config.WAOutboundBurst != 5 || config.WAOutboundMaxWait != 5*time.Second {
+		t.Fatalf("outbound defaults = %v/%d/%v", config.WAOutboundRatePerSecond, config.WAOutboundBurst, config.WAOutboundMaxWait)
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -51,6 +57,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_GROUP_RECONCILE_INTERVAL, "45m")
 	t.Setenv(config_env.WA_MSG_RETENTION, "720h")
 	t.Setenv(config_env.WA_EVENT_RETENTION, "168h")
+	t.Setenv(config_env.WA_OUTBOUND_RATE, "120/hour")
+	t.Setenv(config_env.WA_OUTBOUND_BURST, "7")
+	t.Setenv(config_env.WA_OUTBOUND_MAX_WAIT, "2s")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(12.0/3600.0)) > 1e-12 {
@@ -67,6 +76,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if config.EventRetention != 7*24*time.Hour {
 		t.Fatalf("EventRetention = %v, want 168h", config.EventRetention)
+	}
+	if math.Abs(config.WAOutboundRatePerSecond-(120.0/3600.0)) > 1e-12 || config.WAOutboundBurst != 7 || config.WAOutboundMaxWait != 2*time.Second {
+		t.Fatalf("outbound overrides = %v/%d/%v", config.WAOutboundRatePerSecond, config.WAOutboundBurst, config.WAOutboundMaxWait)
 	}
 }
 

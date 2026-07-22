@@ -2781,6 +2781,9 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		sendExtra.AdditionalNodes = data.AdditionalNodes
 	}
 
+	if err := s.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
+		return nil, err
+	}
 	response, err := s.clientPointer[instance.Id].SendMessage(context.Background(), recipient, msg, sendExtra)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending message: %v", instance.Id, err)
@@ -3166,6 +3169,9 @@ func (s *sendService) SendStatusText(data *StatusTextStruct, instance *instance_
 
 	recipient := types.NewJID("status", "broadcast")
 
+	if err := s.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
+		return nil, err
+	}
 	response, err := client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: messageID})
 	if err != nil {
 		return nil, err
@@ -3331,6 +3337,9 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 
 	recipient := types.NewJID("status", "broadcast")
 
+	if err := s.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
+		return nil, err
+	}
 	response, err := client.SendMessage(context.Background(), recipient, media, whatsmeow.SendRequestExtra{ID: messageID})
 	if err != nil {
 		return nil, err
