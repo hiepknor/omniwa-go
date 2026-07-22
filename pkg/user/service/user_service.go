@@ -465,7 +465,7 @@ func (u *userService) SetPrivacy(ctx context.Context, data *PrivacyStruct, insta
 	for _, setting := range privacySettings {
 		privacy, err = client.SetPrivacySetting(ctx, setting.name, setting.value)
 		if err != nil {
-			return nil, err
+			return nil, u.queryGuard.ObserveError(instance.Id, err)
 		}
 	}
 	return &privacy, nil
