@@ -1,11 +1,15 @@
 package chat_handler
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
 
 	chat_service "github.com/evolution-foundation/evolution-go/pkg/chat/service"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type ChatHandler interface {
@@ -16,10 +20,133 @@ type ChatHandler interface {
 	ChatMute(ctx *gin.Context)
 	ChatUnmute(ctx *gin.Context)
 	HistorySyncRequest(ctx *gin.Context)
+	List(ctx *gin.Context)
+	Get(ctx *gin.Context)
+	Messages(ctx *gin.Context)
 }
 
 type chatHandler struct {
 	chatService chat_service.ChatService
+	reader      *projection_service.ChatMessageReader
+}
+
+const defaultProjectionPageSize = 50
+
+// List returns projection-backed chats without querying WhatsApp.
+// @Summary List projected chats
+// @Tags Chat
+// @Produce json
+// @Param limit query int false "Page size (1-200)"
+// @Param cursor query string false "Opaque pagination cursor"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]projection_service.ProjectedChat} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid pagination"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /chat/list [get]
+func (c *chatHandler) List(ctx *gin.Context) {
+	instance, ok := projectionInstance(ctx)
+	if !ok {
+		return
+	}
+	limit, ok := projectionLimit(ctx)
+	if !ok {
+		return
+	}
+	items, meta, err := c.reader.ListChats(ctx.Request.Context(), instance.Id, limit, ctx.Query("cursor"))
+	if err != nil {
+		writeProjectionReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
+}
+
+// Get returns one projected chat without querying WhatsApp.
+// @Summary Get a projected chat
+// @Tags Chat
+// @Produce json
+// @Param chatId path string true "Chat JID"
+// @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ProjectedChat} "success"
+// @Failure 404 {object} apidocs.ErrorResponse "Chat not found"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /chat/info/{chatId} [get]
+func (c *chatHandler) Get(ctx *gin.Context) {
+	instance, ok := projectionInstance(ctx)
+	if !ok {
+		return
+	}
+	item, meta, err := c.reader.GetChat(ctx.Request.Context(), instance.Id, ctx.Param("chatId"))
+	if err != nil {
+		writeProjectionReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": item, "meta": meta})
+}
+
+// Messages returns stable, projection-backed message history for a chat.
+// @Summary List projected messages for a chat
+// @Tags Chat
+// @Produce json
+// @Param chatId path string true "Chat JID"
+// @Param limit query int false "Page size (1-200)"
+// @Param cursor query string false "Opaque pagination cursor"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]projection_service.ProjectedMessage} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid pagination"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /chat/{chatId}/messages [get]
+func (c *chatHandler) Messages(ctx *gin.Context) {
+	instance, ok := projectionInstance(ctx)
+	if !ok {
+		return
+	}
+	limit, ok := projectionLimit(ctx)
+	if !ok {
+		return
+	}
+	items, meta, err := c.reader.ListMessages(ctx.Request.Context(), instance.Id, ctx.Param("chatId"), limit, ctx.Query("cursor"))
+	if err != nil {
+		writeProjectionReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
+}
+
+func projectionInstance(ctx *gin.Context) (*instance_model.Instance, bool) {
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+	}
+	return instance, ok
+}
+
+func projectionLimit(ctx *gin.Context) (int, bool) {
+	value := ctx.Query("limit")
+	if value == "" {
+		return defaultProjectionPageSize, true
+	}
+	limit, err := strconv.Atoi(value)
+	if err != nil || limit < 1 || limit > 200 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 200", "code": "invalid_pagination"})
+		return 0, false
+	}
+	return limit, true
+}
+
+func writeProjectionReadError(ctx *gin.Context, err error) {
+	switch {
+	case errors.Is(err, projection_service.ErrInvalidProjectionCursor):
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "code": "invalid_cursor"})
+	case errors.Is(err, projection_service.ErrChatsProjectionNotReady), errors.Is(err, projection_service.ErrMessagesProjectionNotReady):
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error(), "code": "projection_not_ready"})
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "projection record not found", "code": "not_found"})
+	default:
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+	}
 }
 
 // Pin a chat
@@ -337,8 +464,10 @@ func (c *chatHandler) HistorySyncRequest(ctx *gin.Context) {
 
 func NewChatHandler(
 	chatService chat_service.ChatService,
+	reader *projection_service.ChatMessageReader,
 ) ChatHandler {
 	return &chatHandler{
 		chatService: chatService,
+		reader:      reader,
 	}
 }

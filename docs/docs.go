@@ -180,6 +180,140 @@ const docTemplate = `{
                 }
             }
         },
+        "/chat/info/{chatId}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Get a projected chat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chat JID",
+                        "name": "chatId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Chat not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/chat/list": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "List projected chats",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size (1-200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid pagination",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/chat/mute": {
             "post": {
                 "security": [
@@ -488,6 +622,84 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/chat/{chatId}/messages": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "List projected messages for a chat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chat JID",
+                        "name": "chatId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (1-200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessage"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid pagination",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -2896,6 +3108,135 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/message/{messageId}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Message"
+                ],
+                "summary": "Get a projected message",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Provider message ID",
+                        "name": "messageId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessage"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Message not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/message/{messageId}/delivery": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Message"
+                ],
+                "summary": "List projected message receipts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Provider message ID",
+                        "name": "messageId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessageReceipt"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Message not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -5451,6 +5792,9 @@ const docTemplate = `{
                 "lastSyncedAt": {
                     "type": "string"
                 },
+                "nextCursor": {
+                    "type": "string"
+                },
                 "source": {
                     "type": "string",
                     "example": "projection"
@@ -6203,6 +6547,49 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_model.ChatType": {
+            "type": "string",
+            "enum": [
+                "direct",
+                "group",
+                "newsletter",
+                "broadcast",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "ChatTypeDirect",
+                "ChatTypeGroup",
+                "ChatTypeNewsletter",
+                "ChatTypeBroadcast",
+                "ChatTypeUnknown"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageDirection": {
+            "type": "string",
+            "enum": [
+                "incoming",
+                "outgoing",
+                "system"
+            ],
+            "x-enum-varnames": [
+                "MessageDirectionIncoming",
+                "MessageDirectionOutgoing",
+                "MessageDirectionSystem"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageProvenance": {
+            "type": "string",
+            "enum": [
+                "live",
+                "history_sync",
+                "write_through"
+            ],
+            "x-enum-varnames": [
+                "MessageProvenanceLive",
+                "MessageProvenanceHistorySync",
+                "MessageProvenanceWriteThrough"
+            ]
+        },
         "github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus": {
             "type": "string",
             "enum": [
@@ -6219,6 +6606,150 @@ const docTemplate = `{
                 "SyncStatusStale",
                 "SyncStatusFailed"
             ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat": {
+            "type": "object",
+            "properties": {
+                "archived": {
+                    "type": "boolean"
+                },
+                "chatId": {
+                    "type": "string"
+                },
+                "contactId": {
+                    "type": "string"
+                },
+                "disappearingTimer": {
+                    "type": "integer"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "lastActivityAt": {
+                    "type": "string"
+                },
+                "lastMessageAt": {
+                    "type": "string"
+                },
+                "lastMessageId": {
+                    "type": "string"
+                },
+                "mutedUntil": {
+                    "type": "string"
+                },
+                "pinned": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.ChatType"
+                },
+                "unreadCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessage": {
+            "type": "object",
+            "properties": {
+                "caption": {
+                    "type": "string"
+                },
+                "chatId": {
+                    "type": "string"
+                },
+                "contentSummary": {
+                    "type": "string"
+                },
+                "contentText": {
+                    "type": "string"
+                },
+                "deliveredAt": {
+                    "type": "string"
+                },
+                "direction": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageDirection"
+                },
+                "historySyncId": {
+                    "type": "string"
+                },
+                "mediaDurationSeconds": {
+                    "type": "integer"
+                },
+                "mediaFileName": {
+                    "type": "string"
+                },
+                "mediaHeight": {
+                    "type": "integer"
+                },
+                "mediaMimeType": {
+                    "type": "string"
+                },
+                "mediaSize": {
+                    "type": "integer"
+                },
+                "mediaType": {
+                    "type": "string"
+                },
+                "mediaWidth": {
+                    "type": "integer"
+                },
+                "messageId": {
+                    "type": "string"
+                },
+                "messageType": {
+                    "type": "string"
+                },
+                "participantJid": {
+                    "type": "string"
+                },
+                "playedAt": {
+                    "type": "string"
+                },
+                "provenance": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageProvenance"
+                },
+                "providerTimestamp": {
+                    "type": "string"
+                },
+                "quotedMessageId": {
+                    "type": "string"
+                },
+                "readAt": {
+                    "type": "string"
+                },
+                "recipientJid": {
+                    "type": "string"
+                },
+                "retentionExpiresAt": {
+                    "type": "string"
+                },
+                "senderJid": {
+                    "type": "string"
+                },
+                "sentAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessageReceipt": {
+            "type": "object",
+            "properties": {
+                "messageId": {
+                    "type": "string"
+                },
+                "receiptAt": {
+                    "type": "string"
+                },
+                "receiptType": {
+                    "type": "string"
+                },
+                "recipientJid": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionHealth": {
             "type": "object",

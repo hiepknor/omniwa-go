@@ -1,11 +1,14 @@
 package message_handler
 
 import (
+	"errors"
 	"net/http"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	message_service "github.com/evolution-foundation/evolution-go/pkg/message/service"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type MessageHandler interface {
@@ -17,10 +20,80 @@ type MessageHandler interface {
 	GetMessageStatus(ctx *gin.Context)
 	DeleteMessageEveryone(ctx *gin.Context)
 	EditMessage(ctx *gin.Context)
+	GetProjected(ctx *gin.Context)
+	Receipts(ctx *gin.Context)
 }
 
 type messageHandler struct {
 	messageService message_service.MessageService
+	reader         *projection_service.ChatMessageReader
+}
+
+// GetProjected returns one persisted message without querying WhatsApp.
+// @Summary Get a projected message
+// @Tags Message
+// @Produce json
+// @Param messageId path string true "Provider message ID"
+// @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ProjectedMessage} "success"
+// @Failure 404 {object} apidocs.ErrorResponse "Message not found"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /message/{messageId} [get]
+func (m *messageHandler) GetProjected(ctx *gin.Context) {
+	instance, ok := messageProjectionInstance(ctx)
+	if !ok {
+		return
+	}
+	item, meta, err := m.reader.GetMessage(ctx.Request.Context(), instance.Id, ctx.Param("messageId"))
+	if err != nil {
+		writeMessageProjectionReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": item, "meta": meta})
+}
+
+// Receipts returns persisted delivery history without querying WhatsApp.
+// @Summary List projected message receipts
+// @Tags Message
+// @Produce json
+// @Param messageId path string true "Provider message ID"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]projection_service.ProjectedMessageReceipt} "success"
+// @Failure 404 {object} apidocs.ErrorResponse "Message not found"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /message/{messageId}/delivery [get]
+func (m *messageHandler) Receipts(ctx *gin.Context) {
+	instance, ok := messageProjectionInstance(ctx)
+	if !ok {
+		return
+	}
+	items, meta, err := m.reader.ListReceipts(ctx.Request.Context(), instance.Id, ctx.Param("messageId"))
+	if err != nil {
+		writeMessageProjectionReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
+}
+
+func messageProjectionInstance(ctx *gin.Context) (*instance_model.Instance, bool) {
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+	}
+	return instance, ok
+}
+
+func writeMessageProjectionReadError(ctx *gin.Context, err error) {
+	switch {
+	case errors.Is(err, projection_service.ErrMessagesProjectionNotReady):
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error(), "code": "projection_not_ready"})
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "projection record not found", "code": "not_found"})
+	default:
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+	}
 }
 
 // React a message
@@ -423,8 +496,10 @@ func (m *messageHandler) EditMessage(ctx *gin.Context) {
 
 func NewMessageHandler(
 	messageService message_service.MessageService,
+	reader *projection_service.ChatMessageReader,
 ) MessageHandler {
 	return &messageHandler{
 		messageService: messageService,
+		reader:         reader,
 	}
 }
