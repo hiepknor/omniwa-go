@@ -403,7 +403,7 @@ func (u *userService) GetAvatar(ctx context.Context, data *GetAvatarStruct, inst
 		return nil, errors.New("no profile picture found")
 	}
 
-	u.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Got avatar %s", instance.Id, pic.URL)
+	u.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Avatar lookup succeeded", instance.Id)
 
 	return pic, nil
 }

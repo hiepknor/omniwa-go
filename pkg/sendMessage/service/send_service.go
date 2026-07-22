@@ -1234,7 +1234,7 @@ func (s *sendService) SendMediaUrl(data *MediaStruct, instance *instance_model.I
 
 func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instance_model.Instance, maxRetries int) (*MessageSendStruct, error) {
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] SendMediaUrl attempt %d/%d for URL: %s", instance.Id, attempt, maxRetries, data.Url)
+		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] SendMediaUrl attempt %d/%d", instance.Id, attempt, maxRetries)
 		startTime := time.Now()
 
 		client, err := s.ensureClientConnectedWithRetry(instance.Id, 2)
@@ -1245,7 +1245,7 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 			continue
 		}
 
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Iniciando download da URL: %s", instance.Id, data.Url)
+		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Starting remote media download", instance.Id)
 
 		resp, err := http.Get(data.Url)
 		if err != nil {
