@@ -105,6 +105,7 @@ type whatsmeowService struct {
 	groupReconciler    *projection_service.GroupReconciler
 	labelSyncer        *projection_service.LabelSyncer
 	contactSyncer      *projection_service.ContactSyncer
+	historySyncer      *projection_service.HistorySyncer
 	appCtx             context.Context
 }
 
@@ -144,6 +145,7 @@ type MyClient struct {
 	groupReconciler    *projection_service.GroupReconciler
 	labelSyncer        *projection_service.LabelSyncer
 	contactSyncer      *projection_service.ContactSyncer
+	historySyncer      *projection_service.HistorySyncer
 	appCtx             context.Context
 	reconcileMu        sync.Mutex
 	reconcileRunning   bool
@@ -154,6 +156,7 @@ type MyClient struct {
 const projectionIngestTimeout = 2 * time.Second
 const groupReconcileTimeout = 2 * time.Minute
 const contactProjectionSyncTimeout = 2 * time.Minute
+const historyProjectionSyncTimeout = 5 * time.Minute
 
 func (mycli *MyClient) triggerGroupReconciliation(parent context.Context) {
 	if mycli == nil || mycli.groupReconciler == nil || mycli.WAClient == nil || !mycli.WAClient.IsConnected() {
@@ -329,6 +332,10 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
 	if mycli == nil || mycli.projectionEvents == nil {
 		return
 	}
+	if historyEvent, ok := rawEvent.(*events.HistorySync); ok {
+		mycli.triggerHistoryProjectionSync(historyEvent)
+		return
+	}
 	event, relevant, err := projection_service.NormalizeProjectionEvent(mycli.userID, rawEvent)
 	if err != nil {
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=projection action=normalize instance_id=%s result=failed error_code=invalid_projection_event", mycli.userID)
@@ -349,6 +356,25 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
 		result = "inserted"
 	}
 	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=ingest instance_id=%s resource=%s event_type=%s result=%s", mycli.userID, event.Resource, event.EventType, result)
+}
+
+func (mycli *MyClient) triggerHistoryProjectionSync(event *events.HistorySync) {
+	if mycli == nil || mycli.historySyncer == nil || mycli.WAClient == nil || event == nil {
+		return
+	}
+	parent := mycli.appCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(parent, historyProjectionSyncTimeout)
+		defer cancel()
+		if err := mycli.historySyncer.Sync(ctx, mycli.userID, event, mycli.WAClient.ParseWebMessage); err != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=history_sync instance_id=%s result=failed error_code=history_sync_failed", mycli.userID)
+			return
+		}
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=history_sync instance_id=%s result=ingested", mycli.userID)
+	}()
 }
 
 func (mycli *MyClient) handleFullSyncAppStateEvent(rawEvent any) bool {
@@ -777,6 +803,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		groupReconciler:    w.groupReconciler,
 		labelSyncer:        w.labelSyncer,
 		contactSyncer:      w.contactSyncer,
+		historySyncer:      w.historySyncer,
 		appCtx:             w.appCtx,
 	}
 
@@ -3101,6 +3128,7 @@ func NewWhatsmeowService(
 	groupReconciler *projection_service.GroupReconciler,
 	labelSyncer *projection_service.LabelSyncer,
 	contactSyncer *projection_service.ContactSyncer,
+	historySyncer *projection_service.HistorySyncer,
 	appCtx context.Context,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) WhatsmeowService {
@@ -3131,6 +3159,7 @@ func NewWhatsmeowService(
 		groupReconciler:    groupReconciler,
 		labelSyncer:        labelSyncer,
 		contactSyncer:      contactSyncer,
+		historySyncer:      historySyncer,
 		appCtx:             appCtx,
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),

@@ -189,6 +189,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	contactProjector := projection_service.NewContactProjector(contactProjectionRepository, projectionStateService, projectionReadinessRepository)
 	chatMessageProjectionRepository := projection_repository.NewChatMessageRepository(db)
 	chatMessageProjector := projection_service.NewChatMessageProjector(chatMessageProjectionRepository, projectionStateService)
+	historySyncer := projection_service.NewHistorySyncer(projectionEventService, projectionStateService)
+	historyReadinessProjector := projection_service.NewHistoryReadinessProjector(projectionStateService, projectionReadinessRepository)
 	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
 	contactReader := projection_service.NewContactReader(contactProjectionRepository, projectionStateService)
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
@@ -249,7 +251,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 	}()
 	chatMessageWorker := projection_service.NewWorker(
-		projectionEventService, "messages", []string{"message", "receipt"}, 50, time.Second, chatMessageProjector.Handle,
+		projectionEventService, "messages", []string{"message", "receipt", "history_chat", "history_message"}, 50, time.Second, chatMessageProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
 			if err != nil {
 				logger.LogError("component=projection action=process resource=messages result=failed error_code=batch_failed")
@@ -263,6 +265,23 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		defer backgroundWorkers.Done()
 		if err := chatMessageWorker.Run(appCtx); err != nil {
 			logger.LogError("component=projection action=worker resource=messages result=stopped error_code=invalid_worker_configuration")
+		}
+	}()
+	historyReadinessWorker := projection_service.NewWorker(
+		projectionEventService, "messages", []string{"history_sync_complete"}, 10, time.Second, historyReadinessProjector.Handle,
+		func(result projection_service.EventBatchResult, err error) {
+			if err != nil {
+				logger.LogError("component=projection action=readiness resource=messages result=failed error_code=batch_failed")
+			} else if result.Claimed > 0 {
+				logger.LogInfo("component=projection action=readiness resource=messages claimed=%d processed=%d failed=%d", result.Claimed, result.Processed, result.Failed)
+			}
+		},
+	)
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		if err := historyReadinessWorker.Run(appCtx); err != nil {
+			logger.LogError("component=projection action=worker resource=messages_readiness result=stopped error_code=invalid_worker_configuration")
 		}
 	}()
 
@@ -286,6 +305,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		groupReconciler,
 		labelSyncer,
 		contactSyncer,
+		historySyncer,
 		appCtx,
 		loggerWrapper,
 	)
