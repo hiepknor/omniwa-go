@@ -96,7 +96,9 @@ must remain deployable.
 20. Add architecture checks for reverse imports, raw network calls, sensitive
     serialization, and raw runtime maps.
 21. Make PostgreSQL integration, race, vulnerability, Swagger-drift, and secret
-    checks mandatory in CI.
+    checks mandatory in CI. Completed: the existing required
+    `build / vet / test` check now enforces all five gates with pinned Go tools
+    and an isolated PostgreSQL service.
 22. Add a container migration/liveness/revision smoke test.
 23. Replace mutable build-and-push behavior with digest promotion.
 24. Bound webhook delivery workers without claiming a public durable-history
@@ -121,8 +123,11 @@ are never compatibility interfaces.
 
 ## Required verification
 
-All pull requests run `git diff --check`, `go build ./...`, `go vet ./...`, and
-`go test ./...`. Risk-specific gates include:
+All pull requests run `go build ./...`, `go vet ./...`, the complete test suite
+with and without a real PostgreSQL service, `go test -race ./...`,
+`govulncheck`, deterministic Swagger regeneration with a clean-tree assertion,
+and a committed-secret scan. Local verification also runs `git diff --check`.
+Risk-specific gates include:
 
 - `go test -race ./...` for runtime, WebSocket, guard, and worker changes.
 - `go test ./pkg/architecture` for dependency direction, guarded network

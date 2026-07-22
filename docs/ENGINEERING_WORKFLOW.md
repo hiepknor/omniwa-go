@@ -209,6 +209,18 @@ Run `make swagger` after changing handlers, annotations, or public API
 contracts. Run additional migration, integration, or Docker checks required by
 the task's risk level.
 
+The required `build / vet / test` CI check also runs the full test suite against
+a real PostgreSQL service, the race detector, `govulncheck`, deterministic
+Swagger regeneration, and a committed-secret scan. These gates are mandatory
+for every pull request; risk-specific local checks supplement them rather than
+replace them. The .gitleaksignore file records only the fingerprints of
+pre-existing fixture and documentation findings. Review any ignore-list change
+as security-sensitive; never update it merely to make CI pass.
+
+CI resolves the latest security patch in the Go compatibility line declared by
+the project. Do not configure it to use the initial `.0` toolchain indefinitely;
+standard-library vulnerabilities are fixed by toolchain patch releases.
+
 ## 10. Mandatory self-review
 
 Read the complete diff before committing and verify:

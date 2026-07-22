@@ -9,17 +9,39 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
     name: build / vet / test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: omniwa_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d omniwa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6.5.0
         with:
-          go-version-file: go.mod
+          # Exercise the declared compatibility line without pinning CI to the
+          # vulnerable initial 1.25.0 toolchain release.
+          go-version: 1.25.x
+          check-latest: true
           cache: true
 
       - name: Build
@@ -30,3 +52,30 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+      - name: Test with PostgreSQL
+        env:
+          TEST_POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/omniwa_ci?sslmode=disable
+        run: go test ./... -count=1
+
+      - name: Test with race detector
+        run: go test -race ./...
+
+      - name: Check reachable vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
+      - name: Check Swagger drift
+        run: |
+          go run github.com/swaggo/swag/cmd/swag@v1.16.3 init \
+            -g cmd/evolution-go/main.go \
+            -o ./docs \
+            --parseDependency \
+            --parseInternal
+          git diff --exit-code -- docs
+
+      - name: Check committed secrets
+        run: >-
+          go run github.com/zricethezav/gitleaks/v8@v8.30.1 dir
+          --redact
+          --exit-code 1
+          .
