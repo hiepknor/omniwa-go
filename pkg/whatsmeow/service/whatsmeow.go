@@ -2661,10 +2661,10 @@ func (w *whatsmeowService) sendToQueueOrWebhook(instance *instance_model.Instanc
 	if instance.Webhook != "" && instance.Webhook != "disabled" {
 		err := w.webhookProducer.Produce(queueName, jsonData, instance.Webhook, instance.Id)
 		if err != nil {
-			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to webhook: %s", instance.Id, err)
+			w.loggerWrapper.GetLogger(instance.Id).LogError("component=webhook action=enqueue result=failed error_code=delivery_not_admitted")
 			return
 		}
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to webhook successfully", instance.Id)
+		w.loggerWrapper.GetLogger(instance.Id).LogInfo("component=webhook action=enqueue result=accepted")
 	}
 }
 

@@ -191,7 +191,22 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			logger.LogFatal("component=webhook action=initialize result=failed error=%v", err)
 		}
 	}
-	webhookProducer := webhook_producer.NewWebhookProducer(config.WebhookUrl, webhookRequester, loggerWrapper)
+	webhookProducer, err := webhook_producer.NewWebhookProducer(
+		config.WebhookUrl,
+		webhookRequester,
+		loggerWrapper,
+		webhook_producer.Settings{
+			Workers:               config.Webhook.Workers,
+			QueueCapacity:         config.Webhook.QueueCapacity,
+			MaxPendingPerInstance: config.Webhook.MaxPendingPerInstance,
+			MaxAttempts:           config.Webhook.MaxAttempts,
+			RetryBase:             config.Webhook.RetryBase,
+		},
+	)
+	if err != nil {
+		logger.LogFatal("component=webhook action=initialize result=failed error=%v", err)
+	}
+	startBackground(backgroundWorkers, "webhook.deliveries", webhookProducer.Run)
 	websocketProducer := websocket_producer.NewWebsocketProducer(loggerWrapper)
 	startBackground(backgroundWorkers, "websocket.shutdown", func(ctx context.Context) error {
 		<-ctx.Done()

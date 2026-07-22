@@ -104,12 +104,17 @@ type RemoteMediaConfig struct {
 }
 
 type WebhookConfig struct {
-	AllowedHosts     []string
-	AllowedPorts     []string
-	AllowPrivate     bool
-	Timeout          time.Duration
-	MaxRequestBytes  int64
-	MaxResponseBytes int64
+	AllowedHosts          []string
+	AllowedPorts          []string
+	AllowPrivate          bool
+	Timeout               time.Duration
+	MaxRequestBytes       int64
+	MaxResponseBytes      int64
+	Workers               int
+	QueueCapacity         int
+	MaxPendingPerInstance int
+	MaxAttempts           int
+	RetryBase             time.Duration
 }
 
 // EnsureDBExists connects to postgres (without the target database) and creates it if it doesn't exist.
@@ -335,6 +340,26 @@ func Load() *Config {
 	}
 	webhookMaxRequestBytes := parsePositiveInt64OrFatal(config_env.WEBHOOK_MAX_REQUEST_BYTES, "4194304")
 	webhookMaxResponseBytes := parsePositiveInt64OrFatal(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "65536")
+	webhookWorkers, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.WEBHOOK_WORKERS), "4"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WEBHOOK_WORKERS, err)
+	}
+	webhookQueueCapacity, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.WEBHOOK_QUEUE_CAPACITY), "256"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WEBHOOK_QUEUE_CAPACITY, err)
+	}
+	webhookMaxPendingPerInstance, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.WEBHOOK_MAX_PENDING_PER_INSTANCE), "32"))
+	if err != nil || webhookMaxPendingPerInstance > webhookQueueCapacity {
+		logger.LogFatal("[CONFIG] invalid %s: must be positive and no greater than %s", config_env.WEBHOOK_MAX_PENDING_PER_INSTANCE, config_env.WEBHOOK_QUEUE_CAPACITY)
+	}
+	webhookMaxAttempts, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.WEBHOOK_MAX_ATTEMPTS), "3"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WEBHOOK_MAX_ATTEMPTS, err)
+	}
+	webhookRetryBase, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.WEBHOOK_RETRY_BASE), "1s"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WEBHOOK_RETRY_BASE, err)
+	}
 
 	apiAudioConverter := os.Getenv(config_env.API_AUDIO_CONVERTER)
 	apiAudioConverterKey := os.Getenv(config_env.API_AUDIO_CONVERTER_KEY)
@@ -600,8 +625,17 @@ func Load() *Config {
 		AmqpGlobalEnabled:               amqpGlobalEnabled == "true",
 		WebhookUrl:                      webhookUrl,
 		Webhook: WebhookConfig{
-			AllowedHosts: webhookAllowedHosts, AllowedPorts: webhookAllowedPorts, AllowPrivate: webhookAllowPrivate, Timeout: webhookTimeout,
-			MaxRequestBytes: webhookMaxRequestBytes, MaxResponseBytes: webhookMaxResponseBytes,
+			AllowedHosts:          webhookAllowedHosts,
+			AllowedPorts:          webhookAllowedPorts,
+			AllowPrivate:          webhookAllowPrivate,
+			Timeout:               webhookTimeout,
+			MaxRequestBytes:       webhookMaxRequestBytes,
+			MaxResponseBytes:      webhookMaxResponseBytes,
+			Workers:               webhookWorkers,
+			QueueCapacity:         webhookQueueCapacity,
+			MaxPendingPerInstance: webhookMaxPendingPerInstance,
+			MaxAttempts:           webhookMaxAttempts,
+			RetryBase:             webhookRetryBase,
 		},
 		ClientName:           clientName,
 		ApiAudioConverter:    apiAudioConverter,

@@ -108,7 +108,9 @@ must remain deployable.
     provenance, while Git releases promote that existing digest without a
     rebuild or movable release alias.
 24. Bound webhook delivery workers without claiming a public durable-history
-    contract.
+    contract. Completed: the implementation uses bounded global and
+    per-instance admission, a fixed worker pool, cancellable classified retries,
+    safe counters/logs, and supervisor-owned shutdown.
 
 ### 7. Optional high availability
 
