@@ -46,6 +46,21 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := db.Create(&instance).Error; err != nil {
 		t.Fatal(err)
 	}
+	contactTime := time.Unix(150, 0)
+	contact := projection_model.Contact{
+		InstanceID: instance.Id, ContactID: "00000000-0000-0000-0000-000000000150", PreferredJID: "contact@s.whatsapp.net",
+		Found: true, SourceOccurredAt: contactTime, SourceEventKey: "contact-150", FieldVersions: json.RawMessage(`{"contact":{"occurredAt":"1970-01-01T00:02:30Z","eventKey":"contact-150"}}`), LastSyncedAt: contactTime,
+	}
+	if err := db.Create(&contact).Error; err != nil {
+		t.Fatal(err)
+	}
+	identity := projection_model.ContactIdentity{
+		InstanceID: instance.Id, Kind: projection_model.ContactIdentityKindJID, Value: contact.PreferredJID, ContactID: contact.ContactID,
+		SourceOccurredAt: contactTime, SourceEventKey: "contact-150", LastSyncedAt: contactTime,
+	}
+	if err := db.Create(&identity).Error; err != nil {
+		t.Fatal(err)
+	}
 	labelRepository := projection_repository.NewLabelProjectionRepository(db)
 	labelName := "Priority"
 	labelColor := int32(4)
@@ -131,6 +146,16 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	reopened, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	var storedContact projection_model.Contact
+	if err := reopened.First(&storedContact, "instance_id = ? AND contact_id = ?", instance.Id, contact.ContactID).Error; err != nil ||
+		storedContact.PreferredJID != contact.PreferredJID || !storedContact.Found {
+		t.Fatalf("stored contact after reconnect = %#v, %v", storedContact, err)
+	}
+	var storedIdentity projection_model.ContactIdentity
+	if err := reopened.First(&storedIdentity, "instance_id = ? AND identity_kind = ? AND identity_value = ?", instance.Id, identity.Kind, identity.Value).Error; err != nil ||
+		storedIdentity.ContactID != contact.ContactID {
+		t.Fatalf("stored contact identity after reconnect = %#v, %v", storedIdentity, err)
 	}
 	stored, err := projection_repository.NewStateRepository(reopened).Get(instance.Id, "groups")
 	if err != nil {

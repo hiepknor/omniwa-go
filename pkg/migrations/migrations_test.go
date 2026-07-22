@@ -1,6 +1,9 @@
 package migrations
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRegistryIsOrderedAndImmutableInputIsChecksummed(t *testing.T) {
 	if err := validateRegistry(registry); err != nil {
@@ -22,5 +25,17 @@ func TestRegistryRejectsDuplicateAndOutOfOrderVersions(t *testing.T) {
 	second := Migration{Version: 2, Name: "two", SQL: "SELECT 2"}
 	if err := validateRegistry([]Migration{second, migration}); err == nil {
 		t.Fatal("out-of-order registry was accepted")
+	}
+}
+
+func TestContactsProjectionMigrationIsVersionedAndIncludesAliases(t *testing.T) {
+	last := registry[len(registry)-1]
+	if last.Version != 7 || last.Name != "create_contacts_projection" {
+		t.Fatalf("last migration = %#v", last)
+	}
+	for _, table := range []string{"projected_contacts", "projected_contact_identities"} {
+		if !strings.Contains(last.SQL, "CREATE TABLE "+table) {
+			t.Fatalf("contacts migration does not create %s", table)
+		}
 	}
 }

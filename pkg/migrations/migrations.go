@@ -219,6 +219,60 @@ CREATE TABLE projected_label_message_associations (
 );
 CREATE INDEX projected_label_messages_by_message_idx ON projected_label_message_associations (instance_id, chat_id, message_id, label_id) WHERE tombstoned_at IS NULL;`,
 	},
+	{
+		Version: 7,
+		Name:    "create_contacts_projection",
+		SQL: `CREATE TABLE projected_contacts (
+    instance_id UUID NOT NULL,
+    contact_id UUID NOT NULL,
+    preferred_jid VARCHAR(255) NOT NULL,
+    phone_jid VARCHAR(255) NULL,
+    lid VARCHAR(255) NULL,
+    username VARCHAR(255) NULL,
+    found BOOLEAN NOT NULL DEFAULT FALSE,
+    first_name TEXT NULL,
+    full_name TEXT NULL,
+    push_name TEXT NULL,
+    business_name TEXT NULL,
+    redacted_phone TEXT NULL,
+    save_on_primary_addressbook BOOLEAN NULL,
+    picture_id VARCHAR(255) NULL,
+    picture_author_jid VARCHAR(255) NULL,
+    picture_removed BOOLEAN NULL,
+    picture_updated_at TIMESTAMPTZ NULL,
+    about TEXT NULL,
+    about_updated_at TIMESTAMPTZ NULL,
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    field_versions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    tombstoned_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, contact_id),
+    CONSTRAINT projected_contacts_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX projected_contacts_preferred_jid_idx ON projected_contacts (instance_id, preferred_jid) WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_list_idx ON projected_contacts (instance_id, full_name, preferred_jid) WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_freshness_idx ON projected_contacts (instance_id, last_synced_at);
+
+CREATE TABLE projected_contact_identities (
+    instance_id UUID NOT NULL,
+    identity_kind VARCHAR(32) NOT NULL,
+    identity_value VARCHAR(255) NOT NULL,
+    contact_id UUID NOT NULL,
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    tombstoned_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, identity_kind, identity_value),
+    CONSTRAINT projected_contact_identities_contact_fk FOREIGN KEY (instance_id, contact_id) REFERENCES projected_contacts(instance_id, contact_id) ON DELETE CASCADE,
+    CONSTRAINT projected_contact_identities_kind_check CHECK (identity_kind IN ('jid', 'phone_jid', 'lid', 'username'))
+);
+CREATE INDEX projected_contact_identities_contact_idx ON projected_contact_identities (instance_id, contact_id) WHERE tombstoned_at IS NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {
