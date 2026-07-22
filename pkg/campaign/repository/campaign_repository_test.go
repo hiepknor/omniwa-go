@@ -103,6 +103,7 @@ func TestDraftValidationBoundsContentAndAttribution(t *testing.T) {
 		{name: "blank text", input: &DraftInput{Name: "name", TextBody: "\n", Recipients: validRecipientConsent(), Actor: Actor{Type: "system"}}},
 		{name: "oversized text", input: &DraftInput{Name: "name", TextBody: strings.Repeat("x", 4097), Recipients: validRecipientConsent(), Actor: Actor{Type: "system"}}},
 		{name: "no recipients", input: &DraftInput{Name: "name", TextBody: "hello", Actor: Actor{Type: "system"}}},
+		{name: "too many recipients", input: &DraftInput{Name: "name", TextBody: "hello", Recipients: make([]RecipientConsent, maxCampaignRecipients+1), Actor: Actor{Type: "system"}}},
 		{name: "unattributed admin", input: &DraftInput{Name: "name", TextBody: "hello", Recipients: validRecipientConsent(), Actor: Actor{Type: "admin"}}},
 	}
 	for _, test := range tests {

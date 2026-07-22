@@ -18,8 +18,12 @@ import (
 
 var (
 	ErrCampaignConflict          = errors.New("campaign state changed concurrently")
+	ErrCampaignHasPendingWork    = errors.New("campaign still has unfinished recipients")
 	ErrInvalidCampaignTransition = errors.New("invalid campaign status transition")
+	ErrRecipientClaimLost        = errors.New("campaign recipient claim is no longer active")
 )
+
+const maxCampaignRecipients = 10_000
 
 type Actor struct {
 	Type      string
@@ -45,6 +49,11 @@ type CampaignRepository interface {
 	Get(context.Context, string, string) (*campaign_model.Campaign, []campaign_model.Recipient, error)
 	Transition(context.Context, string, string, campaign_model.CampaignStatus, *time.Time, Actor) (*campaign_model.Campaign, error)
 	ListAudit(context.Context, string, string) ([]campaign_model.AuditEvent, error)
+	ClaimReady(context.Context, int, time.Duration) ([]campaign_model.Recipient, error)
+	ClaimReadyForInstance(context.Context, string, int, time.Duration) ([]campaign_model.Recipient, error)
+	MarkSent(context.Context, *campaign_model.Recipient, string) error
+	MarkRetry(context.Context, *campaign_model.Recipient, string, time.Time) error
+	MarkFailed(context.Context, *campaign_model.Recipient, string) error
 }
 
 type campaignRepository struct {
@@ -124,6 +133,17 @@ func (r *campaignRepository) Transition(ctx context.Context, instanceID, campaig
 		if !canTransitionCampaign(campaign.Status, target) {
 			return ErrInvalidCampaignTransition
 		}
+		if target == campaign_model.CampaignStatusCompleted {
+			var unfinished int64
+			if err := tx.Model(&campaign_model.Recipient{}).
+				Where("instance_id = ? AND campaign_id = ? AND status IN ?", instanceID, campaignID, []campaign_model.RecipientStatus{campaign_model.RecipientStatusPending, campaign_model.RecipientStatusProcessing}).
+				Count(&unfinished).Error; err != nil {
+				return err
+			}
+			if unfinished > 0 {
+				return ErrCampaignHasPendingWork
+			}
+		}
 		updates := map[string]any{"status": target, "version": gorm.Expr("version + 1"), "updated_at": now}
 		if target == campaign_model.CampaignStatusScheduled {
 			if startsAt == nil || startsAt.IsZero() {
@@ -139,6 +159,17 @@ func (r *campaignRepository) Transition(ctx context.Context, instanceID, campaig
 		}
 		if isTerminalCampaignStatus(target) {
 			updates["finished_at"] = now
+		}
+		if target == campaign_model.CampaignStatusAborted || target == campaign_model.CampaignStatusFailed {
+			recipientStatus := campaign_model.RecipientStatusAborted
+			if target == campaign_model.CampaignStatusFailed {
+				recipientStatus = campaign_model.RecipientStatusSkipped
+			}
+			if err := tx.Model(&campaign_model.Recipient{}).
+				Where("instance_id = ? AND campaign_id = ? AND status = ?", instanceID, campaignID, campaign_model.RecipientStatusPending).
+				Updates(map[string]any{"status": recipientStatus, "updated_at": now}).Error; err != nil {
+				return err
+			}
 		}
 		result := tx.Model(&campaign_model.Campaign{}).
 			Where("instance_id = ? AND id = ? AND status = ? AND version = ?", instanceID, campaignID, campaign.Status, campaign.Version).
@@ -225,7 +256,7 @@ func validateDraftInput(input *DraftInput, scope string) (string, *string, error
 		return "", nil, errors.New("campaign draft is required")
 	}
 	name := strings.TrimSpace(input.Name)
-	if name == "" || len([]rune(name)) > 255 || strings.TrimSpace(input.TextBody) == "" || len([]rune(input.TextBody)) > 4096 || len(input.Recipients) == 0 {
+	if name == "" || len([]rune(name)) > 255 || strings.TrimSpace(input.TextBody) == "" || len([]rune(input.TextBody)) > 4096 || len(input.Recipients) == 0 || len(input.Recipients) > maxCampaignRecipients {
 		return "", nil, errors.New("campaign name, bounded text, and recipients are required")
 	}
 	input.Actor.Type = strings.TrimSpace(input.Actor.Type)
