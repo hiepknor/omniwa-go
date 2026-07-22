@@ -9,6 +9,7 @@ import (
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -23,6 +24,7 @@ var ErrEventClaimLost = errors.New("projection event claim is no longer active")
 type EventRepository interface {
 	Enqueue(ctx context.Context, event *projection_model.Event) (bool, error)
 	ClaimPending(ctx context.Context, limit int, leaseDuration time.Duration) ([]projection_model.Event, error)
+	ClaimPendingFor(ctx context.Context, resource string, eventTypes []string, limit int, leaseDuration time.Duration) ([]projection_model.Event, error)
 	MarkProcessed(ctx context.Context, event *projection_model.Event) error
 	MarkFailed(ctx context.Context, event *projection_model.Event, errorCode string, retryAt time.Time) error
 }
@@ -55,6 +57,17 @@ func (r *eventRepository) Enqueue(ctx context.Context, event *projection_model.E
 }
 
 func (r *eventRepository) ClaimPending(ctx context.Context, limit int, leaseDuration time.Duration) ([]projection_model.Event, error) {
+	return r.claimPending(ctx, "", nil, limit, leaseDuration)
+}
+
+func (r *eventRepository) ClaimPendingFor(ctx context.Context, resource string, eventTypes []string, limit int, leaseDuration time.Duration) ([]projection_model.Event, error) {
+	if resource == "" || len(eventTypes) == 0 {
+		return nil, errors.New("claim resource and event types are required")
+	}
+	return r.claimPending(ctx, resource, eventTypes, limit, leaseDuration)
+}
+
+func (r *eventRepository) claimPending(ctx context.Context, resource string, eventTypes []string, limit int, leaseDuration time.Duration) ([]projection_model.Event, error) {
 	if limit <= 0 || limit > maxClaimBatch {
 		return nil, fmt.Errorf("claim limit must be between 1 and %d", maxClaimBatch)
 	}
@@ -68,7 +81,8 @@ func (r *eventRepository) ClaimPending(ctx context.Context, limit int, leaseDura
 	err := r.db.WithContext(ctx).Raw(`WITH candidates AS (
     SELECT instance_id, resource, event_key
     FROM projection_event_inbox
-    WHERE ((status IN ('pending', 'failed') AND available_at <= ?)
+    WHERE (? = '' OR (resource = ? AND event_type = ANY(?)))
+      AND ((status IN ('pending', 'failed') AND available_at <= ?)
         OR (status = 'processing' AND lease_until <= ?))
     ORDER BY occurred_at ASC, ingested_at ASC, event_key ASC
     FOR UPDATE SKIP LOCKED
@@ -80,7 +94,7 @@ FROM candidates
 WHERE inbox.instance_id = candidates.instance_id
   AND inbox.resource = candidates.resource
   AND inbox.event_key = candidates.event_key
-RETURNING inbox.*`, now, now, limit, claimToken, leaseUntil).Scan(&events).Error
+RETURNING inbox.*`, resource, resource, pq.Array(eventTypes), now, now, limit, claimToken, leaseUntil).Scan(&events).Error
 	return events, err
 }
 

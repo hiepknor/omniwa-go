@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -86,7 +87,7 @@ func init() {
 	}
 }
 
-func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext) *gin.Engine {
+func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *sync.WaitGroup) *gin.Engine {
 	killChannel := make(map[string](chan bool))
 	clientPointer := make(map[string]*whatsmeow.Client)
 
@@ -179,6 +180,24 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	labelRepository := label_repository.NewLabelRepository(db)
 	projectionStateService := projection_service.NewStateService(projection_repository.NewStateRepository(db))
 	projectionEventService := projection_service.NewEventService(projection_repository.NewEventRepository(db), 30*time.Second, 5*time.Second)
+	groupProjector := projection_service.NewGroupProjector(projection_repository.NewGroupRepository(db), projectionStateService)
+	groupWorker := projection_service.NewWorker(
+		projectionEventService, "groups", []string{"joined_group"}, 50, time.Second, groupProjector.Handle,
+		func(result projection_service.EventBatchResult, err error) {
+			if err != nil {
+				logger.LogError("component=projection action=process resource=groups result=failed error_code=batch_failed")
+			} else if result.Claimed > 0 {
+				logger.LogInfo("component=projection action=process resource=groups claimed=%d processed=%d failed=%d", result.Claimed, result.Processed, result.Failed)
+			}
+		},
+	)
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		if err := groupWorker.Run(appCtx); err != nil {
+			logger.LogError("component=projection action=worker resource=groups result=stopped error_code=invalid_worker_configuration")
+		}
+	}()
 
 	whatsmeowService := whatsmeow_service.NewWhatsmeowService(
 		instanceRepository,
@@ -454,7 +473,10 @@ func main() {
 		logger.LogInfo("RabbitMQ URL not configured, skipping RabbitMQ connection")
 	}
 
-	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx)
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+	var backgroundWorkers sync.WaitGroup
+	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, &backgroundWorkers)
 
 	// Graceful shutdown with heartbeat
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
@@ -484,6 +506,7 @@ func main() {
 
 	// Stop heartbeat loop
 	heartbeatCancel()
+	appCancel()
 
 	if cfg.LicenseGateEnabled {
 		core.Shutdown(runtimeCtx)
@@ -494,6 +517,17 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.LogError("[SHUTDOWN] Server forced to shutdown: %v", err)
+	}
+	workersStopped := make(chan struct{})
+	go func() {
+		backgroundWorkers.Wait()
+		close(workersStopped)
+	}()
+	select {
+	case <-workersStopped:
+		logger.LogInfo("[SHUTDOWN] Background workers stopped")
+	case <-shutdownCtx.Done():
+		logger.LogError("[SHUTDOWN] Background worker shutdown timed out")
 	}
 
 	logger.LogInfo("[SHUTDOWN] Server exited")

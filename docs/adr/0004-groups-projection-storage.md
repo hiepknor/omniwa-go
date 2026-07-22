@@ -31,10 +31,13 @@ the authority for `not_started`, `syncing`, `ready`, `stale`, and `failed`.
 
 ## Rollout and rollback
 
-Migration 3 is additive. This increment creates storage only and does not
-change existing group API reads or enable `groups_projection`. The worker,
-initial reconciliation, write-through mutations, and compatible read cutover
-must be delivered and verified before the capability becomes ready.
+Migration 3 is additive. A lease-based background worker applies
+`JoinedGroup` snapshots and shuts down through the application context. It
+claims only event types with a registered projector; `GroupInfo` deltas remain
+pending until per-field ordering is implemented. Existing group API reads and
+`groups_projection` remain unchanged. Initial reconciliation, delta handling,
+write-through mutations, and compatible read cutover must be delivered and
+verified before the capability becomes ready.
 
 Application rollback leaves the new tables unused. Instance deletion cascades
 to groups, and group deletion cascades to participants. Physical cleanup is not
@@ -49,3 +52,6 @@ part of the request path.
 - Timestamp ties converge deterministically by stable event key.
 - Provider timestamps remain a trust boundary; reconciliation supplies a newer
   authoritative snapshot when events are missing.
+- Multiple replicas can process supported snapshots concurrently; inbox leases,
+  fencing tokens, deterministic storage versions, and atomic monotonic
+  projection-state updates prevent cross-replica rollback.

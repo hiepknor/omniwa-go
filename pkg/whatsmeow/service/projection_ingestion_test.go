@@ -28,6 +28,10 @@ func (s *captureProjectionEventService) ProcessBatch(context.Context, int, proje
 	return projection_service.EventBatchResult{}, nil
 }
 
+func (s *captureProjectionEventService) ProcessBatchFor(context.Context, string, []string, int, projection_service.EventHandler) (projection_service.EventBatchResult, error) {
+	return projection_service.EventBatchResult{}, nil
+}
+
 func TestMyClientIngestsRelevantGroupEvents(t *testing.T) {
 	loggerManager := logger_wrapper.NewLoggerManager(&config.Config{LogDirectory: t.TempDir(), LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1})
 	defer loggerManager.GetLogger("instance-a").Close()
