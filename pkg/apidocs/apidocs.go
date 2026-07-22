@@ -39,7 +39,9 @@ type ProjectionMeta struct {
 //
 //	{ "error": "<human readable reason>" }
 type ErrorResponse struct {
-	Error string `json:"error" example:"phone number is required"`
+	Error     string `json:"error" example:"phone number is required"`
+	Code      string `json:"code,omitempty" example:"validation_error"`
+	RequestID string `json:"requestId,omitempty" example:"0123456789abcdef0123456789abcdef"`
 }
 
 type CampaignErrorResponse struct {

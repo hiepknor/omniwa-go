@@ -41,6 +41,7 @@ import (
 	websocket_producer "github.com/evolution-foundation/evolution-go/pkg/events/websocket"
 	group_handler "github.com/evolution-foundation/evolution-go/pkg/group/handler"
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
@@ -462,14 +463,15 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	pollHandler := poll_handler.NewPollHandler(whatsmeowService.GetPollService(), loggerWrapper)
 
 	r := gin.Default()
+	r.Use(httpapi.RequestIdentity())
 
-	// CORS middleware — must be before everything else
+	// CORS middleware — must be before all business, auth, and body middleware.
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, Retry-After")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, X-Request-ID, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, Retry-After, X-Request-ID")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(200)
 			return

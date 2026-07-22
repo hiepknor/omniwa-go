@@ -11,6 +11,7 @@ import (
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
 	campaign_service "github.com/evolution-foundation/evolution-go/pkg/campaign/service"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -374,6 +375,6 @@ func writeCampaignError(ctx *gin.Context, err error) {
 	case errors.Is(err, campaign_repository.ErrInvalidCampaignTransition), errors.Is(err, campaign_repository.ErrCampaignConflict), errors.Is(err, campaign_repository.ErrCampaignHasPendingWork):
 		ctx.JSON(http.StatusConflict, gin.H{"error": "campaign state conflict", "code": "campaign_state_conflict"})
 	default:
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, err)
 	}
 }

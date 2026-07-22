@@ -119,7 +119,7 @@ func (c *chatHandler) Messages(ctx *gin.Context) {
 func projectionInstance(ctx *gin.Context) (*instance_model.Instance, bool) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 	}
 	return instance, ok
 }
@@ -140,13 +140,13 @@ func projectionLimit(ctx *gin.Context) (int, bool) {
 func writeProjectionReadError(ctx *gin.Context, err error) {
 	switch {
 	case errors.Is(err, projection_service.ErrInvalidProjectionCursor):
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "code": "invalid_cursor"})
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_cursor", "invalid projection cursor")
 	case errors.Is(err, projection_service.ErrChatsProjectionNotReady), errors.Is(err, projection_service.ErrMessagesProjectionNotReady):
-		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error(), "code": "projection_not_ready"})
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "projection_not_ready", "projection is not ready")
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "projection record not found", "code": "not_found"})
+		httpapi.WriteError(ctx, http.StatusNotFound, "not_found", "projection record not found")
 	default:
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, err)
 	}
 }
 
@@ -167,7 +167,7 @@ func (c *chatHandler) ChatPin(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -185,7 +185,7 @@ func (c *chatHandler) ChatPin(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatPin(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -213,7 +213,7 @@ func (c *chatHandler) ChatUnpin(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -231,7 +231,7 @@ func (c *chatHandler) ChatUnpin(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatUnpin(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -259,7 +259,7 @@ func (c *chatHandler) ChatArchive(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -277,7 +277,7 @@ func (c *chatHandler) ChatArchive(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatArchive(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -305,7 +305,7 @@ func (c *chatHandler) ChatUnarchive(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -323,7 +323,7 @@ func (c *chatHandler) ChatUnarchive(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatUnarchive(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -351,7 +351,7 @@ func (c *chatHandler) ChatMute(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -369,7 +369,7 @@ func (c *chatHandler) ChatMute(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatMute(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -397,7 +397,7 @@ func (c *chatHandler) ChatUnmute(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -415,7 +415,7 @@ func (c *chatHandler) ChatUnmute(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatUnmute(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -444,7 +444,7 @@ func (c *chatHandler) HistorySyncRequest(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -460,7 +460,7 @@ func (c *chatHandler) HistorySyncRequest(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 

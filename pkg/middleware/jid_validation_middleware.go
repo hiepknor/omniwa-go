@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/gomessguii/logger"
@@ -90,7 +91,7 @@ func (m *JIDValidationMiddleware) ValidateJIDFields(fieldNames ...string) gin.Ha
 		if modified {
 			newBody, err := json.Marshal(requestData)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
+				httpapi.WriteInternal(c, err)
 				c.Abort()
 				return
 			}
@@ -235,7 +236,7 @@ func (m *JIDValidationMiddleware) ValidateNumberField() gin.HandlerFunc {
 		if modified {
 			newBody, err := json.Marshal(requestData)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
+				httpapi.WriteInternal(c, err)
 				c.Abort()
 				return
 			}
@@ -304,7 +305,7 @@ func (m *JIDValidationMiddleware) ValidateMultipleNumbers(fieldName string) gin.
 			if modified {
 				newBody, err := json.Marshal(requestData)
 				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
+					httpapi.WriteInternal(c, err)
 					c.Abort()
 					return
 				}
@@ -437,7 +438,7 @@ func (m *JIDValidationMiddleware) ValidateNumberFieldWithFormatJid() gin.Handler
 		if modified {
 			newBody, err := json.Marshal(requestData)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
+				httpapi.WriteInternal(c, err)
 				c.Abort()
 				return
 			}
@@ -521,7 +522,7 @@ func (m *JIDValidationMiddleware) ValidateContactFields() gin.HandlerFunc {
 		if modified {
 			newBody, err := json.Marshal(requestData)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
+				httpapi.WriteInternal(c, err)
 				c.Abort()
 				return
 			}

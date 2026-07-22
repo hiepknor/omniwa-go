@@ -36,7 +36,7 @@ func writeServiceError(ctx *gin.Context, err error) {
 	if httpapi.WriteRateLimit(ctx, err) {
 		return
 	}
-	ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	httpapi.WriteInternal(ctx, err)
 }
 
 // Send a text message
@@ -57,7 +57,7 @@ func (s *sendHandler) SendText(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -105,7 +105,7 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -153,7 +153,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -216,13 +216,13 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 		// Open file
 		fileData, err := file.Open()
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open file"})
+			httpapi.WriteInternal(ctx, err)
 			return
 		}
 		defer fileData.Close()
 		fileBytes, err := io.ReadAll(fileData)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "cannot read file"})
+			httpapi.WriteInternal(ctx, err)
 			return
 		}
 
@@ -315,7 +315,7 @@ func (s *sendHandler) SendPoll(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -368,7 +368,7 @@ func (s *sendHandler) SendSticker(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -416,7 +416,7 @@ func (s *sendHandler) SendLocation(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -479,7 +479,7 @@ func (s *sendHandler) SendContact(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -543,7 +543,7 @@ func (s *sendHandler) SendButton(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -607,7 +607,7 @@ func (s *sendHandler) SendList(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -685,7 +685,7 @@ func (s *sendHandler) SendCarousel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -733,7 +733,7 @@ func (s *sendHandler) SendStatusText(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -780,7 +780,7 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -811,13 +811,13 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 		fileData, err := file.Open()
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open file"})
+			httpapi.WriteInternal(ctx, err)
 			return
 		}
 		defer fileData.Close()
 		fileBytes, err := io.ReadAll(fileData)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "cannot read file"})
+			httpapi.WriteInternal(ctx, err)
 			return
 		}
 

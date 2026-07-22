@@ -117,8 +117,14 @@ definitions:
     type: object
   apidocs.ErrorResponse:
     properties:
+      code:
+        example: validation_error
+        type: string
       error:
         example: phone number is required
+        type: string
+      requestId:
+        example: 0123456789abcdef0123456789abcdef
         type: string
     type: object
   apidocs.InstanceListResponse:

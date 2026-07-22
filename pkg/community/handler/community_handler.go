@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	community_service "github.com/evolution-foundation/evolution-go/pkg/community/service"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
 )
@@ -35,7 +36,7 @@ func (c *communityHandler) CreateCommunity(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -53,7 +54,7 @@ func (c *communityHandler) CreateCommunity(ctx *gin.Context) {
 
 	community, err := c.communityService.CreateCommunity(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -77,7 +78,7 @@ func (c *communityHandler) CommunityAdd(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -100,7 +101,7 @@ func (c *communityHandler) CommunityAdd(ctx *gin.Context) {
 
 	resp, err := c.communityService.CommunityAdd(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -124,7 +125,7 @@ func (c *communityHandler) CommunityRemove(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -147,7 +148,7 @@ func (c *communityHandler) CommunityRemove(ctx *gin.Context) {
 
 	resp, err := c.communityService.CommunityRemove(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 

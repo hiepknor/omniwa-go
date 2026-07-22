@@ -33,13 +33,14 @@ Content-Type: application/json
 {
   "error": "outbound_rate_limited",
   "code": "outbound_rate_limited",
-  "retryAfter": 2
+  "retryAfter": 2,
+  "requestId": "01234567-89ab-cdef-0123-456789abcdef"
 }
 ```
 
-`error` remains a string. `code` and `retryAfter` are additive fields. Clients
-should wait at least the `Retry-After` delta-seconds before retrying and should
-not retry in a tight loop.
+`error` remains a string. `code`, `retryAfter`, and `requestId` are additive
+fields. Clients should wait at least the `Retry-After` delta-seconds before
+retrying and should not retry in a tight loop.
 
 Campaign workers use this same guard, but the limiter alone does not make a
 campaign safe. Durable scheduling, per-recipient opt-in evidence, lifecycle

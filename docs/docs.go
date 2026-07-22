@@ -6570,9 +6570,17 @@ const docTemplate = `{
         "apidocs.ErrorResponse": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "validation_error"
+                },
                 "error": {
                     "type": "string",
                     "example": "phone number is required"
+                },
+                "requestId": {
+                    "type": "string",
+                    "example": "0123456789abcdef0123456789abcdef"
                 }
             }
         },

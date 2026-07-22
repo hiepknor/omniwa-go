@@ -52,13 +52,15 @@ header in delta seconds, and this additive error body:
 {
   "error": "rate_limited",
   "code": "rate_limited",
-  "retryAfter": 90
+  "retryAfter": 90,
+  "requestId": "01234567-89ab-cdef-0123-456789abcdef"
 }
 ```
 
-`error` remains a string for existing clients. New clients should prefer the
-machine-readable `code`, wait for the larger of the header or `retryAfter`, add
-jitter, and avoid automatic retries for mutations whose outcome is uncertain.
+`error` remains a string for existing clients. `requestId` correlates the
+response with server logs. New clients should prefer the machine-readable
+`code`, wait for the larger of the header or `retryAfter`, add jitter, and avoid
+automatic retries for mutations whose outcome is uncertain.
 
 Mutations are never token-bucket limited or single-flighted by the information
 query guard. If WhatsApp returns 429 from a related mutation, OmniWA GO still

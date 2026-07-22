@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
@@ -100,7 +101,7 @@ func (i *instanceHandler) Create(ctx *gin.Context) {
 
 	createdInstance, err := i.instanceService.Create(data)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -124,7 +125,7 @@ func (i *instanceHandler) Connect(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -137,7 +138,7 @@ func (i *instanceHandler) Connect(ctx *gin.Context) {
 
 	instance, jid, eventString, err := i.instanceService.Connect(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -167,13 +168,13 @@ func (i *instanceHandler) Reconnect(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
 	err := i.instanceService.Reconnect(instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -195,13 +196,13 @@ func (i *instanceHandler) Disconnect(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
 	updateInstance, err := i.instanceService.Disconnect(instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -313,7 +314,7 @@ func (i *instanceHandler) Pair(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -331,7 +332,7 @@ func (i *instanceHandler) Pair(ctx *gin.Context) {
 
 	pairingCode, err := i.instanceService.Pair(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -351,7 +352,7 @@ func (i *instanceHandler) Pair(ctx *gin.Context) {
 func (i *instanceHandler) All(ctx *gin.Context) {
 	instances, err := i.instanceService.GetAll()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -380,7 +381,7 @@ func (i *instanceHandler) Info(ctx *gin.Context) {
 
 	instance, err := i.instanceService.Info(instanceId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -409,7 +410,7 @@ func (i *instanceHandler) Delete(ctx *gin.Context) {
 
 	err := i.instanceService.Delete(instanceId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -457,7 +458,7 @@ func (i *instanceHandler) SetProxy(ctx *gin.Context) {
 
 	err = i.instanceService.SetProxyFromStruct(instanceId, data)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -493,7 +494,7 @@ func (i *instanceHandler) DeleteProxy(ctx *gin.Context) {
 
 	err := i.instanceService.RemoveProxy(instanceId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -538,7 +539,7 @@ func (i *instanceHandler) ForceReconnect(ctx *gin.Context) {
 
 	err = i.instanceService.ForceReconnect(instanceId, number)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -596,7 +597,7 @@ func (h *instanceHandler) GetLogs(c *gin.Context) {
 
 	logs, err := h.instanceService.GetLogs(instanceId, startDate, endDate, query.Level, query.Limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(c, err)
 		return
 	}
 
@@ -625,7 +626,7 @@ func (h *instanceHandler) GetAdvancedSettings(c *gin.Context) {
 
 	settings, err := h.instanceService.GetAdvancedSettings(instanceId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(c, err)
 		return
 	}
 
@@ -662,7 +663,7 @@ func (h *instanceHandler) UpdateAdvancedSettings(c *gin.Context) {
 
 	err := h.instanceService.UpdateAdvancedSettings(instanceId, &settings)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(c, err)
 		return
 	}
 
