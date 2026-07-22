@@ -84,10 +84,17 @@ upstream syncs stay low-conflict.
 
 `main` is protected — **never push to `main` directly**.
 
+Every task that changes repository files must be completed on a new branch and
+delivered through a pull request targeting `main`. Do not leave completed
+changes only in the local working tree. A task is not complete until the branch
+is pushed and the PR URL is reported. Read-only investigations do not require a
+PR. After the PR is merged, delete the task branch from both the remote and the
+local repository.
+
 1. Branch from `main`: `git switch -c <type>/<short-description>`.
 2. Make a focused change; run build/vet/test.
 3. Open a PR against `main`; the `build / vet / test` check must be green.
-4. Squash-merge.
+4. Squash-merge and delete the task branch locally and remotely.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`,
 `chore:`, `docs:`, `ci:`, `refactor:`, `test:`.
