@@ -4655,6 +4655,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/server/overview": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Get persisted overview metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "24h",
+                        "description": "Metric window as a Go duration (maximum 720h)",
+                        "name": "window",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.Overview"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid metric window",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/server/projection-health": {
             "get": {
                 "security": [
@@ -6725,6 +6788,102 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.Overview": {
+            "type": "object",
+            "properties": {
+                "generatedAt": {
+                    "type": "string"
+                },
+                "instances": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewInstances"
+                },
+                "messages": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewMessages"
+                },
+                "projections": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewProjectionCounts"
+                },
+                "scope": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewScope"
+                },
+                "window": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewWindow"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewInstances": {
+            "type": "object",
+            "properties": {
+                "connected": {
+                    "type": "integer"
+                },
+                "disconnected": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewMessages": {
+            "type": "object",
+            "properties": {
+                "incoming": {
+                    "type": "integer"
+                },
+                "outgoing": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewProjectionCounts": {
+            "type": "object",
+            "properties": {
+                "chats": {
+                    "type": "integer"
+                },
+                "contacts": {
+                    "type": "integer"
+                },
+                "events": {
+                    "type": "integer"
+                },
+                "groups": {
+                    "type": "integer"
+                },
+                "messages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewScope": {
+            "type": "object",
+            "properties": {
+                "instanceId": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewWindow": {
+            "type": "object",
+            "properties": {
+                "durationSeconds": {
+                    "type": "integer"
+                },
+                "end": {
+                    "type": "string"
+                },
+                "start": {
                     "type": "string"
                 }
             }

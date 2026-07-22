@@ -65,9 +65,17 @@ func TestMessageRetentionCutoffIndexIsVersioned(t *testing.T) {
 }
 
 func TestDurableEventsMigrationIsVersionedAndIndexed(t *testing.T) {
+	migration := registry[9]
+	if migration.Version != 10 || migration.Name != "create_durable_events" || !strings.Contains(migration.SQL, "CREATE TABLE durable_events") ||
+		!strings.Contains(migration.SQL, "durable_events_history_idx") || !strings.Contains(migration.SQL, "durable_events_retention_idx") {
+		t.Fatalf("durable events migration = %#v", migration)
+	}
+}
+
+func TestProjectionOverviewWindowIndexesAreVersioned(t *testing.T) {
 	last := registry[len(registry)-1]
-	if last.Version != 10 || last.Name != "create_durable_events" || !strings.Contains(last.SQL, "CREATE TABLE durable_events") ||
-		!strings.Contains(last.SQL, "durable_events_history_idx") || !strings.Contains(last.SQL, "durable_events_retention_idx") {
-		t.Fatalf("durable events migration = %#v", last)
+	if last.Version != 11 || last.Name != "index_projection_overview_windows" ||
+		!strings.Contains(last.SQL, "projected_messages_overview_window_idx") || !strings.Contains(last.SQL, "durable_events_overview_window_idx") {
+		t.Fatalf("projection overview migration = %#v", last)
 	}
 }

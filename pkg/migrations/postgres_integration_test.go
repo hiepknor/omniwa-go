@@ -227,6 +227,11 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := reopenedDurableRepository.Append(context.Background(), &otherEvent); err != nil {
 		t.Fatalf("append isolated durable event: %v", err)
 	}
+	overviewCounts, err := projection_repository.NewOverviewRepository(reopened).Snapshot(context.Background(), otherInstance.Id, time.Unix(300, 0), time.Unix(400, 0))
+	if err != nil || overviewCounts.InstancesTotal != 1 || overviewCounts.InstancesConnected != 0 || overviewCounts.Events != 1 ||
+		overviewCounts.Groups != 0 || overviewCounts.Contacts != 0 || overviewCounts.Chats != 0 || overviewCounts.Messages != 0 {
+		t.Fatalf("isolated persisted overview = %#v, %v", overviewCounts, err)
+	}
 	firstEventPage, err := reopenedDurableRepository.List(context.Background(), instance.Id, "PaginationTest", 2, nil)
 	if err != nil || len(firstEventPage.Items) != 2 || firstEventPage.Items[0].OccurredAt.Unix() != 300 || firstEventPage.Items[1].OccurredAt.Unix() != 200 || firstEventPage.NextCursor == nil {
 		t.Fatalf("first durable event page = %#v, %v", firstEventPage, err)

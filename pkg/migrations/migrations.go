@@ -398,6 +398,15 @@ WHERE resource = 'messages' AND event_type IN ('message', 'history_message', 're
 CREATE INDEX durable_events_history_idx ON durable_events (instance_id, occurred_at DESC, id DESC);
 CREATE INDEX durable_events_retention_idx ON durable_events (expires_at ASC, id ASC);`,
 	},
+	{
+		Version: 11,
+		Name:    "index_projection_overview_windows",
+		SQL: `CREATE INDEX projected_messages_overview_window_idx
+ON projected_messages (provider_timestamp ASC, direction)
+WHERE deleted_at IS NULL;
+CREATE INDEX durable_events_overview_window_idx
+ON durable_events (occurred_at ASC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {
