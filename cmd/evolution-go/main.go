@@ -19,7 +19,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gomessguii/logger"
 	"github.com/joho/godotenv"
-	"go.mau.fi/whatsmeow"
 	"gorm.io/gorm"
 	_ "modernc.org/sqlite"
 
@@ -97,8 +96,6 @@ func init() {
 }
 
 func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *sync.WaitGroup) *gin.Engine {
-	killChannel := make(map[string](chan bool))
-	clientPointer := make(map[string]*whatsmeow.Client)
 	runtimeRegistry := instance_runtime.NewRegistry[*whatsmeow_service.MyClient](appCtx)
 
 	loggerWrapper := logger_wrapper.NewLoggerManager(config)
@@ -371,8 +368,6 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		message_repository.NewMessageRepository(db),
 		labelRepository,
 		config,
-		killChannel,
-		clientPointer,
 		runtimeRegistry,
 		rabbitmqProducer,
 		webhookProducer,
@@ -394,8 +389,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	)
 	instanceService := instance_service.NewInstanceService(
 		instanceRepository,
-		killChannel,
-		clientPointer,
+		runtimeRegistry,
 		whatsmeowService,
 		config,
 		queryGuard,
