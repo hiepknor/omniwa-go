@@ -32,6 +32,12 @@ func TestChatAndMessageApplyValidation(t *testing.T) {
 	if err := validateMessageApply(message, []MessageAspect{MessageAspectEnvelope}); err == nil {
 		t.Fatal("invalid message provenance accepted")
 	}
+	message.Provenance = projection_model.MessageProvenanceLive
+	oversizedSender := string(make([]byte, 256))
+	message.SenderJID = &oversizedSender
+	if err := validateMessageApply(message, []MessageAspect{MessageAspectEnvelope}); err == nil {
+		t.Fatal("oversized message sender accepted")
+	}
 }
 
 func TestProjectionAspectsAreIndependent(t *testing.T) {

@@ -9,5 +9,8 @@ func NormalizeProjectionEvent(instanceID string, rawEvent any) (*projection_mode
 	if event, relevant, err := NormalizeLabelEvent(instanceID, rawEvent); relevant || err != nil {
 		return event, relevant, err
 	}
+	if event, relevant, err := NormalizeChatMessageEvent(instanceID, rawEvent); relevant || err != nil {
+		return event, relevant, err
+	}
 	return NormalizeContactEvent(instanceID, rawEvent)
 }
