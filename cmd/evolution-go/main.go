@@ -24,6 +24,7 @@ import (
 
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
+	campaign_handler "github.com/evolution-foundation/evolution-go/pkg/campaign/handler"
 	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
 	campaign_service "github.com/evolution-foundation/evolution-go/pkg/campaign/service"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
@@ -373,8 +374,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		loggerWrapper,
 	)
 	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), loggerWrapper)
+	campaignRepository := campaign_repository.NewCampaignRepository(db)
 	campaignWorker := campaign_service.NewWorker(
-		campaign_repository.NewCampaignRepository(db),
+		campaignRepository,
 		campaign_service.NewTextSender(instanceRepository, sendMessageService),
 		campaign_service.WorkerSettings{
 			BatchSize: config.CampaignBatchSize, Lease: config.CampaignLease, PollInterval: config.CampaignPollInterval,
@@ -446,6 +448,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		chat_handler.NewChatHandler(chatService, chatMessageReader),
 		group_handler.NewGroupHandler(groupService),
 		call_handler.NewCallHandler(callService),
+		campaign_handler.NewCampaignHandler(campaign_service.NewManagementService(campaignRepository)),
 		community_handler.NewCommunityHandler(communityService),
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),

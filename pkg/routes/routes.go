@@ -9,6 +9,7 @@ import (
 
 	_ "github.com/evolution-foundation/evolution-go/docs"
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
+	campaign_handler "github.com/evolution-foundation/evolution-go/pkg/campaign/handler"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
 	community_handler "github.com/evolution-foundation/evolution-go/pkg/community/handler"
 	group_handler "github.com/evolution-foundation/evolution-go/pkg/group/handler"
@@ -33,6 +34,7 @@ type Routes struct {
 	chatHandler             chat_handler.ChatHandler
 	groupHandler            group_handler.GroupHandler
 	callHandler             call_handler.CallHandler
+	campaignHandler         campaign_handler.CampaignHandler
 	communityHandler        community_handler.CommunityHandler
 	labelHandler            label_handler.LabelHandler
 	newsletterHandler       newsletter_handler.NewsletterHandler
@@ -116,6 +118,22 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/carousel", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.sendHandler.SendCarousel)
 			routes.POST("/status/text", r.sendHandler.SendStatusText)
 			routes.POST("/status/media", r.sendHandler.SendStatusMedia)
+		}
+	}
+	routes = eng.Group("/campaigns")
+	{
+		routes.Use(r.authMiddleware.Auth)
+		{
+			routes.POST("", r.campaignHandler.Create)
+			routes.GET("", r.campaignHandler.List)
+			routes.GET("/:campaignId", r.campaignHandler.Get)
+			routes.GET("/:campaignId/recipients", r.campaignHandler.Recipients)
+			routes.GET("/:campaignId/audit", r.campaignHandler.Audit)
+			routes.POST("/:campaignId/schedule", r.campaignHandler.Schedule)
+			routes.POST("/:campaignId/start", r.campaignHandler.Start)
+			routes.POST("/:campaignId/pause", r.campaignHandler.Pause)
+			routes.POST("/:campaignId/resume", r.campaignHandler.Resume)
+			routes.POST("/:campaignId/abort", r.campaignHandler.Abort)
 		}
 	}
 	routes = eng.Group("/user")
@@ -255,6 +273,7 @@ func NewRouter(
 	chatHandler chat_handler.ChatHandler,
 	groupHandler group_handler.GroupHandler,
 	callHandler call_handler.CallHandler,
+	campaignHandler campaign_handler.CampaignHandler,
 	communityHandler community_handler.CommunityHandler,
 	labelHandler label_handler.LabelHandler,
 	newsletterHandler newsletter_handler.NewsletterHandler,
@@ -271,6 +290,7 @@ func NewRouter(
 		chatHandler:             chatHandler,
 		groupHandler:            groupHandler,
 		callHandler:             callHandler,
+		campaignHandler:         campaignHandler,
 		communityHandler:        communityHandler,
 		labelHandler:            labelHandler,
 		newsletterHandler:       newsletterHandler,

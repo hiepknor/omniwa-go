@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ var (
 	ErrCampaignConflict          = errors.New("campaign state changed concurrently")
 	ErrCampaignHasPendingWork    = errors.New("campaign still has unfinished recipients")
 	ErrInvalidCampaignTransition = errors.New("invalid campaign status transition")
+	ErrInvalidCampaignInput      = errors.New("invalid campaign input")
 	ErrRecipientClaimLost        = errors.New("campaign recipient claim is no longer active")
 )
 
@@ -48,6 +50,10 @@ type CampaignRepository interface {
 	CreateDraft(context.Context, string, DraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error)
 	Get(context.Context, string, string) (*campaign_model.Campaign, []campaign_model.Recipient, error)
 	GetCampaign(context.Context, string, string) (*campaign_model.Campaign, error)
+	ListCampaigns(context.Context, string, campaign_model.CampaignStatus, int, *CampaignCursor) (*CampaignPage, error)
+	ListRecipients(context.Context, string, string, int, *RecipientCursor) (*RecipientPage, error)
+	ListAuditPage(context.Context, string, string, int, *AuditCursor) (*AuditPage, error)
+	RecipientCounts(context.Context, string, string) (map[campaign_model.RecipientStatus]int64, error)
 	Transition(context.Context, string, string, campaign_model.CampaignStatus, *time.Time, Actor) (*campaign_model.Campaign, error)
 	ListAudit(context.Context, string, string) ([]campaign_model.AuditEvent, error)
 	ClaimReady(context.Context, int, time.Duration) ([]campaign_model.Recipient, error)
@@ -74,7 +80,7 @@ func (r *campaignRepository) CreateDraft(ctx context.Context, instanceID string,
 	campaignID := uuid.NewString()
 	name, actorHash, err := validateDraftInput(&input, campaignID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %v", ErrInvalidCampaignInput, err)
 	}
 	now := r.now().UTC()
 	campaign := &campaign_model.Campaign{
@@ -83,7 +89,7 @@ func (r *campaignRepository) CreateDraft(ctx context.Context, instanceID string,
 	}
 	recipients, err := buildRecipients(campaign, input.Recipients, now)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %v", ErrInvalidCampaignInput, err)
 	}
 	audit := newAuditEvent(campaign, nil, "created", input.Actor.Type, actorHash, "", string(campaign.Status), now)
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -133,7 +139,7 @@ func (r *campaignRepository) Transition(ctx context.Context, instanceID, campaig
 	actor.Type = strings.TrimSpace(actor.Type)
 	actorHash, err := validateActor(actor, campaignID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrInvalidCampaignInput, err)
 	}
 	now := r.now().UTC()
 	var campaign campaign_model.Campaign
@@ -158,7 +164,7 @@ func (r *campaignRepository) Transition(ctx context.Context, instanceID, campaig
 		updates := map[string]any{"status": target, "version": gorm.Expr("version + 1"), "updated_at": now}
 		if target == campaign_model.CampaignStatusScheduled {
 			if startsAt == nil || startsAt.IsZero() {
-				return errors.New("scheduled campaign requires a start time")
+				return fmt.Errorf("%w: scheduled campaign requires a start time", ErrInvalidCampaignInput)
 			}
 			start := startsAt.UTC()
 			updates["starts_at"] = start

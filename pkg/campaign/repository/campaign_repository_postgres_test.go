@@ -56,6 +56,22 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 	if err != nil || loaded.ID != campaign.ID || loaded.InstanceID != instance.Id {
 		t.Fatalf("scoped campaign lookup = %#v, %v", loaded, err)
 	}
+	campaignPage, err := repository.ListCampaigns(context.Background(), instance.Id, campaign_model.CampaignStatusDraft, 1, nil)
+	if err != nil || len(campaignPage.Items) != 1 || campaignPage.Items[0].ID != campaign.ID {
+		t.Fatalf("campaign page = %#v, %v", campaignPage, err)
+	}
+	recipientPage, err := repository.ListRecipients(context.Background(), instance.Id, campaign.ID, 2, nil)
+	if err != nil || len(recipientPage.Items) != 2 || recipientPage.NextCursor == nil {
+		t.Fatalf("first recipient page = %#v, %v", recipientPage, err)
+	}
+	secondRecipientPage, err := repository.ListRecipients(context.Background(), instance.Id, campaign.ID, 2, recipientPage.NextCursor)
+	if err != nil || len(secondRecipientPage.Items) != 2 || secondRecipientPage.NextCursor != nil || secondRecipientPage.Items[0].ID == recipientPage.Items[0].ID {
+		t.Fatalf("second recipient page = %#v, %v", secondRecipientPage, err)
+	}
+	counts, err := repository.RecipientCounts(context.Background(), instance.Id, campaign.ID)
+	if err != nil || counts[campaign_model.RecipientStatusPending] != 4 {
+		t.Fatalf("recipient counts = %#v, %v", counts, err)
+	}
 	startsAt := time.Now().UTC()
 	if _, err := repository.Transition(context.Background(), instance.Id, campaign.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"}); err != nil {
 		t.Fatal(err)
@@ -184,6 +200,10 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 	audit, err = repository.ListAudit(context.Background(), instance.Id, campaign.ID)
 	if err != nil || len(audit) != 12 {
 		t.Fatalf("recipient audit = %#v, %v", audit, err)
+	}
+	auditPage, err := repository.ListAuditPage(context.Background(), instance.Id, campaign.ID, 5, nil)
+	if err != nil || len(auditPage.Items) != 5 || auditPage.NextCursor == nil {
+		t.Fatalf("audit page = %#v, %v", auditPage, err)
 	}
 
 	invalidRecipient := campaign_model.Recipient{

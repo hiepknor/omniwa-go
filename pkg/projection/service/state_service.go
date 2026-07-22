@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	CapabilityRateLimitRetryAfter = "rate_limit_retry_after"
-	CapabilityEventsProjection    = "events_projection"
-	CapabilityOutboundRateLimit   = "outbound_rate_limit"
+	CapabilityRateLimitRetryAfter   = "rate_limit_retry_after"
+	CapabilityEventsProjection      = "events_projection"
+	CapabilityOutboundRateLimit     = "outbound_rate_limit"
+	CapabilityCampaignOrchestration = "campaign_orchestration"
 )
 
 var resourceCapabilities = map[string]string{
@@ -140,7 +141,7 @@ func (s *stateService) setStatus(instanceID, resource string, schemaVersion int6
 func (s *stateService) Capabilities(instanceID string) ([]string, error) {
 	// Durable history has no initial-sync barrier: it is validly empty for a new
 	// instance and explicitly does not claim pre-deployment backfill.
-	capabilities := []string{CapabilityEventsProjection, CapabilityOutboundRateLimit, CapabilityRateLimitRetryAfter}
+	capabilities := []string{CapabilityCampaignOrchestration, CapabilityEventsProjection, CapabilityOutboundRateLimit, CapabilityRateLimitRetryAfter}
 	if instanceID == "" {
 		return capabilities, nil
 	}

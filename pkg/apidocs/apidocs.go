@@ -11,6 +11,8 @@ package apidocs
 import (
 	"time"
 
+	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
+	campaign_service "github.com/evolution-foundation/evolution-go/pkg/campaign/service"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 )
 
@@ -40,9 +42,37 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"phone number is required"`
 }
 
+type CampaignErrorResponse struct {
+	Error string `json:"error" example:"campaign state conflict"`
+	Code  string `json:"code,omitempty" example:"campaign_state_conflict"`
+}
+
+type CampaignDetailResponse struct {
+	Message string                          `json:"message" example:"success"`
+	Data    campaign_service.CampaignDetail `json:"data"`
+}
+
+type CampaignListResponse struct {
+	Message string                    `json:"message" example:"success"`
+	Data    []campaign_model.Campaign `json:"data"`
+	Meta    ProjectionMeta            `json:"meta"`
+}
+
+type CampaignRecipientListResponse struct {
+	Message string                     `json:"message" example:"success"`
+	Data    []campaign_model.Recipient `json:"data"`
+	Meta    ProjectionMeta             `json:"meta"`
+}
+
+type CampaignAuditListResponse struct {
+	Message string                      `json:"message" example:"success"`
+	Data    []campaign_model.AuditEvent `json:"data"`
+	Meta    ProjectionMeta              `json:"meta"`
+}
+
 type CapabilitiesData struct {
 	Version      string   `json:"version" example:"1.2.3"`
-	Capabilities []string `json:"capabilities" example:"rate_limit_retry_after,groups_projection"`
+	Capabilities []string `json:"capabilities" example:"campaign_orchestration,rate_limit_retry_after,groups_projection"`
 }
 
 type CapabilitiesResponse struct {

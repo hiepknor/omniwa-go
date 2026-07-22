@@ -81,7 +81,7 @@ func TestStateLifecyclePreservesNewestEventAndControlsCapabilities(t *testing.T)
 	}
 
 	capabilities, _ := service.Capabilities("instance-a")
-	if len(capabilities) != 3 || capabilities[0] != CapabilityEventsProjection || capabilities[1] != CapabilityOutboundRateLimit || capabilities[2] != CapabilityRateLimitRetryAfter {
+	if len(capabilities) != 4 || capabilities[0] != CapabilityCampaignOrchestration || capabilities[1] != CapabilityEventsProjection || capabilities[2] != CapabilityOutboundRateLimit || capabilities[3] != CapabilityRateLimitRetryAfter {
 		t.Fatalf("premature capabilities: %v", capabilities)
 	}
 	if err := service.MarkReady("instance-a", "groups", 2, time.Unix(400, 0)); err != nil {
@@ -92,14 +92,14 @@ func TestStateLifecyclePreservesNewestEventAndControlsCapabilities(t *testing.T)
 		t.Fatalf("unexpected ready state: %#v", state)
 	}
 	capabilities, _ = service.Capabilities("instance-a")
-	if len(capabilities) != 3 || capabilities[0] != CapabilityEventsProjection || capabilities[1] != CapabilityOutboundRateLimit || capabilities[2] != CapabilityRateLimitRetryAfter {
+	if len(capabilities) != 4 || capabilities[0] != CapabilityCampaignOrchestration || capabilities[1] != CapabilityEventsProjection || capabilities[2] != CapabilityOutboundRateLimit || capabilities[3] != CapabilityRateLimitRetryAfter {
 		t.Fatalf("capabilities = %v", capabilities)
 	}
 	if err := service.MarkReady("instance-a", "groups", GroupsProjectionSchemaVersion, time.Unix(500, 0)); err != nil {
 		t.Fatal(err)
 	}
 	capabilities, _ = service.Capabilities("instance-a")
-	if len(capabilities) != 4 || capabilities[0] != CapabilityEventsProjection || capabilities[1] != "groups_projection" || capabilities[2] != CapabilityOutboundRateLimit || capabilities[3] != CapabilityRateLimitRetryAfter {
+	if len(capabilities) != 5 || capabilities[0] != CapabilityCampaignOrchestration || capabilities[1] != CapabilityEventsProjection || capabilities[2] != "groups_projection" || capabilities[3] != CapabilityOutboundRateLimit || capabilities[4] != CapabilityRateLimitRetryAfter {
 		t.Fatalf("groups capability = %v", capabilities)
 	}
 }
@@ -107,7 +107,7 @@ func TestStateLifecyclePreservesNewestEventAndControlsCapabilities(t *testing.T)
 func TestAdminCapabilitiesOnlyExposeServerFeatures(t *testing.T) {
 	service := NewStateService(newMemoryRepository())
 	capabilities, err := service.Capabilities("")
-	if err != nil || len(capabilities) != 3 || capabilities[0] != CapabilityEventsProjection || capabilities[1] != CapabilityOutboundRateLimit || capabilities[2] != CapabilityRateLimitRetryAfter {
+	if err != nil || len(capabilities) != 4 || capabilities[0] != CapabilityCampaignOrchestration || capabilities[1] != CapabilityEventsProjection || capabilities[2] != CapabilityOutboundRateLimit || capabilities[3] != CapabilityRateLimitRetryAfter {
 		t.Fatalf("Capabilities() = %v, %v", capabilities, err)
 	}
 }
