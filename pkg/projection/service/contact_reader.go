@@ -146,7 +146,7 @@ func (r *ContactReader) readMeta(instanceID string) (*ProjectionReadMeta, error)
 	if r == nil || r.contacts == nil || r.state == nil || instanceID == "" {
 		return nil, errors.New("contact projection reader dependencies and instance identity are required")
 	}
-	state, err := r.state.Get(instanceID, contactResource)
+	state, err := r.state.GetServingState(instanceID, contactResource)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrContactsProjectionNotReady
 	}

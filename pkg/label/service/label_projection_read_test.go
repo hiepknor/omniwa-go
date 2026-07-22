@@ -69,7 +69,7 @@ type labelProjectionReadStateStub struct {
 	state *projection_model.State
 }
 
-func (s *labelProjectionReadStateStub) Get(string, string) (*projection_model.State, error) {
+func (s *labelProjectionReadStateStub) GetServingState(string, string) (*projection_model.State, error) {
 	return s.state, nil
 }
 

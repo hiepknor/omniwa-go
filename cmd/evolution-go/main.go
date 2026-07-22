@@ -222,7 +222,15 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	instanceRepository := instance_repository.NewInstanceRepository(db)
 	messageRepository := message_repository.NewMessageRepository(db)
 	labelRepository := label_repository.NewLabelRepository(db)
-	projectionStateService := projection_service.NewStateService(projection_repository.NewStateRepository(db))
+	projectionHealthPolicy := projection_service.ProjectionHealthPolicy{}
+	if config.GroupSyncInterval > 0 {
+		projectionHealthPolicy.MaxReconcileAge = map[string]time.Duration{"groups": 2 * config.GroupSyncInterval}
+	}
+	projectionStateService := projection_service.NewStateServiceWithHealth(
+		projection_repository.NewStateRepository(db),
+		projection_repository.NewWorkHealthRepository(db),
+		projectionHealthPolicy,
+	)
 	projectionEventService := projection_service.NewEventService(projection_repository.NewEventRepository(db), 30*time.Second, 5*time.Second)
 	groupProjectionRepository := projection_repository.NewGroupRepository(db)
 	groupProjector := projection_service.NewGroupProjector(groupProjectionRepository, projectionStateService)

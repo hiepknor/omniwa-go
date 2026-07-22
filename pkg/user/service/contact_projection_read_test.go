@@ -35,7 +35,7 @@ type userContactReadStateStub struct {
 	err   error
 }
 
-func (s *userContactReadStateStub) Get(string, string) (*projection_model.State, error) {
+func (s *userContactReadStateStub) GetServingState(string, string) (*projection_model.State, error) {
 	return s.state, s.err
 }
 

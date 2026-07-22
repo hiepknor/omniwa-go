@@ -8145,7 +8145,19 @@
         "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionResourceHealth": {
             "type": "object",
             "properties": {
+                "deadLetterEvents": {
+                    "type": "integer"
+                },
+                "degradedReasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "eventLagSeconds": {
+                    "type": "integer"
+                },
+                "failedEvents": {
                     "type": "integer"
                 },
                 "instanceId": {
@@ -8156,6 +8168,15 @@
                 },
                 "lastReconciledAt": {
                     "type": "string"
+                },
+                "oldestUnprocessedAt": {
+                    "type": "string"
+                },
+                "pendingEvents": {
+                    "type": "integer"
+                },
+                "processingEvents": {
+                    "type": "integer"
                 },
                 "reconcileAgeSeconds": {
                     "type": "integer"
@@ -8169,8 +8190,14 @@
                 "staleSince": {
                     "type": "string"
                 },
+                "storedSyncStatus": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus"
+                },
                 "syncStatus": {
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus"
+                },
+                "workLagSeconds": {
+                    "type": "integer"
                 }
             }
         },

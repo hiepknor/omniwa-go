@@ -54,7 +54,7 @@ type groupReaderStateStub struct {
 	err   error
 }
 
-func (s groupReaderStateStub) Get(string, string) (*projection_model.State, error) {
+func (s groupReaderStateStub) GetServingState(string, string) (*projection_model.State, error) {
 	return s.state, s.err
 }
 

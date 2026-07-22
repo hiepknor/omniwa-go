@@ -50,7 +50,7 @@ type groupCursorEnvelope struct {
 }
 
 type groupReadState interface {
-	Get(instanceID, resource string) (*projection_model.State, error)
+	GetServingState(instanceID, resource string) (*projection_model.State, error)
 }
 
 type GroupReader struct {
@@ -186,7 +186,7 @@ func (r *GroupReader) readMeta(instanceID string) (*ProjectionReadMeta, error) {
 	if r == nil || r.groups == nil || r.state == nil || instanceID == "" {
 		return nil, errors.New("group projection reader dependencies and instance identity are required")
 	}
-	state, err := r.state.Get(instanceID, groupResource)
+	state, err := r.state.GetServingState(instanceID, groupResource)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrGroupsProjectionNotReady
 	}

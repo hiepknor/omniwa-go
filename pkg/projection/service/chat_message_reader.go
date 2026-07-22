@@ -252,7 +252,7 @@ func (r *ChatMessageReader) readMeta(instanceID, resource string, version int64,
 	if r == nil || r.repository == nil || r.state == nil || r.retention <= 0 || instanceID == "" {
 		return nil, errors.New("chat and message projection reader dependencies and instance identity are required")
 	}
-	state, err := r.state.Get(instanceID, resource)
+	state, err := r.state.GetServingState(instanceID, resource)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, notReady
 	}

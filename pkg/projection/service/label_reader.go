@@ -49,7 +49,7 @@ func (r *LabelReader) readMeta(instanceID string) (*ProjectionReadMeta, error) {
 	if r == nil || r.labels == nil || r.state == nil || instanceID == "" {
 		return nil, errors.New("label projection reader dependencies and instance identity are required")
 	}
-	state, err := r.state.Get(instanceID, labelResource)
+	state, err := r.state.GetServingState(instanceID, labelResource)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrLabelsProjectionNotReady
 	}
