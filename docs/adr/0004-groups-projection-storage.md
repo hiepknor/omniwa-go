@@ -39,9 +39,18 @@ Migrations 3 and 4 are additive. A lease-based background worker applies
 `JoinedGroup` snapshots and `GroupInfo` metadata, settings, participant,
 invite-link, and delete deltas, and shuts down through the application context.
 It claims only event types with a registered projector. Existing group API
-reads and `groups_projection` remain unchanged. Initial reconciliation,
-write-through mutations, and compatible read cutover must be delivered and
-verified before the capability becomes ready.
+reads remain unchanged. A completed initial reconciliation makes internal state
+`ready`, but the public `groups_projection` capability remains unpublished
+until the compatible read cutover is delivered. Periodic reconciliation and
+write-through mutations must also still be completed.
+
+Initial reconciliation starts asynchronously after a client connects and uses
+the shared information-query guard. It marks the instance `syncing`, captures a
+version fence before the provider query, applies the authoritative list, and
+tombstones missing groups. Events after the fence win the merge even if the
+query completes later. Only a complete successful run marks the projection
+`ready`; failure becomes `failed` for initial sync or `stale` when prior
+reconciled data exists. Periodic scheduling remains a separate increment.
 
 Application rollback leaves the new tables unused. Instance deletion cascades
 to groups, and group deletion cascades to participants. Physical cleanup is not

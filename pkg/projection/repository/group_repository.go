@@ -16,7 +16,55 @@ type GroupRepository interface {
 	ApplySnapshot(ctx context.Context, group *projection_model.Group, participants []projection_model.GroupParticipant) (bool, error)
 	ApplyPatch(ctx context.Context, patch GroupPatch) (bool, error)
 	Tombstone(ctx context.Context, instanceID, groupID, eventKey string, occurredAt time.Time) (bool, error)
+	TombstoneMissing(ctx context.Context, instanceID string, activeGroupIDs []string, eventKey string, occurredAt time.Time) (int, error)
 	Get(ctx context.Context, instanceID, groupID string) (*projection_model.Group, []projection_model.GroupParticipant, error)
+}
+
+func (r *groupRepository) TombstoneMissing(ctx context.Context, instanceID string, activeGroupIDs []string, eventKey string, occurredAt time.Time) (int, error) {
+	if instanceID == "" || eventKey == "" || len(eventKey) > 255 || occurredAt.IsZero() {
+		return 0, errors.New("reconciliation identity and occurrence time are required")
+	}
+	occurredAt = occurredAt.UTC()
+	now := r.now().UTC()
+	fieldVersions, err := encodeBaseGroupVersion(occurredAt, eventKey)
+	if err != nil {
+		return 0, err
+	}
+	tombstoned := 0
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query := tx.Model(&projection_model.Group{}).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("instance_id = ? AND tombstoned_at IS NULL AND (source_occurred_at, source_event_key) <= (?, ?)", instanceID, occurredAt, eventKey)
+		if len(activeGroupIDs) > 0 {
+			query = query.Where("group_id NOT IN ?", activeGroupIDs)
+		}
+		var groupIDs []string
+		if err := query.Pluck("group_id", &groupIDs).Error; err != nil {
+			return err
+		}
+		if len(groupIDs) == 0 {
+			return nil
+		}
+		result := tx.Model(&projection_model.Group{}).
+			Where("instance_id = ? AND group_id IN ?", instanceID, groupIDs).
+			Updates(map[string]any{
+				"source_occurred_at": occurredAt, "source_event_key": eventKey, "field_versions": fieldVersions,
+				"last_synced_at": now, "tombstoned_at": occurredAt, "updated_at": now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		tombstoned = int(result.RowsAffected)
+		return tx.Model(&projection_model.GroupParticipant{}).
+			Where("instance_id = ? AND group_id IN ? AND (source_occurred_at, source_event_key) <= (?, ?)", instanceID, groupIDs, occurredAt, eventKey).
+			Updates(map[string]any{
+				"source_occurred_at": occurredAt, "source_event_key": eventKey,
+				"last_synced_at": now, "tombstoned_at": occurredAt, "updated_at": now,
+			}).Error
+	})
+	if err != nil {
+		return 0, fmt.Errorf("tombstone missing group projections: %w", err)
+	}
+	return tombstoned, nil
 }
 
 type GroupPatch struct {

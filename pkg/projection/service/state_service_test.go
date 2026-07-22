@@ -85,7 +85,7 @@ func TestStateLifecyclePreservesNewestEventAndControlsCapabilities(t *testing.T)
 		t.Fatalf("unexpected ready state: %#v", state)
 	}
 	capabilities, _ = service.Capabilities("instance-a")
-	if len(capabilities) != 2 || capabilities[0] != "groups_projection" || capabilities[1] != CapabilityRateLimitRetryAfter {
+	if len(capabilities) != 1 || capabilities[0] != CapabilityRateLimitRetryAfter {
 		t.Fatalf("capabilities = %v", capabilities)
 	}
 }
