@@ -125,6 +125,8 @@ All pull requests run `git diff --check`, `go build ./...`, `go vet ./...`, and
 `go test ./...`. Risk-specific gates include:
 
 - `go test -race ./...` for runtime, WebSocket, guard, and worker changes.
+- `go test ./pkg/architecture` for dependency direction, guarded network
+  access, sensitive model serialization, and runtime-registry ownership.
 - Empty, existing, repeated, populated, and concurrent PostgreSQL migration
   tests for schema changes.
 - DNS rebinding, redirect, private address, timeout, cancellation, MIME, and
