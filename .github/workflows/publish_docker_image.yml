@@ -103,6 +103,8 @@ jobs:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
-          echo "### Immutable image" >> "$GITHUB_STEP_SUMMARY"
-          printf '`%s@%s`\n' "$IMAGE_NAME" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
-          echo "Source revision: \`$SOURCE_SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Immutable image"
+            printf '%c%s@%s%c\n' 96 "$IMAGE_NAME" "$IMAGE_DIGEST" 96
+            printf 'Source revision: %c%s%c\n' 96 "$SOURCE_SHA" 96
+          } >> "$GITHUB_STEP_SUMMARY"
