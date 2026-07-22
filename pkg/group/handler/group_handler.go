@@ -3,6 +3,7 @@ package group_handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
@@ -14,6 +15,7 @@ import (
 
 type GroupHandler interface {
 	ListGroups(ctx *gin.Context)
+	SearchGroups(ctx *gin.Context)
 	GetGroupInfo(ctx *gin.Context)
 	GetGroupInviteLink(ctx *gin.Context)
 	SetGroupPhoto(ctx *gin.Context)
@@ -25,6 +27,43 @@ type GroupHandler interface {
 	JoinGroupLink(ctx *gin.Context)
 	LeaveGroup(ctx *gin.Context)
 	UpdateGroupSettings(ctx *gin.Context)
+}
+
+// Search groups
+// @Summary Search projected groups
+// @Description Prefix-search groups from the persisted instance projection without querying WhatsApp
+// @Tags Group
+// @Produce json
+// @Param q query string false "Case-insensitive group JID or name prefix" maxlength(128)
+// @Param limit query int false "Page size (1-200)" minimum(1) maximum(200) default(50)
+// @Param cursor query string false "Opaque cursor bound to the instance and normalized query"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]types.GroupInfo} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid search or cursor"
+// @Failure 503 {object} apidocs.ErrorResponse "Groups projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /group/search [get]
+func (g *groupHandler) SearchGroups(ctx *gin.Context) {
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		return
+	}
+	limit := 50
+	if value := ctx.Query("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 200 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 200", "code": "invalid_pagination"})
+			return
+		}
+		limit = parsed
+	}
+	items, meta, err := g.groupService.SearchGroupsRead(ctx.Request.Context(), instance, ctx.Query("q"), limit, ctx.Query("cursor"))
+	if err != nil {
+		writeGroupProjectionReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
 }
 
 type groupHandler struct {
@@ -162,6 +201,10 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 
 func writeGroupProjectionReadError(ctx *gin.Context, err error) {
 	switch {
+	case errors.Is(err, projection_service.ErrInvalidGroupCursor):
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid group search cursor", "code": "invalid_cursor"})
+	case errors.Is(err, projection_service.ErrInvalidGroupSearch):
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid group search query", "code": "invalid_search"})
 	case errors.Is(err, projection_service.ErrGroupsProjectionNotReady):
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "groups projection is not ready", "code": "projection_not_ready"})
 	case errors.Is(err, gorm.ErrRecordNotFound):

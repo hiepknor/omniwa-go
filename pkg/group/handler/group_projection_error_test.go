@@ -22,6 +22,8 @@ func TestWriteGroupProjectionReadErrorUsesStableSafeContract(t *testing.T) {
 		forbidden string
 	}{
 		{name: "not ready", err: projection_service.ErrGroupsProjectionNotReady, status: http.StatusServiceUnavailable, code: "projection_not_ready"},
+		{name: "invalid cursor", err: projection_service.ErrInvalidGroupCursor, status: http.StatusBadRequest, code: "invalid_cursor"},
+		{name: "invalid search", err: projection_service.ErrInvalidGroupSearch, status: http.StatusBadRequest, code: "invalid_search"},
 		{name: "not found", err: gorm.ErrRecordNotFound, status: http.StatusNotFound, code: "not_found"},
 		{name: "internal", err: errors.New("database password leaked"), status: http.StatusInternalServerError, forbidden: "database password leaked"},
 	}

@@ -66,13 +66,21 @@ different versions.
 
 `GET /group/list` and `POST /group/info` use a projection reader once an
 instance has completed reconciliation with schema version 3 or newer. Before
-that point they retain the guarded live-query fallback, so deployment and
-reconnection cannot produce a false empty result. A ready, stale, or currently
+that point they return `projection_not_ready` and never issue a request-path
+provider query, so deployment and reconnection cannot produce a false empty
+result or amplify upstream load. A ready, stale, or currently
 resyncing projection with prior reconciled data is served without probing
 WhatsApp and includes additive `source`, `syncStatus`, and `lastSyncedAt`
 metadata. The `groups_projection` capability is published only for a ready
 schema-3 projection. List reads load groups and participants in two bounded
 database queries rather than one query per group.
+
+The additive `GET /group/search` endpoint provides case-insensitive prefix
+search over normalized group JIDs and names. It uses bounded keyset pagination
+ordered by group JID. Opaque cursors are versioned and bound to both the
+instance and normalized query, so they cannot be reused across tenants or
+filters. Migration 14 adds partial prefix and page indexes; the original list
+and info paths and their response shapes remain unchanged.
 
 Confirmed create, join, leave, name, topic, settings, participant, membership
 request, and invite-link mutations write through to the projection before the
@@ -81,8 +89,8 @@ query guard; a failed enrichment cannot turn a completed mutation into an API
 failure. Projection-write failures likewise do not invite an unsafe mutation
 retry: they are logged with stable error codes, mark the resource stale, and
 are repaired by reconciliation. Invite-link reads use the cached projection
-when present; cache misses retain the guarded live fallback, and reset remains
-a live mutation whose returned link replaces the cache.
+when present; cache misses return `not_found` without a provider query, and
+reset remains a live mutation whose returned link replaces the cache.
 
 Application rollback leaves the new tables unused. Instance deletion cascades
 to groups, and group deletion cascades to participants. Physical cleanup is not

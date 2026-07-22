@@ -25,6 +25,7 @@ import (
 type GroupService interface {
 	ListGroups(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, error)
 	ListGroupsRead(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
+	SearchGroupsRead(ctx context.Context, instance *instance_model.Instance, term string, limit int, cursor string) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error)
 	GetGroupInfoRead(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error)
@@ -176,6 +177,13 @@ func (g *groupService) ListGroupsRead(ctx context.Context, instance *instance_mo
 		return nil, nil, errors.New("group projection reader is required")
 	}
 	return g.groupReader.List(ctx, instance.Id)
+}
+
+func (g *groupService) SearchGroupsRead(ctx context.Context, instance *instance_model.Instance, term string, limit int, cursor string) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error) {
+	if g.groupReader == nil || instance == nil {
+		return nil, nil, errors.New("group projection reader and instance are required")
+	}
+	return g.groupReader.Search(ctx, instance.Id, term, limit, cursor)
 }
 
 func (g *groupService) GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error) {

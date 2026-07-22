@@ -2,9 +2,14 @@ package projection_service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
@@ -15,7 +20,13 @@ import (
 
 const GroupsProjectionSchemaVersion int64 = 3
 
-var ErrGroupsProjectionNotReady = errors.New("groups projection is not ready")
+var (
+	ErrGroupsProjectionNotReady = errors.New("groups projection is not ready")
+	ErrInvalidGroupCursor       = errors.New("invalid group search cursor")
+	ErrInvalidGroupSearch       = errors.New("invalid group search query")
+)
+
+const groupCursorVersion = 1
 
 type ProjectionReadMeta struct {
 	Source       string                      `json:"source"`
@@ -27,7 +38,15 @@ type ProjectionReadMeta struct {
 type groupReadRepository interface {
 	Get(context.Context, string, string) (*projection_model.Group, []projection_model.GroupParticipant, error)
 	List(context.Context, string) ([]projection_repository.GroupRecord, error)
+	Search(context.Context, string, string, int, *projection_repository.GroupCursor) (*projection_repository.GroupPage, error)
 	GetInviteLink(context.Context, string, string) (*string, error)
+}
+
+type groupCursorEnvelope struct {
+	Version int    `json:"v"`
+	Kind    string `json:"kind"`
+	Scope   string `json:"scope"`
+	GroupID string `json:"groupId"`
 }
 
 type groupReadState interface {
@@ -61,6 +80,75 @@ func (r *GroupReader) List(ctx context.Context, instanceID string) ([]*types.Gro
 		result[index] = info
 	}
 	return result, meta, nil
+}
+
+func (r *GroupReader) Search(ctx context.Context, instanceID, term string, limit int, encodedCursor string) ([]*types.GroupInfo, *ProjectionReadMeta, error) {
+	term = strings.ToLower(strings.TrimSpace(term))
+	if len(term) > 128 || limit < 1 || limit > 200 {
+		return nil, nil, ErrInvalidGroupSearch
+	}
+	meta, err := r.readMeta(instanceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	scope := groupCursorScope(instanceID, term)
+	cursor, err := decodeGroupCursor(encodedCursor, scope)
+	if err != nil {
+		return nil, nil, err
+	}
+	page, err := r.groups.Search(ctx, instanceID, term, limit, cursor)
+	if err != nil {
+		return nil, nil, err
+	}
+	if page == nil {
+		return nil, nil, errors.New("group search repository returned no page")
+	}
+	result := make([]*types.GroupInfo, len(page.Items))
+	for index := range page.Items {
+		result[index], err = groupInfoFromProjection(&page.Items[index].Group, page.Items[index].Participants)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if page.NextCursor != nil {
+		meta.NextCursor, err = encodeGroupCursor(page.NextCursor, scope)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return result, meta, nil
+}
+
+func groupCursorScope(instanceID, term string) string {
+	sum := sha256.Sum256([]byte(instanceID + "\x00" + term))
+	return hex.EncodeToString(sum[:])
+}
+
+func decodeGroupCursor(value, scope string) (*projection_repository.GroupCursor, error) {
+	if value == "" {
+		return nil, nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return nil, ErrInvalidGroupCursor
+	}
+	var envelope groupCursorEnvelope
+	if json.Unmarshal(payload, &envelope) != nil || envelope.Version != groupCursorVersion || envelope.Kind != "groups" || envelope.Scope != scope ||
+		envelope.GroupID == "" || len(envelope.GroupID) > 255 {
+		return nil, ErrInvalidGroupCursor
+	}
+	return &projection_repository.GroupCursor{GroupID: envelope.GroupID}, nil
+}
+
+func encodeGroupCursor(cursor *projection_repository.GroupCursor, scope string) (string, error) {
+	if cursor == nil || cursor.GroupID == "" || len(cursor.GroupID) > 255 || scope == "" {
+		return "", ErrInvalidGroupCursor
+	}
+	payload, err := json.Marshal(groupCursorEnvelope{Version: groupCursorVersion, Kind: "groups", Scope: scope, GroupID: cursor.GroupID})
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
 }
 
 func (r *GroupReader) Get(ctx context.Context, instanceID, groupID string) (*types.GroupInfo, *ProjectionReadMeta, error) {
