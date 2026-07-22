@@ -63,6 +63,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	})
 
 	eng.GET("/server/ok", r.serverHandler.ServerOk)
+	eng.GET("/server/capabilities", r.authMiddleware.AuthAdminOrInstance, r.serverHandler.Capabilities)
 
 	routes := eng.Group("/instance")
 	{

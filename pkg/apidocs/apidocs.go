@@ -30,6 +30,16 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"phone number is required"`
 }
 
+type CapabilitiesData struct {
+	Version      string   `json:"version" example:"1.2.3"`
+	Capabilities []string `json:"capabilities" example:"rate_limit_retry_after,groups_projection"`
+}
+
+type CapabilitiesResponse struct {
+	Message string           `json:"message" example:"success"`
+	Data    CapabilitiesData `json:"data"`
+}
+
 // RateLimitResponse is returned when an information query cannot safely reach
 // WhatsApp. Code and RetryAfter are additive fields; Error remains a string for
 // compatibility with existing clients.

@@ -4127,6 +4127,42 @@ const docTemplate = `{
                 }
             }
         },
+        "/server/capabilities": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Get server capabilities",
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CapabilitiesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/unlabel/chat": {
             "post": {
                 "security": [
@@ -4931,6 +4967,37 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "apidocs.CapabilitiesData": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "rate_limit_retry_after",
+                        "groups_projection"
+                    ]
+                },
+                "version": {
+                    "type": "string",
+                    "example": "1.2.3"
+                }
+            }
+        },
+        "apidocs.CapabilitiesResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/apidocs.CapabilitiesData"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
         "apidocs.ConnectData": {
             "type": "object",
             "properties": {
