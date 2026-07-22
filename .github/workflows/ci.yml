@@ -38,7 +38,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6.5.0
         with:
-          go-version-file: go.mod
+          # Exercise the declared compatibility line without pinning CI to the
+          # vulnerable initial 1.25.0 toolchain release.
+          go-version: 1.25.x
+          check-latest: true
           cache: true
 
       - name: Build

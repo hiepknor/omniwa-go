@@ -217,6 +217,10 @@ replace them. The .gitleaksignore file records only the fingerprints of
 pre-existing fixture and documentation findings. Review any ignore-list change
 as security-sensitive; never update it merely to make CI pass.
 
+CI resolves the latest security patch in the Go compatibility line declared by
+the project. Do not configure it to use the initial `.0` toolchain indefinitely;
+standard-library vulnerabilities are fixed by toolchain patch releases.
+
 ## 10. Mandatory self-review
 
 Read the complete diff before committing and verify:
