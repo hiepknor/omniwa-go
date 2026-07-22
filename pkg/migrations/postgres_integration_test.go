@@ -95,9 +95,19 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 
 	groupRepository := projection_repository.NewGroupRepository(reopened)
 	newName := "Current group"
+	nameSetAt := time.Unix(450, 0)
+	topicID := "topic-1"
+	announceVersion := "announce-v2"
+	incognito := true
+	participantCount := 1
+	creatorCountryCode := "84"
+	approvalMode := "request_required"
 	newer := time.Unix(500, 0)
 	applied, err := groupRepository.ApplySnapshot(context.Background(), &projection_model.Group{
-		InstanceID: instance.Id, GroupID: "group@g.us", Name: &newName, SourceOccurredAt: newer, SourceEventKey: "event-500",
+		InstanceID: instance.Id, GroupID: "group@g.us", Name: &newName, NameSetAt: &nameSetAt, TopicID: &topicID,
+		AnnounceVersion: &announceVersion, Incognito: &incognito, ParticipantCount: &participantCount,
+		CreatorCountryCode: &creatorCountryCode, DefaultApprovalMode: &approvalMode,
+		SourceOccurredAt: newer, SourceEventKey: "event-500",
 	}, []projection_model.GroupParticipant{{ParticipantID: "user-a@s.whatsapp.net", Role: projection_model.ParticipantRoleAdmin}})
 	if err != nil || !applied {
 		t.Fatalf("new group snapshot = %v, %v", applied, err)
@@ -118,6 +128,12 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	storedGroup, storedParticipants, err := groupRepository.Get(context.Background(), instance.Id, "group@g.us")
 	if err != nil || storedGroup.Name == nil || *storedGroup.Name != newName || len(storedParticipants) != 1 || storedParticipants[0].ParticipantID != "user-a@s.whatsapp.net" {
 		t.Fatalf("stored group after stale snapshot = %#v, %#v, %v", storedGroup, storedParticipants, err)
+	}
+	if storedGroup.NameSetAt == nil || !storedGroup.NameSetAt.Equal(nameSetAt) || storedGroup.TopicID == nil || *storedGroup.TopicID != topicID ||
+		storedGroup.AnnounceVersion == nil || *storedGroup.AnnounceVersion != announceVersion || storedGroup.Incognito == nil || !*storedGroup.Incognito ||
+		storedGroup.ParticipantCount == nil || *storedGroup.ParticipantCount != participantCount || storedGroup.CreatorCountryCode == nil || *storedGroup.CreatorCountryCode != creatorCountryCode ||
+		storedGroup.DefaultApprovalMode == nil || *storedGroup.DefaultApprovalMode != approvalMode {
+		t.Fatalf("stored group lost read-model metadata: %#v", storedGroup)
 	}
 	reconciledName := "Reconciled group"
 	applied, err = groupRepository.ApplySnapshot(context.Background(), &projection_model.Group{
@@ -173,7 +189,9 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		t.Fatalf("late partial-fill snapshot = %v, %v", applied, err)
 	}
 	patchedGroup, patchedParticipants, err := groupRepository.Get(context.Background(), instance.Id, "group@g.us")
-	if err != nil || patchedGroup.Name == nil || *patchedGroup.Name != lateName || patchedGroup.Announce == nil || !*patchedGroup.Announce || len(patchedParticipants) != 2 || patchedParticipants[0].ParticipantID != "user-c@s.whatsapp.net" || patchedParticipants[1].ParticipantID != "user-d@s.whatsapp.net" {
+	if err != nil || patchedGroup.Name == nil || *patchedGroup.Name != lateName || patchedGroup.Announce == nil || !*patchedGroup.Announce ||
+		patchedGroup.ParticipantCount == nil || *patchedGroup.ParticipantCount != 2 || len(patchedParticipants) != 2 ||
+		patchedParticipants[0].ParticipantID != "user-c@s.whatsapp.net" || patchedParticipants[1].ParticipantID != "user-d@s.whatsapp.net" {
 		t.Fatalf("out-of-order merged group = %#v, %#v, %v", patchedGroup, patchedParticipants, err)
 	}
 

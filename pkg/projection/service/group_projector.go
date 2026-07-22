@@ -11,7 +11,7 @@ import (
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 )
 
-const groupsProjectionSchemaVersion int64 = 2
+const groupsProjectionSchemaVersion int64 = 3
 
 type groupSnapshotRepository interface {
 	ApplySnapshot(context.Context, *projection_model.Group, []projection_model.GroupParticipant) (bool, error)
@@ -72,12 +72,21 @@ func patchFromGroupEvent(event *projection_model.Event, payload *groupEventPaylo
 	}
 	if payload.Name != nil {
 		patch.Name = &payload.Name.Name
+		patch.NameSetAt = optionalTime(payload.Name.SetAt)
+		patch.NameSetBy = optionalString(payload.Name.SetBy)
+		patch.NameSetByPhone = optionalString(payload.Name.SetByPN)
 	}
 	if payload.Topic != nil {
 		patch.Topic = &payload.Topic.Topic
+		patch.TopicID = optionalString(payload.Topic.ID)
+		patch.TopicSetAt = optionalTime(payload.Topic.SetAt)
+		patch.TopicSetBy = optionalString(payload.Topic.SetBy)
+		patch.TopicSetByPhone = optionalString(payload.Topic.SetByPN)
+		patch.TopicDeleted = boolPointer(payload.Topic.Deleted)
 	}
 	if payload.Announce != nil {
 		patch.Announce = boolPointer(payload.Announce.Enabled)
+		patch.AnnounceVersion = optionalString(payload.Announce.VersionID)
 	}
 	if payload.Ephemeral != nil {
 		patch.EphemeralEnabled = boolPointer(payload.Ephemeral.Enabled)
@@ -137,12 +146,25 @@ func groupFromSnapshot(event *projection_model.Event, payload *groupEventPayload
 		ParticipantVersion: optionalString(payload.ParticipantVersion), AddressingMode: optionalString(payload.AddressingMode),
 		MemberAddMode: optionalString(payload.MemberAddMode), ParentGroupID: optionalString(payload.LinkedParentID),
 		IsParent: boolPointer(payload.IsParent), IsDefaultSubgroup: boolPointer(payload.IsDefaultSubgroup),
+		Incognito: boolPointer(payload.Incognito), CreatorCountryCode: optionalString(payload.CreatorCountryCode),
+		ParticipantCount: intPointer(payload.ParticipantCount), DefaultApprovalMode: optionalString(payload.DefaultMembershipApproval),
 	}
 	if payload.Name != nil {
 		group.Name = &payload.Name.Name
+		group.NameSetAt = optionalTime(payload.Name.SetAt)
+		group.NameSetBy = optionalString(payload.Name.SetBy)
+		group.NameSetByPhone = optionalString(payload.Name.SetByPN)
 	}
 	if payload.Topic != nil {
 		group.Topic = &payload.Topic.Topic
+		group.TopicID = optionalString(payload.Topic.ID)
+		group.TopicSetAt = optionalTime(payload.Topic.SetAt)
+		group.TopicSetBy = optionalString(payload.Topic.SetBy)
+		group.TopicSetByPhone = optionalString(payload.Topic.SetByPN)
+		group.TopicDeleted = boolPointer(payload.Topic.Deleted)
+	}
+	if payload.Announce != nil {
+		group.AnnounceVersion = optionalString(payload.Announce.VersionID)
 	}
 	if payload.Ephemeral != nil {
 		group.EphemeralEnabled = boolPointer(payload.Ephemeral.Enabled)
@@ -184,6 +206,16 @@ func optionalString(value string) *string {
 }
 
 func boolPointer(value bool) *bool { return &value }
+
+func intPointer(value int) *int { return &value }
+
+func optionalTime(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	value = value.UTC()
+	return &value
+}
 
 func boolPointerValue(value *bool) *bool {
 	if value == nil {

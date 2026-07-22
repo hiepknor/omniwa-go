@@ -73,9 +73,18 @@ type GroupPatch struct {
 	EventKey             string
 	OccurredAt           time.Time
 	Name                 *string
+	NameSetAt            *time.Time
+	NameSetBy            *string
+	NameSetByPhone       *string
 	Topic                *string
+	TopicID              *string
+	TopicSetAt           *time.Time
+	TopicSetBy           *string
+	TopicSetByPhone      *string
+	TopicDeleted         *bool
 	Locked               *bool
 	Announce             *bool
+	AnnounceVersion      *string
 	EphemeralEnabled     *bool
 	EphemeralTimer       *int64
 	JoinApprovalRequired *bool
@@ -206,7 +215,29 @@ func (r *groupRepository) ApplySnapshot(ctx context.Context, group *projection_m
 		if result.RowsAffected > 0 {
 			applied = true
 		}
-		return result.Error
+		if result.Error != nil {
+			return result.Error
+		}
+		var participantCount int64
+		if err := tx.Model(&projection_model.GroupParticipant{}).
+			Where("instance_id = ? AND group_id = ? AND tombstoned_at IS NULL", group.InstanceID, group.GroupID).
+			Count(&participantCount).Error; err != nil {
+			return err
+		}
+		current, exists := versions["participant_count"]
+		if !exists {
+			current, exists = versions["_snapshot"]
+		}
+		if !exists || newerOrEqualGroupVersion(incoming, current) {
+			versions["participant_count"] = incoming
+		}
+		encoded, err := json.Marshal(versions)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&projection_model.Group{}).
+			Where("instance_id = ? AND group_id = ?", group.InstanceID, group.GroupID).
+			Updates(map[string]any{"participant_count": int(participantCount), "field_versions": encoded, "last_synced_at": now, "updated_at": now}).Error
 	})
 	if err != nil {
 		return false, fmt.Errorf("apply group projection snapshot: %w", err)
@@ -243,27 +274,38 @@ func (r *groupRepository) ApplyPatch(ctx context.Context, patch GroupPatch) (boo
 			return nil
 		}
 		updates := make(map[string]any)
-		applyField := func(field, column string, value any) {
+		applyFields := func(field string, columns map[string]any) {
 			current, exists := versions[field]
 			if !exists {
 				current, exists = versions["_snapshot"]
 			}
 			if !exists || newerGroupVersion(incoming, current) {
-				updates[column] = value
+				for column, value := range columns {
+					updates[column] = value
+				}
 				versions[field] = incoming
 			}
 		}
+		applyField := func(field, column string, value any) {
+			applyFields(field, map[string]any{column: value})
+		}
 		if patch.Name != nil {
-			applyField("name", "name", *patch.Name)
+			applyFields("name", map[string]any{
+				"name": *patch.Name, "name_set_at": patch.NameSetAt, "name_set_by": patch.NameSetBy,
+				"name_set_by_phone": patch.NameSetByPhone,
+			})
 		}
 		if patch.Topic != nil {
-			applyField("topic", "topic", *patch.Topic)
+			applyFields("topic", map[string]any{
+				"topic": *patch.Topic, "topic_id": patch.TopicID, "topic_set_at": patch.TopicSetAt,
+				"topic_set_by": patch.TopicSetBy, "topic_set_by_phone": patch.TopicSetByPhone, "topic_deleted": patch.TopicDeleted,
+			})
 		}
 		if patch.Locked != nil {
 			applyField("locked", "locked", *patch.Locked)
 		}
 		if patch.Announce != nil {
-			applyField("announce", "announce", *patch.Announce)
+			applyFields("announce", map[string]any{"announce": *patch.Announce, "announce_version": patch.AnnounceVersion})
 		}
 		if patch.EphemeralEnabled != nil {
 			applyField("ephemeral_enabled", "ephemeral_enabled", *patch.EphemeralEnabled)
@@ -329,11 +371,33 @@ func (r *groupRepository) ApplyPatch(ctx context.Context, patch GroupPatch) (boo
 				participantApplied = true
 			}
 		}
-		if participantApplied && newerGroupVersion(incoming, groupFieldVersion{OccurredAt: stored.SourceOccurredAt, EventKey: stored.SourceEventKey}) {
+		if participantApplied {
 			participantGroupUpdates := map[string]any{
-				"source_occurred_at": patch.OccurredAt, "source_event_key": patch.EventKey,
 				"last_synced_at": now, "updated_at": now,
 			}
+			if newerGroupVersion(incoming, groupFieldVersion{OccurredAt: stored.SourceOccurredAt, EventKey: stored.SourceEventKey}) {
+				participantGroupUpdates["source_occurred_at"] = patch.OccurredAt
+				participantGroupUpdates["source_event_key"] = patch.EventKey
+			}
+			var participantCount int64
+			if err := tx.Model(&projection_model.GroupParticipant{}).
+				Where("instance_id = ? AND group_id = ? AND tombstoned_at IS NULL", patch.InstanceID, patch.GroupID).
+				Count(&participantCount).Error; err != nil {
+				return err
+			}
+			participantGroupUpdates["participant_count"] = int(participantCount)
+			current, exists := versions["participant_count"]
+			if !exists {
+				current, exists = versions["_snapshot"]
+			}
+			if !exists || newerGroupVersion(incoming, current) {
+				versions["participant_count"] = incoming
+			}
+			encoded, err := json.Marshal(versions)
+			if err != nil {
+				return err
+			}
+			participantGroupUpdates["field_versions"] = encoded
 			if stored.TombstonedAt != nil {
 				participantGroupUpdates["tombstoned_at"] = nil
 			}
@@ -415,23 +479,32 @@ type snapshotGroupField struct {
 
 func snapshotGroupFields(group *projection_model.Group) []snapshotGroupField {
 	return []snapshotGroupField{
-		{name: "name", columns: map[string]any{"name": group.Name}},
-		{name: "topic", columns: map[string]any{"topic": group.Topic}},
+		{name: "name", columns: map[string]any{
+			"name": group.Name, "name_set_at": group.NameSetAt, "name_set_by": group.NameSetBy, "name_set_by_phone": group.NameSetByPhone,
+		}},
+		{name: "topic", columns: map[string]any{
+			"topic": group.Topic, "topic_id": group.TopicID, "topic_set_at": group.TopicSetAt, "topic_set_by": group.TopicSetBy,
+			"topic_set_by_phone": group.TopicSetByPhone, "topic_deleted": group.TopicDeleted,
+		}},
 		{name: "owner", columns: map[string]any{"owner_jid": group.OwnerJID, "owner_phone_jid": group.OwnerPhoneJID}},
 		{name: "locked", columns: map[string]any{"locked": group.Locked}},
-		{name: "announce", columns: map[string]any{"announce": group.Announce}},
+		{name: "announce", columns: map[string]any{"announce": group.Announce, "announce_version": group.AnnounceVersion}},
+		{name: "incognito", columns: map[string]any{"incognito": group.Incognito}},
 		{name: "ephemeral_enabled", columns: map[string]any{"ephemeral_enabled": group.EphemeralEnabled}},
 		{name: "ephemeral_timer", columns: map[string]any{"ephemeral_timer": group.EphemeralTimer}},
 		{name: "join_approval", columns: map[string]any{"join_approval_required": group.JoinApprovalRequired}},
 		{name: "suspended", columns: map[string]any{"suspended": group.Suspended}},
 		{name: "participant_version", columns: map[string]any{"participant_version": group.ParticipantVersion}},
+		{name: "participant_count", columns: map[string]any{"participant_count": group.ParticipantCount}},
 		{name: "addressing_mode", columns: map[string]any{"addressing_mode": group.AddressingMode}},
 		{name: "member_add_mode", columns: map[string]any{"member_add_mode": group.MemberAddMode}},
 		{name: "parent_group_id", columns: map[string]any{"parent_group_id": group.ParentGroupID}},
 		{name: "is_parent", columns: map[string]any{"is_parent": group.IsParent}},
+		{name: "default_membership_approval_mode", columns: map[string]any{"default_membership_approval_mode": group.DefaultApprovalMode}},
 		{name: "is_default_subgroup", columns: map[string]any{"is_default_subgroup": group.IsDefaultSubgroup}},
 		{name: "invite_link", columns: map[string]any{"invite_link": group.InviteLink, "invite_link_updated_at": group.InviteLinkUpdatedAt}},
 		{name: "provider_created_at", columns: map[string]any{"provider_created_at": group.ProviderCreatedAt}},
+		{name: "creator_country_code", columns: map[string]any{"creator_country_code": group.CreatorCountryCode}},
 	}
 }
 

@@ -52,6 +52,7 @@ type groupEventPayload struct {
 	LinkedParentID             string                    `json:"linkedParentId,omitempty"`
 	IsDefaultSubgroup          bool                      `json:"isDefaultSubgroup,omitempty"`
 	MemberAddMode              string                    `json:"memberAddMode,omitempty"`
+	Incognito                  bool                      `json:"incognito,omitempty"`
 }
 
 type groupNamePayload struct {
@@ -168,6 +169,7 @@ func normalizeJoinedGroup(event *events.JoinedGroup) groupEventPayload {
 		Participants: normalizeParticipants(info.Participants), ParticipantCount: info.ParticipantCount,
 		IsParent: info.IsParent, DefaultMembershipApproval: info.DefaultMembershipApprovalMode,
 		LinkedParentID: info.LinkedParentJID.String(), IsDefaultSubgroup: info.IsDefaultSubGroup, MemberAddMode: string(info.MemberAddMode),
+		Incognito: info.IsIncognito,
 	}
 	return payload
 }

@@ -60,6 +60,14 @@ restart, and application shutdown cancel the loop and any in-flight query.
 Setting the interval to `0` disables periodic runs without disabling the
 initial reconciliation.
 
+Migration 5 completes the compatibility read model before the API cutover. It
+adds the group name/topic setter metadata, topic and announce version IDs,
+incognito state, provider participant count, creator country code, and default
+membership approval mode that are present in the existing `GroupInfo`
+response. Snapshot and delta field versions cover the related metadata as one
+atomic logical field, preventing a late event from mixing values from
+different versions.
+
 Application rollback leaves the new tables unused. Instance deletion cascades
 to groups, and group deletion cascades to participants. Physical cleanup is not
 part of the request path.
