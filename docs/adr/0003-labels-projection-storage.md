@@ -42,6 +42,14 @@ This barrier prevents an empty or partially processed snapshot from enabling
 the capability. The persisted ready state also prevents a full sync on every
 reconnect.
 
+The legacy `GET /label/list` path keeps its bare-array response and snake-case
+fields, but reads the projection without requiring an active WhatsApp client.
+Its `id` field is normalized to the stable provider label ID (the same value as
+`label_id`) instead of exposing a database-generated UUID. New detail reads use
+an additive envelope with projection freshness metadata. Reads return a
+service-unavailable error until the projection is ready, so a valid empty
+snapshot is never confused with an unfinished sync.
+
 ## Consequences
 
 - Existing label behavior remains compatible while the projection is built.

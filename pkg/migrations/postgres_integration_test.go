@@ -308,6 +308,11 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || capabilityErr != nil || labelState.SyncStatus != projection_model.SyncStatusReady || labelState.LastReconciledAt == nil || !containsString(labelCapabilities, "labels_projection") {
 		t.Fatalf("ready labels state = %#v capabilities=%v errors=%v/%v", labelState, labelCapabilities, err, capabilityErr)
 	}
+	projectedLabels, labelMeta, err := projection_service.NewLabelReader(projection_repository.NewLabelProjectionRepository(reopened), stateService).
+		List(context.Background(), instance.Id)
+	if err != nil || len(projectedLabels) != 1 || projectedLabels[0].LabelID != "label-1" || labelMeta == nil || labelMeta.Source != "projection" {
+		t.Fatalf("projection label list = %#v meta=%#v error=%v", projectedLabels, labelMeta, err)
+	}
 	projector := projection_service.NewGroupProjector(groupRepository, stateService)
 	eventService := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second)
 	batch, err := eventService.ProcessBatchFor(context.Background(), "groups", []string{"joined_group", "group_info"}, 10, projector.Handle)

@@ -9187,6 +9187,44 @@ paths:
       summary: Edit label
       tags:
       - Label
+  /label/info/{labelId}:
+    get:
+      description: Get one label from the persisted instance projection
+      parameters:
+      - description: Label ID
+        in: path
+        name: labelId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/apidocs.LabelItem'
+              type: object
+        "404":
+          description: Label not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get label details
+      tags:
+      - Label
   /label/list:
     get:
       consumes:
@@ -9203,6 +9241,10 @@ paths:
             type: array
         "500":
           description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:
