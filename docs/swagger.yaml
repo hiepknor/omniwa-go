@@ -1252,6 +1252,10 @@ definitions:
     type: object
   github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo:
     properties:
+      About:
+        type: string
+      AboutUpdatedAt:
+        type: string
       BusinessName:
         type: string
       FirstName:
@@ -1262,7 +1266,21 @@ definitions:
         type: string
       Jid:
         type: string
+      LID:
+        type: string
+      PhoneJID:
+        type: string
+      PictureID:
+        type: string
+      PictureRemoved:
+        type: boolean
+      PictureUpdatedAt:
+        type: string
       PushName:
+        type: string
+      RedactedPhone:
+        type: string
+      Username:
         type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_user_service.GetAvatarStruct:
@@ -10691,6 +10709,48 @@ paths:
       summary: Check a user
       tags:
       - User
+  /user/contact/{contactId}:
+    get:
+      description: Get one normalized contact from the persisted instance projection
+      parameters:
+      - description: Contact JID
+        in: path
+        name: contactId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo'
+              type: object
+        "400":
+          description: Invalid contact JID
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Contact not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a projected contact
+      tags:
+      - User
   /user/contacts:
     get:
       consumes:
@@ -10712,6 +10772,10 @@ paths:
               type: object
         "500":
           description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:

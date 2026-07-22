@@ -52,6 +52,15 @@ barrier. The worker marks Contacts ready only when no normalized contact
 mutation remains unprocessed. Only that ready state at the current schema
 version enables `contacts_projection`.
 
+`GET /user/contacts` keeps its existing message/data envelope and legacy
+Pascal-cased contact fields, but reads exclusively from the projection and adds
+freshness metadata. A valid ready-empty projection returns an empty JSON array;
+an unreconciled projection returns HTTP 503. The additive
+`GET /user/contact/{contactId}` endpoint resolves the JID returned by the list
+and exposes the same normalized model. Optional phone/LID identity, username,
+redacted phone, picture, and user-about fields are additive; raw provider event
+payloads remain internal.
+
 ## Consequences
 
 - Contacts remain stable when new provider aliases are discovered.

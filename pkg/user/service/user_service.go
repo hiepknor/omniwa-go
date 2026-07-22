@@ -10,6 +10,8 @@ import (
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
@@ -22,7 +24,8 @@ type UserService interface {
 	GetUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error)
 	CheckUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*CheckUserCollection, error)
 	GetAvatar(ctx context.Context, data *GetAvatarStruct, instance *instance_model.Instance) (*types.ProfilePictureInfo, error)
-	GetContacts(instance *instance_model.Instance) ([]ContactInfo, error)
+	GetContacts(context.Context, *instance_model.Instance) ([]ContactInfo, *projection_service.ProjectionReadMeta, error)
+	GetContact(context.Context, *instance_model.Instance, string) (*ContactInfo, *projection_service.ProjectionReadMeta, error)
 	GetPrivacy(ctx context.Context, instance *instance_model.Instance) (types.PrivacySettings, error)
 	SetPrivacy(ctx context.Context, data *PrivacyStruct, instance *instance_model.Instance) (*types.PrivacySettings, error)
 	BlockContact(data *BlockStruct, instance *instance_model.Instance) (*types.Blocklist, error)
@@ -39,15 +42,25 @@ type userService struct {
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
 	identityResolver waquery.IdentityResolver
+	contactReader    *projection_service.ContactReader
 }
 
 type ContactInfo struct {
-	Jid          string `json:"Jid"`
-	Found        bool   `json:"Found"`
-	FirstName    string `json:"FirstName"`
-	FullName     string `json:"FullName"`
-	PushName     string `json:"PushName"`
-	BusinessName string `json:"BusinessName"`
+	Jid              string     `json:"Jid"`
+	Found            bool       `json:"Found"`
+	FirstName        string     `json:"FirstName"`
+	FullName         string     `json:"FullName"`
+	PushName         string     `json:"PushName"`
+	BusinessName     string     `json:"BusinessName"`
+	PhoneJID         string     `json:"PhoneJID,omitempty"`
+	LID              string     `json:"LID,omitempty"`
+	Username         string     `json:"Username,omitempty"`
+	RedactedPhone    string     `json:"RedactedPhone,omitempty"`
+	PictureID        string     `json:"PictureID,omitempty"`
+	PictureRemoved   *bool      `json:"PictureRemoved,omitempty"`
+	PictureUpdatedAt *time.Time `json:"PictureUpdatedAt,omitempty"`
+	About            string     `json:"About,omitempty"`
+	AboutUpdatedAt   *time.Time `json:"AboutUpdatedAt,omitempty"`
 }
 
 type UserInfo struct {
@@ -385,32 +398,78 @@ func (u *userService) GetAvatar(ctx context.Context, data *GetAvatarStruct, inst
 	return pic, nil
 }
 
-func (u *userService) GetContacts(instance *instance_model.Instance) ([]ContactInfo, error) {
-	client, err := u.ensureClientConnected(instance.Id)
+func (u *userService) GetContacts(ctx context.Context, instance *instance_model.Instance) ([]ContactInfo, *projection_service.ProjectionReadMeta, error) {
+	if instance == nil || u.contactReader == nil {
+		return nil, nil, errors.New("contact projection reader and instance are required")
+	}
+	contacts, meta, err := u.contactReader.List(ctx, instance.Id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	result := make([]ContactInfo, len(contacts))
+	for index := range contacts {
+		result[index] = contactInfoFromProjection(&contacts[index])
+	}
+	return result, meta, nil
+}
 
-	contacts, err := client.Store.Contacts.GetAllContacts(context.Background())
+func (u *userService) GetContact(ctx context.Context, instance *instance_model.Instance, jid string) (*ContactInfo, *projection_service.ProjectionReadMeta, error) {
+	if instance == nil || u.contactReader == nil || jid == "" {
+		return nil, nil, errors.New("contact projection reader, instance, and JID are required")
+	}
+	contact, meta, err := u.contactReader.GetByJID(ctx, instance.Id, jid)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	var contactsArray []ContactInfo
-
-	for jid, contact := range contacts {
-		contactsArray = append(contactsArray, ContactInfo{
-			Jid:          jid.String(),
-			Found:        contact.Found,
-			FirstName:    contact.FirstName,
-			FullName:     contact.FullName,
-			PushName:     contact.PushName,
-			BusinessName: contact.BusinessName,
-		})
+	if contact == nil {
+		return nil, nil, errors.New("projected contact is missing")
 	}
+	result := contactInfoFromProjection(contact)
+	return &result, meta, nil
+}
 
-	return contactsArray, nil
-
+func contactInfoFromProjection(contact *projection_model.Contact) ContactInfo {
+	result := ContactInfo{Jid: contact.PreferredJID, Found: contact.Found}
+	if contact.FirstName != nil {
+		result.FirstName = *contact.FirstName
+	}
+	if contact.FullName != nil {
+		result.FullName = *contact.FullName
+	}
+	if contact.PushName != nil {
+		result.PushName = *contact.PushName
+	}
+	if contact.BusinessName != nil {
+		result.BusinessName = *contact.BusinessName
+	}
+	if contact.PhoneJID != nil {
+		result.PhoneJID = *contact.PhoneJID
+	}
+	if contact.LID != nil {
+		result.LID = *contact.LID
+	}
+	if contact.Username != nil {
+		result.Username = *contact.Username
+	}
+	if contact.RedactedPhone != nil {
+		result.RedactedPhone = *contact.RedactedPhone
+	}
+	if contact.PictureID != nil {
+		result.PictureID = *contact.PictureID
+	}
+	result.PictureRemoved = contact.PictureRemoved
+	if contact.PictureUpdatedAt != nil {
+		value := contact.PictureUpdatedAt.UTC()
+		result.PictureUpdatedAt = &value
+	}
+	if contact.About != nil {
+		result.About = *contact.About
+	}
+	if contact.AboutUpdatedAt != nil {
+		value := contact.AboutUpdatedAt.UTC()
+		result.AboutUpdatedAt = &value
+	}
+	return result
 }
 
 func (u *userService) GetPrivacy(ctx context.Context, instance *instance_model.Instance) (types.PrivacySettings, error) {
@@ -583,6 +642,7 @@ func NewUserService(
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
 	identityResolver waquery.IdentityResolver,
+	contactReader *projection_service.ContactReader,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) UserService {
 	return &userService{
@@ -590,6 +650,7 @@ func NewUserService(
 		whatsmeowService: whatsmeowService,
 		queryGuard:       queryGuard,
 		identityResolver: identityResolver,
+		contactReader:    contactReader,
 		loggerWrapper:    loggerWrapper,
 	}
 }

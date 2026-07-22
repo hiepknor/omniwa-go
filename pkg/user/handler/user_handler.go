@@ -1,12 +1,16 @@
 package user_handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
 	"github.com/gin-gonic/gin"
+	"go.mau.fi/whatsmeow/types"
+	"gorm.io/gorm"
 )
 
 type UserHandler interface {
@@ -14,6 +18,7 @@ type UserHandler interface {
 	CheckUser(ctx *gin.Context)
 	GetAvatar(ctx *gin.Context)
 	GetContacts(ctx *gin.Context)
+	GetContact(ctx *gin.Context)
 	GetPrivacy(ctx *gin.Context)
 	SetPrivacy(ctx *gin.Context)
 	BlockContact(ctx *gin.Context)
@@ -178,6 +183,7 @@ func (u *userHandler) GetAvatar(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} apidocs.SuccessResponse{data=[]user_service.ContactInfo} "success"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /user/contacts [get]
@@ -190,13 +196,70 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 		return
 	}
 
-	contacts, err := u.userService.GetContacts(instance)
+	contacts, meta, err := u.userService.GetContacts(ctx.Request.Context(), instance)
 	if err != nil {
+		if errors.Is(err, projection_service.ErrContactsProjectionNotReady) {
+			ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": contacts})
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": contacts, "meta": meta})
+}
+
+// Get a projected contact
+// @Summary Get a projected contact
+// @Description Get one normalized contact from the persisted instance projection
+// @Tags User
+// @Produce json
+// @Param contactId path string true "Contact JID"
+// @Success 200 {object} apidocs.SuccessResponse{data=user_service.ContactInfo} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid contact JID"
+// @Failure 404 {object} apidocs.ErrorResponse "Contact not found"
+// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /user/contact/{contactId} [get]
+func (u *userHandler) GetContact(ctx *gin.Context) {
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		return
+	}
+	contactID := ctx.Param("contactId")
+	jid, err := types.ParseJID(contactID)
+	if err != nil || jid.IsEmpty() || !isContactJID(jid) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid contact JID"})
+		return
+	}
+	contact, meta, err := u.userService.GetContact(ctx.Request.Context(), instance, jid.ToNonAD().String())
+	if err != nil {
+		writeContactReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": contact, "meta": meta})
+}
+
+func isContactJID(jid types.JID) bool {
+	switch jid.ToNonAD().Server {
+	case types.DefaultUserServer, types.LegacyUserServer, types.HiddenUserServer, types.HostedLIDServer:
+		return true
+	default:
+		return false
+	}
+}
+
+func writeContactReadError(ctx *gin.Context, err error) {
+	switch {
+	case errors.Is(err, projection_service.ErrContactsProjectionNotReady):
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "contact not found"})
+	default:
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 // Get a user's privacy settings

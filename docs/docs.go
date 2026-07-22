@@ -4636,6 +4636,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/user/contact/{contactId}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get one normalized contact from the persisted instance projection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Get a projected contact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Contact JID",
+                        "name": "contactId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid contact JID",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Contact not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/user/contacts": {
             "get": {
                 "security": [
@@ -4678,6 +4748,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -6914,6 +6990,12 @@ const docTemplate = `{
         "github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo": {
             "type": "object",
             "properties": {
+                "About": {
+                    "type": "string"
+                },
+                "AboutUpdatedAt": {
+                    "type": "string"
+                },
                 "BusinessName": {
                     "type": "string"
                 },
@@ -6929,7 +7011,28 @@ const docTemplate = `{
                 "Jid": {
                     "type": "string"
                 },
+                "LID": {
+                    "type": "string"
+                },
+                "PhoneJID": {
+                    "type": "string"
+                },
+                "PictureID": {
+                    "type": "string"
+                },
+                "PictureRemoved": {
+                    "type": "boolean"
+                },
+                "PictureUpdatedAt": {
+                    "type": "string"
+                },
                 "PushName": {
+                    "type": "string"
+                },
+                "RedactedPhone": {
+                    "type": "string"
+                },
+                "Username": {
                     "type": "string"
                 }
             }

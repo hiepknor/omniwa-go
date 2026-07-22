@@ -558,6 +558,13 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		!containsString(contactCapabilities, "contacts_projection") {
 		t.Fatalf("ready contacts state = %#v capabilities=%v errors=%v/%v", readyContactState, contactCapabilities, err, contactCapabilityErr)
 	}
+	contactReader := projection_service.NewContactReader(contactRepository, stateService)
+	projectedContacts, contactMeta, err := contactReader.List(context.Background(), instance.Id)
+	projectedContactDetail, detailMeta, detailErr := contactReader.GetByJID(context.Background(), instance.Id, "snapshot@s.whatsapp.net")
+	if err != nil || detailErr != nil || len(projectedContacts) == 0 || contactMeta == nil || contactMeta.Source != "projection" ||
+		projectedContactDetail == nil || projectedContactDetail.FullName == nil || *projectedContactDetail.FullName != "Snapshot contact" || detailMeta == nil {
+		t.Fatalf("projection contact reads = list %#v meta %#v detail %#v meta %#v errors %v/%v", projectedContacts, contactMeta, projectedContactDetail, detailMeta, err, detailErr)
+	}
 	guard, err := waquery.New(waquery.Settings{RatePerSecond: 100, Burst: 10, MaxWait: time.Second, Cooldown: time.Second})
 	if err != nil {
 		t.Fatal(err)
