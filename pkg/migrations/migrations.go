@@ -407,6 +407,86 @@ WHERE deleted_at IS NULL;
 CREATE INDEX durable_events_overview_window_idx
 ON durable_events (occurred_at ASC);`,
 	},
+	{
+		Version: 12,
+		Name:    "create_campaign_persistence",
+		SQL: `CREATE TABLE campaigns (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'draft',
+    content_type VARCHAR(32) NOT NULL,
+    text_body TEXT NOT NULL,
+    starts_at TIMESTAMPTZ NULL,
+    finished_at TIMESTAMPTZ NULL,
+    version BIGINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT campaigns_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT campaigns_instance_identity_unique UNIQUE (id, instance_id),
+    CONSTRAINT campaigns_status_check CHECK (status IN ('draft', 'scheduled', 'running', 'paused', 'completed', 'aborted', 'failed')),
+    CONSTRAINT campaigns_content_type_check CHECK (content_type = 'text'),
+    CONSTRAINT campaigns_text_body_check CHECK (char_length(text_body) BETWEEN 1 AND 4096),
+    CONSTRAINT campaigns_version_check CHECK (version >= 1),
+    CONSTRAINT campaigns_schedule_check CHECK (status <> 'scheduled' OR starts_at IS NOT NULL)
+);
+CREATE INDEX campaigns_instance_status_idx ON campaigns (instance_id, status, starts_at, id);
+
+CREATE TABLE campaign_recipients (
+    id UUID PRIMARY KEY,
+    campaign_id UUID NOT NULL,
+    instance_id UUID NOT NULL,
+    recipient_jid VARCHAR(255) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    opt_in_source VARCHAR(64) NOT NULL,
+    opt_in_reference_hash VARCHAR(64) NOT NULL,
+    opted_in_at TIMESTAMPTZ NOT NULL,
+    next_attempt_at TIMESTAMPTZ NOT NULL,
+    claim_token VARCHAR(64) NULL,
+    lease_until TIMESTAMPTZ NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    provider_message_id VARCHAR(255) NULL,
+    sent_at TIMESTAMPTZ NULL,
+    delivered_at TIMESTAMPTZ NULL,
+    read_at TIMESTAMPTZ NULL,
+    last_error_code VARCHAR(64) NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT campaign_recipients_campaign_fk FOREIGN KEY (campaign_id, instance_id) REFERENCES campaigns(id, instance_id) ON DELETE CASCADE,
+    CONSTRAINT campaign_recipients_identity_unique UNIQUE (campaign_id, recipient_jid),
+    CONSTRAINT campaign_recipients_campaign_identity_unique UNIQUE (id, campaign_id, instance_id),
+    CONSTRAINT campaign_recipients_status_check CHECK (status IN ('pending', 'processing', 'sent', 'delivered', 'read', 'failed', 'skipped', 'aborted')),
+    CONSTRAINT campaign_recipients_attempt_count_check CHECK (attempt_count >= 0),
+    CONSTRAINT campaign_recipients_opt_in_source_check CHECK (char_length(opt_in_source) BETWEEN 1 AND 64),
+    CONSTRAINT campaign_recipients_opt_in_hash_check CHECK (opt_in_reference_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT campaign_recipients_claim_check CHECK ((status = 'processing') = (claim_token IS NOT NULL AND lease_until IS NOT NULL))
+);
+CREATE INDEX campaign_recipients_work_idx ON campaign_recipients (instance_id, next_attempt_at, campaign_id, id)
+    WHERE status = 'pending';
+CREATE INDEX campaign_recipients_expired_lease_idx ON campaign_recipients (lease_until, campaign_id, id)
+    WHERE status = 'processing';
+CREATE INDEX campaign_recipients_provider_message_idx ON campaign_recipients (instance_id, provider_message_id)
+    WHERE provider_message_id IS NOT NULL;
+
+CREATE TABLE campaign_audit_events (
+    id UUID PRIMARY KEY,
+    campaign_id UUID NOT NULL,
+    instance_id UUID NOT NULL,
+    recipient_id UUID NULL,
+    event_type VARCHAR(64) NOT NULL,
+    actor_type VARCHAR(32) NOT NULL,
+    actor_reference_hash VARCHAR(64) NULL,
+    from_status VARCHAR(32) NULL,
+    to_status VARCHAR(32) NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT campaign_audit_campaign_fk FOREIGN KEY (campaign_id, instance_id) REFERENCES campaigns(id, instance_id) ON DELETE CASCADE,
+    CONSTRAINT campaign_audit_recipient_fk FOREIGN KEY (recipient_id, campaign_id, instance_id) REFERENCES campaign_recipients(id, campaign_id, instance_id) ON DELETE CASCADE,
+    CONSTRAINT campaign_audit_actor_type_check CHECK (actor_type IN ('admin', 'instance', 'system')),
+    CONSTRAINT campaign_audit_actor_hash_check CHECK (actor_reference_hash IS NULL OR actor_reference_hash ~ '^[0-9a-f]{64}$')
+);
+CREATE INDEX campaign_audit_history_idx ON campaign_audit_events (instance_id, campaign_id, occurred_at ASC, id ASC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

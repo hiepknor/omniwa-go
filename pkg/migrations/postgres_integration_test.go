@@ -4,18 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
+	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
+	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
+	"github.com/google/uuid"
 	"go.mau.fi/whatsmeow/appstate"
 	waSyncAction "go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
@@ -42,8 +44,17 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := migrations.Run(db); err != nil {
 		t.Fatalf("second migration run failed: %v", err)
 	}
+	// The integration test reconnects and intentionally exercises durable rows.
+	// Remove only artifacts from prior interrupted/repeated runs before asserting
+	// global claim behavior.
+	if err := db.Where("name = ? OR name LIKE ? OR name = ? OR name LIKE ?",
+		"migration-test", "migration-test-%", "event-pagination-isolation", "event-pagination-isolation-%").
+		Delete(&instance_model.Instance{}).Error; err != nil {
+		t.Fatalf("clean prior migration test artifacts: %v", err)
+	}
 
-	instance := instance_model.Instance{Name: "migration-test", Token: "migration-test-token"}
+	testSuffix := uuid.NewString()
+	instance := instance_model.Instance{Name: "migration-test-" + testSuffix, Token: "migration-test-token-" + testSuffix}
 	if err := db.Create(&instance).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -173,6 +184,22 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("record durable event: %v", err)
 	}
+	campaignRepository := campaign_repository.NewCampaignRepository(db)
+	campaign, campaignRecipients, err := campaignRepository.CreateDraft(context.Background(), instance.Id, campaign_repository.DraftInput{
+		Name: "Migration campaign", TextBody: "Hello from a consent-bound campaign", Actor: campaign_repository.Actor{Type: "system"},
+		Recipients: []campaign_repository.RecipientConsent{{
+			JID: "15550009999@s.whatsapp.net", OptInSource: "integration_test",
+			EvidenceReference: "integration-consent-record", OptedInAt: time.Now().Add(-time.Hour),
+		}},
+	})
+	if err != nil || len(campaignRecipients) != 1 || campaignRecipients[0].OptInReferenceHash == "integration-consent-record" {
+		t.Fatalf("create durable campaign = %#v/%#v, %v", campaign, campaignRecipients, err)
+	}
+	startsAt := time.Now().Add(time.Hour).UTC()
+	campaign, err = campaignRepository.Transition(context.Background(), instance.Id, campaign.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"})
+	if err != nil || campaign.Status != campaign_model.CampaignStatusScheduled {
+		t.Fatalf("schedule durable campaign = %#v, %v", campaign, err)
+	}
 
 	raw, _ := db.DB()
 	_ = raw.Close()
@@ -206,17 +233,27 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		storedDurableEvent.InstanceID != instance.Id || storedDurableEvent.Type != "Connected" || string(storedDurableEvent.Summary) != "{}" {
 		t.Fatalf("stored durable event after reconnect = %#v, %v", storedDurableEvent, err)
 	}
+	reopenedCampaignRepository := campaign_repository.NewCampaignRepository(reopened)
+	storedCampaign, storedCampaignRecipients, err := reopenedCampaignRepository.Get(context.Background(), instance.Id, campaign.ID)
+	if err != nil || storedCampaign.Status != campaign_model.CampaignStatusScheduled || len(storedCampaignRecipients) != 1 ||
+		!storedCampaignRecipients[0].NextAttemptAt.Equal(startsAt) {
+		t.Fatalf("stored campaign after reconnect = %#v/%#v, %v", storedCampaign, storedCampaignRecipients, err)
+	}
+	campaignAudit, err := reopenedCampaignRepository.ListAudit(context.Background(), instance.Id, campaign.ID)
+	if err != nil || len(campaignAudit) != 2 || campaignAudit[0].EventType != "created" || campaignAudit[1].EventType != "status_changed" {
+		t.Fatalf("stored campaign audit after reconnect = %#v, %v", campaignAudit, err)
+	}
 	reopenedDurableRepository := projection_repository.NewDurableEventRepository(reopened)
-	for index, occurredAt := range []time.Time{time.Unix(100, 0), time.Unix(200, 0), time.Unix(300, 0)} {
+	for _, occurredAt := range []time.Time{time.Unix(100, 0), time.Unix(200, 0), time.Unix(300, 0)} {
 		pageEvent := projection_model.DurableEvent{
-			ID: fmt.Sprintf("00000000-0000-0000-0000-%012d", 991+index), InstanceID: instance.Id, Type: "PaginationTest",
+			ID: uuid.NewString(), InstanceID: instance.Id, Type: "PaginationTest",
 			OccurredAt: occurredAt, IngestedAt: occurredAt, ExpiresAt: time.Now().Add(time.Hour), Summary: json.RawMessage(`{}`),
 		}
 		if err := reopenedDurableRepository.Append(context.Background(), &pageEvent); err != nil {
 			t.Fatalf("append paged durable event: %v", err)
 		}
 	}
-	otherInstance := instance_model.Instance{Name: "event-pagination-isolation", Token: "event-pagination-isolation-token"}
+	otherInstance := instance_model.Instance{Name: "event-pagination-isolation-" + testSuffix, Token: "event-pagination-isolation-token-" + testSuffix}
 	if err := reopened.Create(&otherInstance).Error; err != nil {
 		t.Fatalf("create isolated event instance: %v", err)
 	}
@@ -225,7 +262,7 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		t.Fatalf("instance-scoped health records = %#v, %v", healthRecords, err)
 	}
 	otherEvent := projection_model.DurableEvent{
-		ID: "00000000-0000-0000-0000-000000000995", InstanceID: otherInstance.Id, Type: "PaginationTest",
+		ID: uuid.NewString(), InstanceID: otherInstance.Id, Type: "PaginationTest",
 		OccurredAt: time.Unix(350, 0), IngestedAt: time.Unix(350, 0), ExpiresAt: time.Now().Add(time.Hour), Summary: json.RawMessage(`{}`),
 	}
 	if err := reopenedDurableRepository.Append(context.Background(), &otherEvent); err != nil {
@@ -241,7 +278,7 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		t.Fatalf("first durable event page = %#v, %v", firstEventPage, err)
 	}
 	newerPageEvent := projection_model.DurableEvent{
-		ID: "00000000-0000-0000-0000-000000000994", InstanceID: instance.Id, Type: "PaginationTest",
+		ID: uuid.NewString(), InstanceID: instance.Id, Type: "PaginationTest",
 		OccurredAt: time.Unix(400, 0), IngestedAt: time.Unix(400, 0), ExpiresAt: time.Now().Add(time.Hour), Summary: json.RawMessage(`{}`),
 	}
 	if err := reopenedDurableRepository.Append(context.Background(), &newerPageEvent); err != nil {
@@ -252,7 +289,7 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		t.Fatalf("stable second durable event page = %#v, %v", secondEventPage, err)
 	}
 	expiredEvent := projection_model.DurableEvent{
-		ID: "00000000-0000-0000-0000-000000000999", InstanceID: instance.Id, Type: "Expired",
+		ID: uuid.NewString(), InstanceID: instance.Id, Type: "Expired",
 		OccurredAt: time.Unix(1, 0), IngestedAt: time.Unix(2, 0), ExpiresAt: time.Unix(3, 0), Summary: json.RawMessage(`{}`),
 	}
 	if err := reopenedDurableRepository.Append(context.Background(), &expiredEvent); err != nil {

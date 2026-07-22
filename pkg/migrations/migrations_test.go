@@ -73,9 +73,24 @@ func TestDurableEventsMigrationIsVersionedAndIndexed(t *testing.T) {
 }
 
 func TestProjectionOverviewWindowIndexesAreVersioned(t *testing.T) {
-	last := registry[len(registry)-1]
-	if last.Version != 11 || last.Name != "index_projection_overview_windows" ||
-		!strings.Contains(last.SQL, "projected_messages_overview_window_idx") || !strings.Contains(last.SQL, "durable_events_overview_window_idx") {
-		t.Fatalf("projection overview migration = %#v", last)
+	migration := registry[10]
+	if migration.Version != 11 || migration.Name != "index_projection_overview_windows" ||
+		!strings.Contains(migration.SQL, "projected_messages_overview_window_idx") || !strings.Contains(migration.SQL, "durable_events_overview_window_idx") {
+		t.Fatalf("projection overview migration = %#v", migration)
+	}
+}
+
+func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
+	migration := registry[len(registry)-1]
+	if migration.Version != 12 || migration.Name != "create_campaign_persistence" {
+		t.Fatalf("campaign migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"CREATE TABLE campaigns", "CREATE TABLE campaign_recipients", "CREATE TABLE campaign_audit_events",
+		"campaign_recipients_work_idx", "opt_in_reference_hash", "campaign_recipients_opt_in_hash_check",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("campaign migration does not contain %q", expected)
+		}
 	}
 }
