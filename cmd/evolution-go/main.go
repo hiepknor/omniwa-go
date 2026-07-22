@@ -186,6 +186,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	labelProjector := projection_service.NewLabelProjector(labelProjectionRepository, projectionStateService, projection_repository.NewReadinessRepository(db))
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
 	labelReader := projection_service.NewLabelReader(labelProjectionRepository, projectionStateService)
+	labelWriter := projection_service.NewLabelWriter(labelProjectionRepository, projectionStateService)
 	groupReconciler := projection_service.NewGroupReconciler(queryGuard, groupProjectionRepository, projectionStateService)
 	groupReader := projection_service.NewGroupReader(groupProjectionRepository, projectionStateService)
 	groupWriter := projection_service.NewGroupWriter(groupProjectionRepository, projectionStateService)
@@ -263,7 +264,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, queryGuard, groupReader, groupWriter, loggerWrapper)
 	callService := call_service.NewCallService(clientPointer, whatsmeowService, loggerWrapper)
 	communityService := community_service.NewCommunityService(clientPointer, whatsmeowService, loggerWrapper)
-	labelService := label_service.NewLabelService(clientPointer, whatsmeowService, labelRepository, labelReader, loggerWrapper)
+	labelService := label_service.NewLabelService(clientPointer, whatsmeowService, labelRepository, labelReader, labelWriter, loggerWrapper)
 	newsletterService := newsletter_service.NewNewsletterService(clientPointer, whatsmeowService, queryGuard, loggerWrapper)
 
 	// NOVO: PollHandler usando PollService já inicializado no whatsmeowService (evita dupla inicialização)

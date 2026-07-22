@@ -50,6 +50,13 @@ an additive envelope with projection freshness metadata. Reads return a
 service-unavailable error until the projection is ready, so a valid empty
 snapshot is never confused with an unfinished sync.
 
+After WhatsApp confirms a label mutation, the service writes the normalized
+change through to the projection. Definition write-through updates only the
+mutable name, color, and deletion fields so it cannot erase metadata learned
+from a full event. Echo events remain idempotent. A projection write failure
+does not turn a confirmed WhatsApp mutation into an API failure; it marks the
+projection stale and leaves the cached snapshot readable.
+
 ## Consequences
 
 - Existing label behavior remains compatible while the projection is built.

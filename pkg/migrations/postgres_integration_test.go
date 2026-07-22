@@ -313,6 +313,43 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || len(projectedLabels) != 1 || projectedLabels[0].LabelID != "label-1" || labelMeta == nil || labelMeta.Source != "projection" {
 		t.Fatalf("projection label list = %#v meta=%#v error=%v", projectedLabels, labelMeta, err)
 	}
+	predefinedID := int32(2)
+	orderIndex := int32(1)
+	immutable := true
+	labelKind := "custom"
+	if applied, err := projection_repository.NewLabelProjectionRepository(reopened).ApplyLabel(context.Background(), &projection_model.Label{
+		InstanceID: instance.Id, LabelID: "label-1", Name: &inboxLabelName, PredefinedID: &predefinedID,
+		OrderIndex: &orderIndex, Immutable: &immutable, Kind: &labelKind,
+		SourceOccurredAt: time.Unix(700, 0), SourceEventKey: "label-metadata-700",
+	}); err != nil || !applied {
+		t.Fatalf("label metadata snapshot = %v, %v", applied, err)
+	}
+	labelWriter := projection_service.NewLabelWriter(projection_repository.NewLabelProjectionRepository(reopened), stateService)
+	if err := labelWriter.WriteLabel(context.Background(), instance.Id, "label-1", "Write-through label", 6, false); err != nil {
+		t.Fatal(err)
+	}
+	writtenLabel, err := projection_repository.NewLabelProjectionRepository(reopened).GetLabel(context.Background(), instance.Id, "label-1")
+	if err != nil || writtenLabel.Name == nil || *writtenLabel.Name != "Write-through label" || writtenLabel.Color == nil || *writtenLabel.Color != 6 ||
+		writtenLabel.PredefinedID == nil || *writtenLabel.PredefinedID != predefinedID || writtenLabel.OrderIndex == nil || *writtenLabel.OrderIndex != orderIndex ||
+		writtenLabel.Immutable == nil || !*writtenLabel.Immutable || writtenLabel.Kind == nil || *writtenLabel.Kind != labelKind {
+		t.Fatalf("write-through label lost metadata = %#v, %v", writtenLabel, err)
+	}
+	if err := labelWriter.WriteChatAssociation(context.Background(), instance.Id, "label-1", "write-through@s.whatsapp.net", true); err != nil {
+		t.Fatal(err)
+	}
+	writtenChatLabels, err := projection_repository.NewLabelProjectionRepository(reopened).
+		ListChatAssociations(context.Background(), instance.Id, "write-through@s.whatsapp.net")
+	if err != nil || len(writtenChatLabels) != 1 {
+		t.Fatalf("write-through chat association = %#v, %v", writtenChatLabels, err)
+	}
+	if err := labelWriter.WriteChatAssociation(context.Background(), instance.Id, "label-1", "write-through@s.whatsapp.net", false); err != nil {
+		t.Fatal(err)
+	}
+	writtenChatLabels, err = projection_repository.NewLabelProjectionRepository(reopened).
+		ListChatAssociations(context.Background(), instance.Id, "write-through@s.whatsapp.net")
+	if err != nil || len(writtenChatLabels) != 0 {
+		t.Fatalf("write-through chat tombstone = %#v, %v", writtenChatLabels, err)
+	}
 	projector := projection_service.NewGroupProjector(groupRepository, stateService)
 	eventService := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second)
 	batch, err := eventService.ProcessBatchFor(context.Background(), "groups", []string{"joined_group", "group_info"}, 10, projector.Handle)
