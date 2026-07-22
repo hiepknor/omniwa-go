@@ -196,6 +196,8 @@ definitions:
     properties:
       lastSyncedAt:
         type: string
+      nextCursor:
+        type: string
       source:
         example: projection
         type: string
@@ -693,6 +695,40 @@ definitions:
       jid:
         $ref: '#/definitions/types.JID'
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_model.ChatType:
+    enum:
+    - direct
+    - group
+    - newsletter
+    - broadcast
+    - unknown
+    type: string
+    x-enum-varnames:
+    - ChatTypeDirect
+    - ChatTypeGroup
+    - ChatTypeNewsletter
+    - ChatTypeBroadcast
+    - ChatTypeUnknown
+  github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageDirection:
+    enum:
+    - incoming
+    - outgoing
+    - system
+    type: string
+    x-enum-varnames:
+    - MessageDirectionIncoming
+    - MessageDirectionOutgoing
+    - MessageDirectionSystem
+  github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageProvenance:
+    enum:
+    - live
+    - history_sync
+    - write_through
+    type: string
+    x-enum-varnames:
+    - MessageProvenanceLive
+    - MessageProvenanceHistorySync
+    - MessageProvenanceWriteThrough
   github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus:
     enum:
     - not_started
@@ -707,6 +743,101 @@ definitions:
     - SyncStatusReady
     - SyncStatusStale
     - SyncStatusFailed
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat:
+    properties:
+      archived:
+        type: boolean
+      chatId:
+        type: string
+      contactId:
+        type: string
+      disappearingTimer:
+        type: integer
+      displayName:
+        type: string
+      lastActivityAt:
+        type: string
+      lastMessageAt:
+        type: string
+      lastMessageId:
+        type: string
+      mutedUntil:
+        type: string
+      pinned:
+        type: boolean
+      type:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.ChatType'
+      unreadCount:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessage:
+    properties:
+      caption:
+        type: string
+      chatId:
+        type: string
+      contentSummary:
+        type: string
+      contentText:
+        type: string
+      deliveredAt:
+        type: string
+      direction:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageDirection'
+      historySyncId:
+        type: string
+      mediaDurationSeconds:
+        type: integer
+      mediaFileName:
+        type: string
+      mediaHeight:
+        type: integer
+      mediaMimeType:
+        type: string
+      mediaSize:
+        type: integer
+      mediaType:
+        type: string
+      mediaWidth:
+        type: integer
+      messageId:
+        type: string
+      messageType:
+        type: string
+      participantJid:
+        type: string
+      playedAt:
+        type: string
+      provenance:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageProvenance'
+      providerTimestamp:
+        type: string
+      quotedMessageId:
+        type: string
+      readAt:
+        type: string
+      recipientJid:
+        type: string
+      retentionExpiresAt:
+        type: string
+      senderJid:
+        type: string
+      sentAt:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessageReceipt:
+    properties:
+      messageId:
+        type: string
+      receiptAt:
+        type: string
+      receiptType:
+        type: string
+      recipientJid:
+        type: string
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionHealth:
     properties:
       byStatus:
@@ -7857,6 +7988,53 @@ paths:
       summary: Reject call
       tags:
       - Call
+  /chat/{chatId}/messages:
+    get:
+      parameters:
+      - description: Chat JID
+        in: path
+        name: chatId
+        required: true
+        type: string
+      - description: Page size (1-200)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque pagination cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessage'
+                  type: array
+              type: object
+        "400":
+          description: Invalid pagination
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List projected messages for a chat
+      tags:
+      - Chat
   /chat/archive:
     post:
       consumes:
@@ -7924,6 +8102,85 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: HistorySyncRequest a chat
+      tags:
+      - Chat
+  /chat/info/{chatId}:
+    get:
+      parameters:
+      - description: Chat JID
+        in: path
+        name: chatId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat'
+              type: object
+        "404":
+          description: Chat not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a projected chat
+      tags:
+      - Chat
+  /chat/list:
+    get:
+      parameters:
+      - description: Page size (1-200)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque pagination cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat'
+                  type: array
+              type: object
+        "400":
+          description: Invalid pagination
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List projected chats
       tags:
       - Chat
   /chat/mute:
@@ -9302,6 +9559,82 @@ paths:
       summary: Add label to message
       tags:
       - Label
+  /message/{messageId}:
+    get:
+      parameters:
+      - description: Provider message ID
+        in: path
+        name: messageId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessage'
+              type: object
+        "404":
+          description: Message not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a projected message
+      tags:
+      - Message
+  /message/{messageId}/delivery:
+    get:
+      parameters:
+      - description: Provider message ID
+        in: path
+        name: messageId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessageReceipt'
+                  type: array
+              type: object
+        "404":
+          description: Message not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List projected message receipts
+      tags:
+      - Message
   /message/delete:
     post:
       consumes:

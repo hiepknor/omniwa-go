@@ -189,6 +189,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	contactProjector := projection_service.NewContactProjector(contactProjectionRepository, projectionStateService, projectionReadinessRepository)
 	chatMessageProjectionRepository := projection_repository.NewChatMessageRepository(db)
 	chatMessageProjector := projection_service.NewChatMessageProjector(chatMessageProjectionRepository, projectionStateService)
+	chatMessageReader := projection_service.NewChatMessageReader(chatMessageProjectionRepository, projectionStateService)
 	historySyncer := projection_service.NewHistorySyncer(projectionEventService, projectionStateService)
 	historyReadinessProjector := projection_service.NewHistoryReadinessProjector(projectionStateService, projectionReadinessRepository)
 	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
@@ -367,8 +368,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		instance_handler.NewInstanceHandler(instanceService, config),
 		user_handler.NewUserHandler(userService),
 		send_handler.NewSendHandler(sendMessageService),
-		message_handler.NewMessageHandler(messageService),
-		chat_handler.NewChatHandler(chatService),
+		message_handler.NewMessageHandler(messageService, chatMessageReader),
+		chat_handler.NewChatHandler(chatService, chatMessageReader),
 		group_handler.NewGroupHandler(groupService),
 		call_handler.NewCallHandler(callService),
 		community_handler.NewCommunityHandler(communityService),

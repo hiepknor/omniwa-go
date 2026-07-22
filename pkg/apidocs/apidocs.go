@@ -30,6 +30,7 @@ type ProjectionMeta struct {
 	Source       string     `json:"source" example:"projection"`
 	SyncStatus   string     `json:"syncStatus" example:"ready"`
 	LastSyncedAt *time.Time `json:"lastSyncedAt,omitempty"`
+	NextCursor   string     `json:"nextCursor,omitempty"`
 }
 
 // ErrorResponse is the standard error envelope returned on 4xx/5xx:

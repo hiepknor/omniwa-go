@@ -130,6 +130,24 @@ func TestContactsCapabilityRequiresReadyCurrentSchema(t *testing.T) {
 	}
 }
 
+func TestChatAndMessageCapabilitiesActivateIndependently(t *testing.T) {
+	service := NewStateService(newMemoryRepository())
+	if err := service.MarkReady("instance-a", "chats", ChatsProjectionSchemaVersion, time.Unix(100, 0)); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, "chats_projection") || containsCapability(capabilities, "messages_projection") {
+		t.Fatalf("chat-only capabilities = %v, %v", capabilities, err)
+	}
+	if err := service.MarkReady("instance-a", "messages", MessagesProjectionSchemaVersion, time.Unix(200, 0)); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, "chats_projection") || !containsCapability(capabilities, "messages_projection") {
+		t.Fatalf("chat/message capabilities = %v, %v", capabilities, err)
+	}
+}
+
 func containsCapability(capabilities []string, expected string) bool {
 	for _, capability := range capabilities {
 		if capability == expected {
