@@ -62,6 +62,13 @@ Edit `swarm/docker-stack.yml` (domain, secrets, external network/volumes), then:
 docker stack deploy -c swarm/docker-stack.yml omniwa
 ```
 
+## Deployment topology
+
+Run exactly one application replica per users database. The process enforces
+this with a PostgreSQL advisory lock and intentionally rejects a second replica.
+Use stop-first/Recreate upgrades, not start-first or surge rollouts. See the
+[single-replica deployment runbook](../docs/runbooks/single-replica-deployment.md).
+
 ## Notes
 
 - Databases (`omniwa_auth`, `omniwa_users`) are created automatically on startup.

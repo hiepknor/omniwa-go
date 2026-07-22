@@ -426,32 +426,13 @@ WhatsApp usa criptografia ponta-a-ponta:
 
 ## Escalabilidade
 
-### Horizontal (Mais Servidores)
+### Horizontal scaling boundary
 
-Pode ter múltiplas cópias do Evolution GO:
-
-```
-           ┌─────────────────┐
-           │ Load Balancer   │
-           └────────┬─────────┘
-                    │
-        ┌───────────┼───────────┐
-        │           │           │
-   ┌────▼───┐  ┌───▼────┐  ┌───▼────┐
-   │Server 1│  │Server 2│  │Server 3│
-   └────┬───┘  └───┬────┘  └───┬────┘
-        │          │           │
-        └──────────┼───────────┘
-                   │
-            ┌──────▼──────┐
-            │  PostgreSQL │
-            └─────────────┘
-```
-
-**Vantagens**:
-- Suporta mais usuários
-- Se um servidor cair, outros continuam
-- Distribuição de carga
+The current topology supports exactly one application replica per users
+database. WhatsApp socket ownership and realtime delivery are process-local, so
+adding a load balancer or more application replicas is unsafe. Startup enforces
+this invariant with a PostgreSQL advisory lock. Distributed per-instance leases
+and cross-replica fan-out must land before horizontal application scaling.
 
 ### Vertical (Servidor Mais Potente)
 
@@ -460,9 +441,8 @@ Melhorar o servidor existente:
 - Mais RAM
 - Mais espaço em disco
 
-**Quando usar**:
-- Até ~100 instâncias: Vertical
-- Mais de 100: Horizontal
+Use vertical scaling and capacity testing while the single-replica boundary is
+active. See the single-replica deployment runbook for upgrade constraints.
 
 ---
 
@@ -532,7 +512,7 @@ Melhorar o servidor existente:
 - 📱 Cada camada tem uma função específica
 - 🔄 Requisição passa por todas as camadas
 - 🏗️ Organização facilita manutenção
-- 🚀 Pode escalar horizontal ou verticalmente
+- Scale the application vertically; horizontal application replicas are not yet supported
 - 🔒 Segurança em todas as camadas
 
 ---

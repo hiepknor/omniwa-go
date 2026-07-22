@@ -43,6 +43,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	instance_ownership "github.com/evolution-foundation/evolution-go/pkg/instance/ownership"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
 	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
@@ -636,6 +637,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	usersDB, err := db.DB()
+	if err != nil {
+		log.Fatal("Failed to access users database pool: ", err)
+	}
+	defer usersDB.Close()
+	ownershipCtx, ownershipCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ownershipGuard, err := instance_ownership.Acquire(ownershipCtx, usersDB)
+	ownershipCancel()
+	if err != nil {
+		log.Fatal("Failed to acquire single-replica ownership: ", err)
+	}
+	defer func() {
+		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer releaseCancel()
+		if err := ownershipGuard.Close(releaseCtx); err != nil {
+			logger.LogWarn("component=ownership action=release result=failed error=%v", err)
+		}
+	}()
+	logger.LogInfo("component=ownership action=acquire result=success topology=single_replica")
 
 	// Inicializar PostgreSQL AUTH
 	authDB, err := initPostgresAuthDB(cfg)
@@ -703,6 +723,14 @@ func main() {
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 	var backgroundWorkers sync.WaitGroup
+	ownershipLost := make(chan error, 1)
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		if err := ownershipGuard.Monitor(appCtx, 5*time.Second); err != nil {
+			ownershipLost <- err
+		}
+	}()
 	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, &backgroundWorkers)
 
 	// Graceful shutdown with heartbeat
@@ -733,8 +761,12 @@ func main() {
 		}
 	}()
 
-	<-quit
-	logger.LogInfo("[SHUTDOWN] Signal received, shutting down...")
+	select {
+	case receivedSignal := <-quit:
+		logger.LogInfo("[SHUTDOWN] Signal %s received, shutting down...", receivedSignal)
+	case ownershipErr := <-ownershipLost:
+		logger.LogError("[SHUTDOWN] Ownership lost, shutting down: %v", ownershipErr)
+	}
 
 	// Stop heartbeat loop
 	heartbeatCancel()
