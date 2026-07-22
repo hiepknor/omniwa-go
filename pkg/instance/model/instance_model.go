@@ -8,31 +8,31 @@ import (
 )
 
 type Instance struct {
-	Id               string    `json:"id" gorm:"type:uuid;primaryKey"`
-	Name             string    `json:"name"`
-	Token            string    `json:"token" gorm:"unique"`
-	Webhook          string    `json:"webhook"`
-	RabbitmqEnable   string    `json:"rabbitmqEnable"`
-	WebSocketEnable  string    `json:"websocketEnable"`
-	NatsEnable       string    `json:"natsEnable"`
-	Jid              string    `json:"jid" gorm:"column:jid"`
-	Qrcode           string    `json:"qrcode" gorm:"type:text"`
-	Connected        bool      `json:"connected"`
-	Expiration       int64     `json:"expiration"`
-	DisconnectReason string    `json:"disconnect_reason"`
-	Events           string    `json:"events"`
-	OsName           string    `json:"os_name"`
-	Proxy            string    `json:"proxy"`
-	ClientName       string    `json:"client_name"`
-	CreatedAt        time.Time `json:"createdAt" gorm:"autoCreateTime"`
+	Id               string    `json:"-" gorm:"type:uuid;primaryKey"`
+	Name             string    `json:"-"`
+	Token            string    `json:"-" gorm:"unique"`
+	Webhook          string    `json:"-"`
+	RabbitmqEnable   string    `json:"-"`
+	WebSocketEnable  string    `json:"-"`
+	NatsEnable       string    `json:"-"`
+	Jid              string    `json:"-" gorm:"column:jid"`
+	Qrcode           string    `json:"-" gorm:"type:text"`
+	Connected        bool      `json:"-"`
+	Expiration       int64     `json:"-"`
+	DisconnectReason string    `json:"-"`
+	Events           string    `json:"-"`
+	OsName           string    `json:"-"`
+	Proxy            string    `json:"-"`
+	ClientName       string    `json:"-"`
+	CreatedAt        time.Time `json:"-" gorm:"autoCreateTime"`
 
 	// Advanced Settings
-	AlwaysOnline  bool   `json:"alwaysOnline" gorm:"default:false"`
-	RejectCall    bool   `json:"rejectCall" gorm:"default:false"`
-	MsgRejectCall string `json:"msgRejectCall" gorm:"default:''"`
-	ReadMessages  bool   `json:"readMessages" gorm:"default:false"`
-	IgnoreGroups  bool   `json:"ignoreGroups" gorm:"default:false"`
-	IgnoreStatus  bool   `json:"ignoreStatus" gorm:"default:false"`
+	AlwaysOnline  bool   `json:"-" gorm:"default:false"`
+	RejectCall    bool   `json:"-" gorm:"default:false"`
+	MsgRejectCall string `json:"-" gorm:"default:''"`
+	ReadMessages  bool   `json:"-" gorm:"default:false"`
+	IgnoreGroups  bool   `json:"-" gorm:"default:false"`
+	IgnoreStatus  bool   `json:"-" gorm:"default:false"`
 }
 
 // AdvancedSettings representa as configurações avançadas de uma instância

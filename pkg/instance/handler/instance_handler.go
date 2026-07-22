@@ -45,7 +45,7 @@ type instanceHandler struct {
 // @Accept json
 // @Produce json
 // @Param instance body instance_service.CreateStruct true "Instance data with optional advanced settings"
-// @Success 200 {object} apidocs.CreateInstanceResponse "Instance created successfully; data.token is the apikey for this instance"
+// @Success 200 {object} apidocs.SuccessResponse{data=InstanceView} "Instance created successfully; data.token is the apikey for this instance"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
@@ -105,7 +105,7 @@ func (i *instanceHandler) Create(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": createdInstance})
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": instanceView(createdInstance)})
 }
 
 // Connect to instance
@@ -345,7 +345,7 @@ func (i *instanceHandler) Pair(ctx *gin.Context) {
 // @Tags Instance
 // @Accept json
 // @Produce json
-// @Success 200 {object} apidocs.InstanceListResponse "All instances"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]InstanceView} "All instances"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /instance/all [get]
@@ -356,7 +356,7 @@ func (i *instanceHandler) All(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": instances})
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": instanceViewList(instances)})
 }
 
 // Get instance
@@ -366,7 +366,7 @@ func (i *instanceHandler) All(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param instanceId path string true "Instance Id"
-// @Success 200 {object} apidocs.InstanceResponse "Instance"
+// @Success 200 {object} apidocs.SuccessResponse{data=InstanceView} "Instance"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
@@ -385,7 +385,7 @@ func (i *instanceHandler) Info(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": instance})
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": instanceView(instance)})
 }
 
 // Delete instance

@@ -2241,7 +2241,22 @@ const docTemplate = `{
                     "200": {
                         "description": "All instances",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.InstanceListResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/pkg_instance_handler.InstanceView"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "500": {
@@ -2337,7 +2352,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Instance created successfully; data.token is the apikey for this instance",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.CreateInstanceResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/pkg_instance_handler.InstanceView"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -2527,7 +2554,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Instance",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.InstanceResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/pkg_instance_handler.InstanceView"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -6783,18 +6822,6 @@ const docTemplate = `{
                 }
             }
         },
-        "apidocs.CreateInstanceResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_model.Instance"
-                },
-                "message": {
-                    "type": "string",
-                    "example": "success"
-                }
-            }
-        },
         "apidocs.DownloadMediaData": {
             "type": "object",
             "properties": {
@@ -6822,33 +6849,6 @@ const docTemplate = `{
                 "requestId": {
                     "type": "string",
                     "example": "0123456789abcdef0123456789abcdef"
-                }
-            }
-        },
-        "apidocs.InstanceListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_model.Instance"
-                    }
-                },
-                "message": {
-                    "type": "string",
-                    "example": "success"
-                }
-            }
-        },
-        "apidocs.InstanceResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_model.Instance"
-                },
-                "message": {
-                    "type": "string",
-                    "example": "success"
                 }
             }
         },
@@ -7600,81 +7600,6 @@ const docTemplate = `{
                 },
                 "rejectCall": {
                     "type": "boolean"
-                }
-            }
-        },
-        "github_com_evolution-foundation_evolution-go_pkg_instance_model.Instance": {
-            "type": "object",
-            "properties": {
-                "alwaysOnline": {
-                    "description": "Advanced Settings",
-                    "type": "boolean"
-                },
-                "client_name": {
-                    "type": "string"
-                },
-                "connected": {
-                    "type": "boolean"
-                },
-                "createdAt": {
-                    "type": "string"
-                },
-                "disconnect_reason": {
-                    "type": "string"
-                },
-                "events": {
-                    "type": "string"
-                },
-                "expiration": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "ignoreGroups": {
-                    "type": "boolean"
-                },
-                "ignoreStatus": {
-                    "type": "boolean"
-                },
-                "jid": {
-                    "type": "string"
-                },
-                "msgRejectCall": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "natsEnable": {
-                    "type": "string"
-                },
-                "os_name": {
-                    "type": "string"
-                },
-                "proxy": {
-                    "type": "string"
-                },
-                "qrcode": {
-                    "type": "string"
-                },
-                "rabbitmqEnable": {
-                    "type": "string"
-                },
-                "readMessages": {
-                    "type": "boolean"
-                },
-                "rejectCall": {
-                    "type": "boolean"
-                },
-                "token": {
-                    "type": "string"
-                },
-                "webhook": {
-                    "type": "string"
-                },
-                "websocketEnable": {
-                    "type": "string"
                 }
             }
         },
@@ -9523,6 +9448,80 @@ const docTemplate = `{
             ],
             "properties": {
                 "startsAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_instance_handler.InstanceView": {
+            "type": "object",
+            "properties": {
+                "alwaysOnline": {
+                    "type": "boolean"
+                },
+                "client_name": {
+                    "type": "string"
+                },
+                "connected": {
+                    "type": "boolean"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "disconnect_reason": {
+                    "type": "string"
+                },
+                "events": {
+                    "type": "string"
+                },
+                "expiration": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ignoreGroups": {
+                    "type": "boolean"
+                },
+                "ignoreStatus": {
+                    "type": "boolean"
+                },
+                "jid": {
+                    "type": "string"
+                },
+                "msgRejectCall": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "natsEnable": {
+                    "type": "string"
+                },
+                "os_name": {
+                    "type": "string"
+                },
+                "proxy": {
+                    "type": "string"
+                },
+                "qrcode": {
+                    "type": "string"
+                },
+                "rabbitmqEnable": {
+                    "type": "string"
+                },
+                "readMessages": {
+                    "type": "boolean"
+                },
+                "rejectCall": {
+                    "type": "boolean"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "webhook": {
+                    "type": "string"
+                },
+                "websocketEnable": {
                     "type": "string"
                 }
             }

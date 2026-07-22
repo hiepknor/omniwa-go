@@ -13,7 +13,6 @@ import (
 
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	campaign_service "github.com/evolution-foundation/evolution-go/pkg/campaign/service"
-	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 )
 
 // SuccessResponse is the standard success envelope returned by most endpoints:
@@ -98,27 +97,6 @@ type OutboundRateLimitResponse struct {
 	Error      string `json:"error" example:"outbound_rate_limited"`
 	Code       string `json:"code,omitempty" example:"outbound_rate_limited"`
 	RetryAfter int    `json:"retryAfter,omitempty" example:"5"`
-}
-
-// CreateInstanceResponse is returned by POST /instance/create. `data` is the
-// full instance record, including the per-instance `token` that becomes the
-// `apikey` header for every per-instance route.
-type CreateInstanceResponse struct {
-	Message string                  `json:"message" example:"success"`
-	Data    instance_model.Instance `json:"data"`
-}
-
-// InstanceResponse is returned by endpoints that echo a single instance
-// (e.g. GET /instance/info/{instanceId}).
-type InstanceResponse struct {
-	Message string                  `json:"message" example:"success"`
-	Data    instance_model.Instance `json:"data"`
-}
-
-// InstanceListResponse is returned by GET /instance/all.
-type InstanceListResponse struct {
-	Message string                    `json:"message" example:"success"`
-	Data    []instance_model.Instance `json:"data"`
 }
 
 // ConnectData is the payload of POST /instance/connect.
