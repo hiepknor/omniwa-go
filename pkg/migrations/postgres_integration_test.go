@@ -202,7 +202,9 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || len(campaignRecipients) != 1 || campaignRecipients[0].OptInReferenceHash == "integration-consent-record" {
 		t.Fatalf("create durable campaign = %#v/%#v, %v", campaign, campaignRecipients, err)
 	}
-	startsAt := time.Now().Add(time.Hour).UTC()
+	// PostgreSQL stores timestamps at microsecond precision. Truncate explicitly
+	// so this persistence assertion is independent of the host clock precision.
+	startsAt := time.Now().Add(time.Hour).UTC().Truncate(time.Microsecond)
 	campaign, err = campaignRepository.Transition(context.Background(), instance.Id, campaign.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"})
 	if err != nil || campaign.Status != campaign_model.CampaignStatusScheduled {
 		t.Fatalf("schedule durable campaign = %#v, %v", campaign, err)
