@@ -513,6 +513,31 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || contactState.LastEventAt == nil || !contactState.LastEventAt.Equal(time.Unix(49, 0)) || contactState.SchemaVersion != 3 {
 		t.Fatalf("monotonic concurrent state = %#v, %v", contactState, err)
 	}
+	durablePhoneJID := "durable@s.whatsapp.net"
+	durableLID := "durable@lid"
+	durableName := "Durable contact"
+	durableContactEvent, relevant, err := projection_service.NormalizeProjectionEvent(instance.Id, &events.Contact{
+		JID: types.NewJID("durable", types.HiddenUserServer), Timestamp: time.Unix(1400, 0),
+		Action: &waSyncAction.ContactAction{PnJID: &durablePhoneJID, LidJID: &durableLID, FullName: &durableName},
+	})
+	if err != nil || !relevant {
+		t.Fatalf("normalize durable contact = %#v, %v, %v", durableContactEvent, relevant, err)
+	}
+	if inserted, err := eventService.Ingest(context.Background(), durableContactEvent); err != nil || !inserted {
+		t.Fatalf("durable contact ingest = %v, %v", inserted, err)
+	}
+	contactProjector := projection_service.NewContactProjector(contactRepository, stateService)
+	contactBatch, err := eventService.ProcessBatchFor(
+		context.Background(), "contacts", []string{"contact", "push_name", "business_name", "picture", "user_about"}, 10, contactProjector.Handle,
+	)
+	if err != nil || contactBatch.Claimed != 1 || contactBatch.Processed != 1 || contactBatch.Failed != 0 {
+		t.Fatalf("contact projection batch = %#v, %v", contactBatch, err)
+	}
+	durableByPhone, phoneErr := contactRepository.GetByIdentity(context.Background(), instance.Id, projection_model.ContactIdentityKindPhoneJID, durablePhoneJID)
+	durableByLID, lidErr := contactRepository.GetByIdentity(context.Background(), instance.Id, projection_model.ContactIdentityKindLID, durableLID)
+	if phoneErr != nil || lidErr != nil || durableByPhone.ContactID != durableByLID.ContactID || durableByPhone.FullName == nil || *durableByPhone.FullName != durableName {
+		t.Fatalf("durable contact aliases = phone %#v, LID %#v, errors %v/%v", durableByPhone, durableByLID, phoneErr, lidErr)
+	}
 	guard, err := waquery.New(waquery.Settings{RatePerSecond: 100, Burst: 10, MaxWait: time.Second, Cooldown: time.Second})
 	if err != nil {
 		t.Fatal(err)

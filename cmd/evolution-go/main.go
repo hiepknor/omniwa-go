@@ -184,6 +184,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	groupProjector := projection_service.NewGroupProjector(groupProjectionRepository, projectionStateService)
 	labelProjectionRepository := projection_repository.NewLabelProjectionRepository(db)
 	labelProjector := projection_service.NewLabelProjector(labelProjectionRepository, projectionStateService, projection_repository.NewReadinessRepository(db))
+	contactProjectionRepository := projection_repository.NewContactRepository(db)
+	contactProjector := projection_service.NewContactProjector(contactProjectionRepository, projectionStateService)
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
 	labelReader := projection_service.NewLabelReader(labelProjectionRepository, projectionStateService)
 	labelWriter := projection_service.NewLabelWriter(labelProjectionRepository, projectionStateService)
@@ -222,6 +224,23 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		defer backgroundWorkers.Done()
 		if err := labelWorker.Run(appCtx); err != nil {
 			logger.LogError("component=projection action=worker resource=labels result=stopped error_code=invalid_worker_configuration")
+		}
+	}()
+	contactWorker := projection_service.NewWorker(
+		projectionEventService, "contacts", []string{"contact", "push_name", "business_name", "picture", "user_about"}, 50, time.Second, contactProjector.Handle,
+		func(result projection_service.EventBatchResult, err error) {
+			if err != nil {
+				logger.LogError("component=projection action=process resource=contacts result=failed error_code=batch_failed")
+			} else if result.Claimed > 0 {
+				logger.LogInfo("component=projection action=process resource=contacts claimed=%d processed=%d failed=%d", result.Claimed, result.Processed, result.Failed)
+			}
+		},
+	)
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		if err := contactWorker.Run(appCtx); err != nil {
+			logger.LogError("component=projection action=worker resource=contacts result=stopped error_code=invalid_worker_configuration")
 		}
 	}()
 

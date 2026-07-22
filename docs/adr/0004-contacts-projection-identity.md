@@ -36,6 +36,13 @@ transaction-scoped advisory locks. When a later event proves that aliases from
 separate records belong together, it merges their independently versioned
 fields, moves every alias, and removes the duplicate inside one transaction.
 
+Contact, push-name, business-name, picture, and user-about events are normalized
+into the durable projection inbox before best-effort webhook and queue fan-out.
+A resource-specific worker applies them to the repository and records projection
+state only after the database write succeeds. Group picture events are excluded.
+The worker does not mark the projection ready or advertise the capability;
+initial synchronization must establish that boundary separately.
+
 ## Consequences
 
 - Contacts remain stable when new provider aliases are discovered.
