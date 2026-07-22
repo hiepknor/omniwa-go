@@ -29,13 +29,28 @@ func TestRegistryRejectsDuplicateAndOutOfOrderVersions(t *testing.T) {
 }
 
 func TestContactsProjectionMigrationIsVersionedAndIncludesAliases(t *testing.T) {
-	last := registry[len(registry)-1]
-	if last.Version != 7 || last.Name != "create_contacts_projection" {
-		t.Fatalf("last migration = %#v", last)
+	contacts := registry[6]
+	if contacts.Version != 7 || contacts.Name != "create_contacts_projection" {
+		t.Fatalf("contacts migration = %#v", contacts)
 	}
 	for _, table := range []string{"projected_contacts", "projected_contact_identities"} {
-		if !strings.Contains(last.SQL, "CREATE TABLE "+table) {
+		if !strings.Contains(contacts.SQL, "CREATE TABLE "+table) {
 			t.Fatalf("contacts migration does not create %s", table)
+		}
+	}
+}
+
+func TestChatsMessagesProjectionMigrationIsVersionedAndIndexed(t *testing.T) {
+	last := registry[len(registry)-1]
+	if last.Version != 8 || last.Name != "create_chats_messages_projection" {
+		t.Fatalf("last migration = %#v", last)
+	}
+	for _, expected := range []string{
+		"CREATE TABLE projected_chats", "CREATE TABLE projected_messages", "CREATE TABLE projected_message_receipts",
+		"projected_messages_history_idx", "projected_messages_retention_idx",
+	} {
+		if !strings.Contains(last.SQL, expected) {
+			t.Fatalf("chats/messages migration does not contain %q", expected)
 		}
 	}
 }

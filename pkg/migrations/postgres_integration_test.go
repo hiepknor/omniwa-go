@@ -61,6 +61,32 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := db.Create(&identity).Error; err != nil {
 		t.Fatal(err)
 	}
+	messageTime := time.Unix(175, 0)
+	chat := projection_model.Chat{
+		InstanceID: instance.Id, ChatID: "chat@s.whatsapp.net", Type: projection_model.ChatTypeDirect,
+		LastMessageAt: &messageTime, LastActivityAt: &messageTime, SourceOccurredAt: messageTime, SourceEventKey: "chat-175",
+		FieldVersions: json.RawMessage(`{"message":{"occurredAt":"1970-01-01T00:02:55Z","eventKey":"chat-175"}}`), LastSyncedAt: messageTime,
+	}
+	if err := db.Create(&chat).Error; err != nil {
+		t.Fatal(err)
+	}
+	contentSummary := "Hello"
+	retentionExpiresAt := messageTime.Add(90 * 24 * time.Hour)
+	projectedMessage := projection_model.ProjectedMessage{
+		InstanceID: instance.Id, MessageID: "message-175", ChatID: chat.ChatID, Direction: projection_model.MessageDirectionIncoming,
+		MessageType: "text", ContentSummary: &contentSummary, ProviderTimestamp: messageTime, Provenance: projection_model.MessageProvenanceLive,
+		RetentionExpiresAt: &retentionExpiresAt, SourceOccurredAt: messageTime, SourceEventKey: "message-175", FieldVersions: json.RawMessage(`{"message":{"occurredAt":"1970-01-01T00:02:55Z","eventKey":"message-175"}}`), LastSyncedAt: messageTime,
+	}
+	if err := db.Create(&projectedMessage).Error; err != nil {
+		t.Fatal(err)
+	}
+	receipt := projection_model.MessageReceipt{
+		InstanceID: instance.Id, MessageID: projectedMessage.MessageID, RecipientJID: "recipient@s.whatsapp.net", ReceiptType: "read",
+		ReceiptAt: time.Unix(180, 0), SourceOccurredAt: time.Unix(180, 0), SourceEventKey: "receipt-180", LastSyncedAt: time.Unix(180, 0),
+	}
+	if err := db.Create(&receipt).Error; err != nil {
+		t.Fatal(err)
+	}
 	labelRepository := projection_repository.NewLabelProjectionRepository(db)
 	labelName := "Priority"
 	labelColor := int32(4)
@@ -156,6 +182,17 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := reopened.First(&storedIdentity, "instance_id = ? AND identity_kind = ? AND identity_value = ?", instance.Id, identity.Kind, identity.Value).Error; err != nil ||
 		storedIdentity.ContactID != contact.ContactID {
 		t.Fatalf("stored contact identity after reconnect = %#v, %v", storedIdentity, err)
+	}
+	var storedProjectedMessage projection_model.ProjectedMessage
+	if err := reopened.First(&storedProjectedMessage, "instance_id = ? AND message_id = ?", instance.Id, projectedMessage.MessageID).Error; err != nil ||
+		storedProjectedMessage.ChatID != chat.ChatID || storedProjectedMessage.ContentSummary == nil || *storedProjectedMessage.ContentSummary != contentSummary ||
+		storedProjectedMessage.RetentionExpiresAt == nil || !storedProjectedMessage.RetentionExpiresAt.Equal(retentionExpiresAt) {
+		t.Fatalf("stored projected message after reconnect = %#v, %v", storedProjectedMessage, err)
+	}
+	var storedReceipt projection_model.MessageReceipt
+	if err := reopened.First(&storedReceipt, "instance_id = ? AND message_id = ? AND recipient_jid = ? AND receipt_type = ?", instance.Id, receipt.MessageID, receipt.RecipientJID, receipt.ReceiptType).Error; err != nil ||
+		!storedReceipt.ReceiptAt.Equal(receipt.ReceiptAt) {
+		t.Fatalf("stored message receipt after reconnect = %#v, %v", storedReceipt, err)
 	}
 	contactRepository := projection_repository.NewContactRepository(reopened)
 	fullName := "First version"

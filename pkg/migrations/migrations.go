@@ -273,6 +273,106 @@ CREATE TABLE projected_contact_identities (
 );
 CREATE INDEX projected_contact_identities_contact_idx ON projected_contact_identities (instance_id, contact_id) WHERE tombstoned_at IS NULL;`,
 	},
+	{
+		Version: 8,
+		Name:    "create_chats_messages_projection",
+		SQL: `CREATE TABLE projected_chats (
+    instance_id UUID NOT NULL,
+    chat_id VARCHAR(255) NOT NULL,
+    contact_id UUID NULL,
+    chat_type VARCHAR(32) NOT NULL,
+    display_name TEXT NULL,
+    last_message_id VARCHAR(255) NULL,
+    last_message_at TIMESTAMPTZ NULL,
+    last_activity_at TIMESTAMPTZ NULL,
+    unread_count INTEGER NOT NULL DEFAULT 0,
+    archived BOOLEAN NULL,
+    pinned BOOLEAN NULL,
+    muted_until TIMESTAMPTZ NULL,
+    disappearing_timer BIGINT NULL,
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    field_versions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    tombstoned_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, chat_id),
+    CONSTRAINT projected_chats_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT projected_chats_type_check CHECK (chat_type IN ('direct', 'group', 'newsletter', 'broadcast', 'unknown')),
+    CONSTRAINT projected_chats_unread_count_check CHECK (unread_count >= 0),
+    CONSTRAINT projected_chats_disappearing_timer_check CHECK (disappearing_timer IS NULL OR disappearing_timer >= 0)
+);
+CREATE INDEX projected_chats_list_idx ON projected_chats (instance_id, last_activity_at DESC NULLS LAST, chat_id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_chats_contact_idx ON projected_chats (instance_id, contact_id) WHERE contact_id IS NOT NULL AND tombstoned_at IS NULL;
+
+CREATE TABLE projected_messages (
+    instance_id UUID NOT NULL,
+    message_id VARCHAR(255) NOT NULL,
+    chat_id VARCHAR(255) NOT NULL,
+    sender_jid VARCHAR(255) NULL,
+    recipient_jid VARCHAR(255) NULL,
+    participant_jid VARCHAR(255) NULL,
+    direction VARCHAR(32) NOT NULL,
+    message_type VARCHAR(64) NOT NULL,
+    content_text TEXT NULL,
+    caption TEXT NULL,
+    content_summary TEXT NULL,
+    quoted_message_id VARCHAR(255) NULL,
+    media_type VARCHAR(64) NULL,
+    media_mime_type VARCHAR(255) NULL,
+    media_file_name TEXT NULL,
+    media_size BIGINT NULL,
+    media_duration_seconds BIGINT NULL,
+    media_width BIGINT NULL,
+    media_height BIGINT NULL,
+    media_object_key TEXT NULL,
+    status VARCHAR(32) NULL,
+    provider_timestamp TIMESTAMPTZ NOT NULL,
+    sent_at TIMESTAMPTZ NULL,
+    delivered_at TIMESTAMPTZ NULL,
+    read_at TIMESTAMPTZ NULL,
+    played_at TIMESTAMPTZ NULL,
+    provenance VARCHAR(32) NOT NULL,
+    history_sync_id VARCHAR(255) NULL,
+    retention_expires_at TIMESTAMPTZ NULL,
+    deleted_at TIMESTAMPTZ NULL,
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    field_versions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, message_id),
+    CONSTRAINT projected_messages_chat_fk FOREIGN KEY (instance_id, chat_id) REFERENCES projected_chats(instance_id, chat_id) ON DELETE CASCADE,
+    CONSTRAINT projected_messages_direction_check CHECK (direction IN ('incoming', 'outgoing', 'system')),
+    CONSTRAINT projected_messages_provenance_check CHECK (provenance IN ('live', 'history_sync', 'write_through')),
+    CONSTRAINT projected_messages_media_size_check CHECK (media_size IS NULL OR media_size >= 0),
+    CONSTRAINT projected_messages_media_duration_check CHECK (media_duration_seconds IS NULL OR media_duration_seconds >= 0),
+    CONSTRAINT projected_messages_media_width_check CHECK (media_width IS NULL OR media_width >= 0),
+    CONSTRAINT projected_messages_media_height_check CHECK (media_height IS NULL OR media_height >= 0)
+);
+CREATE INDEX projected_messages_history_idx ON projected_messages (instance_id, chat_id, provider_timestamp DESC, message_id DESC) WHERE deleted_at IS NULL;
+CREATE INDEX projected_messages_sender_idx ON projected_messages (instance_id, sender_jid, provider_timestamp DESC) WHERE deleted_at IS NULL;
+CREATE INDEX projected_messages_retention_idx ON projected_messages (retention_expires_at) WHERE retention_expires_at IS NOT NULL AND deleted_at IS NULL;
+
+CREATE TABLE projected_message_receipts (
+    instance_id UUID NOT NULL,
+    message_id VARCHAR(255) NOT NULL,
+    recipient_jid VARCHAR(255) NOT NULL,
+    receipt_type VARCHAR(32) NOT NULL,
+    receipt_at TIMESTAMPTZ NOT NULL,
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, message_id, recipient_jid, receipt_type),
+    CONSTRAINT projected_message_receipts_message_fk FOREIGN KEY (instance_id, message_id) REFERENCES projected_messages(instance_id, message_id) ON DELETE CASCADE,
+    CONSTRAINT projected_message_receipts_type_check CHECK (receipt_type IN ('sent', 'delivered', 'read', 'played', 'error'))
+);
+CREATE INDEX projected_message_receipts_history_idx ON projected_message_receipts (instance_id, message_id, receipt_at ASC, recipient_jid ASC, receipt_type ASC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {
