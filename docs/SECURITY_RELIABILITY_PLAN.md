@@ -129,6 +129,10 @@ and new contract, using capabilities, stable error codes, and projection
 metadata. Legacy behavior is removed only after console deployment and measured
 fallback usage show it is safe.
 
+The executable Console rollout order, acceptance matrix, credential quiet-window
+gate, and handoff evidence are defined in
+[`OMNIWA_CONSOLE_HANDOFF.md`](./OMNIWA_CONSOLE_HANDOFF.md).
+
 Opaque cursors, error text, persistence fields, and provider-native payloads
 are never compatibility interfaces.
 
