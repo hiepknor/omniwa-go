@@ -45,6 +45,11 @@ Campaign workers use this same guard, but the limiter alone does not make a
 campaign safe. Durable scheduling, per-recipient opt-in evidence, lifecycle
 controls, and audit records are separate requirements.
 
+Successful logout and instance deletion release the instance's in-memory
+limiter state. Operational send logs omit recipient/provider identifiers and
+upstream error text; use the durable, access-controlled campaign audit records
+for authorized delivery investigation.
+
 The durable worker can be tuned independently:
 
 ```env

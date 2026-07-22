@@ -2,6 +2,7 @@ package group_service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,12 +10,44 @@ import (
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
+	"gorm.io/gorm"
 )
 
 type groupServiceReadRepository struct {
 	record    projection_repository.GroupRecord
 	listCalls int
 	getCalls  int
+}
+
+func TestGroupServiceNotReadyReadsNeverFallbackToWhatsApp(t *testing.T) {
+	repository := &groupServiceReadRepository{}
+	reader := projection_service.NewGroupReader(repository, groupServiceReadState{state: projection_model.State{
+		SyncStatus: projection_model.SyncStatusNotStarted, SchemaVersion: projection_service.GroupsProjectionSchemaVersion,
+	}})
+	service := &groupService{groupReader: reader, clientPointer: nil}
+	instance := &instance_model.Instance{Id: "instance-a"}
+	if _, _, err := service.ListGroupsRead(context.Background(), instance); !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
+		t.Fatalf("ListGroupsRead() error = %v", err)
+	}
+	if _, _, err := service.GetGroupInfoRead(context.Background(), &GetGroupInfoStruct{GroupJID: "group@g.us"}, instance); !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
+		t.Fatalf("GetGroupInfoRead() error = %v", err)
+	}
+	if _, err := service.GetGroupInviteLink(context.Background(), &GetGroupInviteLinkStruct{GroupJID: "group@g.us"}, instance); !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
+		t.Fatalf("GetGroupInviteLink() error = %v", err)
+	}
+}
+
+func TestGroupServiceMissingCachedInviteLinkDoesNotQueryWhatsApp(t *testing.T) {
+	reconciledAt := time.Unix(1000, 0)
+	repository := &groupServiceReadRepository{record: projection_repository.GroupRecord{Group: projection_model.Group{GroupID: "group@g.us"}}}
+	reader := projection_service.NewGroupReader(repository, groupServiceReadState{state: projection_model.State{
+		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: projection_service.GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
+	}})
+	service := &groupService{groupReader: reader, clientPointer: nil}
+	_, err := service.GetGroupInviteLink(context.Background(), &GetGroupInviteLinkStruct{GroupJID: "group@g.us"}, &instance_model.Instance{Id: "instance-a"})
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("GetGroupInviteLink() error = %v", err)
+	}
 }
 
 func (r *groupServiceReadRepository) List(context.Context, string) ([]projection_repository.GroupRecord, error) {

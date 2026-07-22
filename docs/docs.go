@@ -1607,14 +1607,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
-                    "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                    "404": {
+                        "description": "Projected group not found",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Groups projection not ready",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -1676,6 +1682,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "Cached invite link not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "429": {
                         "description": "Information query rate limited; see Retry-After header",
                         "schema": {
@@ -1684,6 +1696,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Groups projection not ready",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -1833,14 +1851,14 @@ const docTemplate = `{
                             ]
                         }
                     },
-                    "429": {
-                        "description": "Information query rate limited; see Retry-After header",
-                        "schema": {
-                            "$ref": "#/definitions/apidocs.RateLimitResponse"
-                        }
-                    },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Groups projection not ready",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }

@@ -4,6 +4,10 @@ OmniWA GO protects outbound WhatsApp information queries with a shared,
 process-local guard. The guard applies to HTTP requests and internal callers,
 including group/user enrichment and reconciliation work.
 
+Ordinary group list, info, and cached invite-link reads are projection-only and
+do not consume this budget. Before initial synchronization they return HTTP 503
+with code `projection_not_ready`; they never fall back to a live query.
+
 The defaults are deliberately conservative operational settings. They are not
 documented or implied WhatsApp limits:
 

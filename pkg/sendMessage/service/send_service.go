@@ -543,7 +543,7 @@ func (s *sendService) validateAndCheckUserExists(phone string, formatJid *bool, 
 	// First attempt with formatJid=false
 	remoteJID, found, err := s.checkSingleUserExists(client, phone, formatJidForCheck, instance.Id)
 	if err != nil {
-		s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Failed to check user existence: %v", instance.Id, err)
+		s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] User existence check failed; continuing with validated input", instance.Id)
 		// Continue with sending even if check fails (network issues, etc.)
 		return validateMessageFields(phone, formatJid, messageID, participant)
 	}
@@ -562,7 +562,7 @@ func (s *sendService) validateAndCheckUserExists(phone string, formatJid *bool, 
 		return types.NewJID("", types.DefaultUserServer), fmt.Errorf("number %s is not registered on WhatsApp", phone)
 	}
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Number %s verified as valid WhatsApp user, using remoteJID: %s", instance.Id, phone, remoteJID)
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound recipient identity verified", instance.Id)
 
 	// Validate the remoteJID with formatJid=false for message sending
 	formatJidFalse := false
@@ -2348,24 +2348,24 @@ func (s *sendService) SendList(data *ListStruct, instance *instance_model.Instan
 	})
 
 	if err != nil {
-		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending list: %v", instance.Id, err)
+		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Outbound list send failed error_code=send_failed", instance.Id)
 		return nil, err
 	}
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] List sent to %s", instance.Id, data.Number)
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound list sent", instance.Id)
 	return message, nil
 }
 
 func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.Message, messageType string, data *SendDataStruct) (*MessageSendStruct, error) {
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] SendMessage called for number: %s, type: %s", instance.Id, data.Number, messageType)
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound send started type=%s", instance.Id, messageType)
 
 	recipient, err := s.validateAndCheckUserExists(data.Number, data.FormatJid, &data.Quoted.MessageID, &data.Quoted.MessageID, instance)
 	if err != nil {
-		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields or user check: %v", instance.Id, err)
+		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Outbound recipient validation failed error_code=recipient_validation_failed", instance.Id)
 		return nil, err
 	}
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Recipient validated: %s (Server: %s)", instance.Id, recipient.String(), recipient.Server)
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound recipient validated server=%s", instance.Id, recipient.Server)
 
 	var message string
 	if data.Id == "" {
@@ -2765,7 +2765,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 
 	recipient.User = strings.ReplaceAll(recipient.User, "+", "")
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Sending message to %s with ID %s", instance.Id, recipient.String(), message)
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound message admitted", instance.Id)
 
 	// Preparar extra parameters para o envio
 	sendExtra := whatsmeow.SendRequestExtra{ID: message}
@@ -2773,7 +2773,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	// Para newsletters/canais, adicionar o MediaHandle se houver mídia
 	if recipient.Server == "newsletter" && data.MediaHandle != "" {
 		sendExtra.MediaHandle = data.MediaHandle
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Newsletter detected, using MediaHandle: %s", instance.Id, data.MediaHandle)
+		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound newsletter media handle attached", instance.Id)
 	}
 
 	// Injetar nodes biz/bot customizados (PIX, botões interativos, etc.) no stanza XMPP.
@@ -2786,11 +2786,11 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	}
 	response, err := s.clientPointer[instance.Id].SendMessage(context.Background(), recipient, msg, sendExtra)
 	if err != nil {
-		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending message: %v", instance.Id, err)
+		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Outbound message failed error_code=send_failed", instance.Id)
 		return nil, err
 	}
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent successfully! ServerID: %d", instance.Id, response.ServerID)
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound message sent", instance.Id)
 
 	sentAt := response.Timestamp.UTC()
 	if sentAt.IsZero() {
@@ -2918,7 +2918,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		}
 	}
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to %s", instance.Id, data.Number)
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound message processing completed", instance.Id)
 	return messageSent, nil
 }
 
@@ -2933,24 +2933,17 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 		formatJid = *data.FormatJid
 	}
 
-	var recipient types.JID
-	var ok bool
-	recipient, ok = utils.ParseJID(data.Number)
+	_, ok := utils.ParseJID(data.Number)
 	if !ok && formatJid {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
 		return nil, errors.New("invalid phone number")
-	} else if !ok && !formatJid {
-		recipient = types.JID{
-			User:   data.Number,
-			Server: types.DefaultUserServer,
-		}
 	}
 
 	// Build carousel cards
 	cards := make([]*waE2E.InteractiveMessage, len(data.Cards))
 	messageVersion := int32(1)
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Building carousel for %s with %d cards", instance.Id, recipient.String(), len(data.Cards))
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Building outbound carousel cards=%d", instance.Id, len(data.Cards))
 
 	for i, card := range data.Cards {
 		// Each card MUST have both header and body for carousel to work
@@ -3138,11 +3131,11 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 	})
 
 	if err != nil {
-		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending carousel: %v", instance.Id, err)
+		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Outbound carousel send failed error_code=send_failed", instance.Id)
 		return nil, err
 	}
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Carousel sent to %s with %d cards", instance.Id, data.Number, len(data.Cards))
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound carousel sent cards=%d", instance.Id, len(data.Cards))
 	return message, nil
 }
 
