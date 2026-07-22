@@ -255,7 +255,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			if err != nil {
 				logger.LogError("component=projection action=process resource=groups result=failed error_code=batch_failed")
 			} else if result.Claimed > 0 {
-				logger.LogInfo("component=projection action=process resource=groups claimed=%d processed=%d failed=%d", result.Claimed, result.Processed, result.Failed)
+				logger.LogInfo("component=projection action=process resource=groups claimed=%d processed=%d failed=%d retried=%d dead_lettered=%d", result.Claimed, result.Processed, result.Failed, result.Retried, result.DeadLettered)
 			}
 		},
 	)
@@ -272,7 +272,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			if err != nil {
 				logger.LogError("component=projection action=process resource=labels result=failed error_code=batch_failed")
 			} else if result.Claimed > 0 {
-				logger.LogInfo("component=projection action=process resource=labels claimed=%d processed=%d failed=%d", result.Claimed, result.Processed, result.Failed)
+				logger.LogInfo("component=projection action=process resource=labels claimed=%d processed=%d failed=%d retried=%d dead_lettered=%d", result.Claimed, result.Processed, result.Failed, result.Retried, result.DeadLettered)
 			}
 		},
 	)
@@ -289,7 +289,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			if err != nil {
 				logger.LogError("component=projection action=process resource=contacts result=failed error_code=batch_failed")
 			} else if result.Claimed > 0 {
-				logger.LogInfo("component=projection action=process resource=contacts claimed=%d processed=%d failed=%d", result.Claimed, result.Processed, result.Failed)
+				logger.LogInfo("component=projection action=process resource=contacts claimed=%d processed=%d failed=%d retried=%d dead_lettered=%d", result.Claimed, result.Processed, result.Failed, result.Retried, result.DeadLettered)
 			}
 		},
 	)
@@ -306,7 +306,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			if err != nil {
 				logger.LogError("component=projection action=process resource=messages result=failed error_code=batch_failed")
 			} else if result.Claimed > 0 {
-				logger.LogInfo("component=projection action=process resource=messages claimed=%d processed=%d failed=%d", result.Claimed, result.Processed, result.Failed)
+				logger.LogInfo("component=projection action=process resource=messages claimed=%d processed=%d failed=%d retried=%d dead_lettered=%d", result.Claimed, result.Processed, result.Failed, result.Retried, result.DeadLettered)
 			}
 		},
 	)
@@ -323,7 +323,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			if err != nil {
 				logger.LogError("component=projection action=readiness resource=messages result=failed error_code=batch_failed")
 			} else if result.Claimed > 0 {
-				logger.LogInfo("component=projection action=readiness resource=messages claimed=%d processed=%d failed=%d", result.Claimed, result.Processed, result.Failed)
+				logger.LogInfo("component=projection action=readiness resource=messages claimed=%d processed=%d failed=%d retried=%d dead_lettered=%d", result.Claimed, result.Processed, result.Failed, result.Retried, result.DeadLettered)
 			}
 		},
 	)

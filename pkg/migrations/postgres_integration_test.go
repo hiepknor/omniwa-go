@@ -429,6 +429,50 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := projection_repository.NewEventRepository(reopened).MarkProcessed(context.Background(), &claimed[0]); !errors.Is(err, projection_repository.ErrEventClaimLost) {
 		t.Fatalf("stale worker MarkProcessed() error = %v", err)
 	}
+	failureEvent := &projection_model.Event{
+		InstanceID: instance.Id, Resource: "retry_test", EventKey: "retry-event-1", EntityKey: "entity-1",
+		EventType: "retryable", OccurredAt: time.Now(), Payload: json.RawMessage(`{"id":"entity-1"}`),
+	}
+	if inserted, err := projection_repository.NewEventRepository(reopened).Enqueue(context.Background(), failureEvent); err != nil || !inserted {
+		t.Fatalf("enqueue failure transition event = %v, %v", inserted, err)
+	}
+	failureClaim, err := projection_repository.NewEventRepository(reopened).ClaimPendingFor(context.Background(), "retry_test", []string{"retryable"}, 1, time.Minute)
+	if err != nil || len(failureClaim) != 1 {
+		t.Fatalf("claim failure transition event = %#v, %v", failureClaim, err)
+	}
+	attemptedAt := time.Now().UTC()
+	if err := projection_repository.NewEventRepository(reopened).MarkRetry(context.Background(), &failureClaim[0], projection_model.EventFailureRetryable, "database_unavailable", attemptedAt, attemptedAt.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	var retriedEvent projection_model.Event
+	if err := reopened.Where("instance_id = ? AND resource = ? AND event_key = ?", instance.Id, "retry_test", "retry-event-1").First(&retriedEvent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retriedEvent.Status != projection_model.EventStatusFailed || retriedEvent.RetryCount != 1 || retriedEvent.FailureClass == nil || *retriedEvent.FailureClass != projection_model.EventFailureRetryable || retriedEvent.LastAttemptAt == nil || retriedEvent.DeadLetteredAt != nil {
+		t.Fatalf("unexpected retry transition: %#v", retriedEvent)
+	}
+	if err := reopened.Model(&projection_model.Event{}).Where("instance_id = ? AND resource = ? AND event_key = ?", instance.Id, "retry_test", "retry-event-1").Update("available_at", time.Now().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	failureClaim, err = projection_repository.NewEventRepository(reopened).ClaimPendingFor(context.Background(), "retry_test", []string{"retryable"}, 1, time.Minute)
+	if err != nil || len(failureClaim) != 1 {
+		t.Fatalf("reclaim failure transition event = %#v, %v", failureClaim, err)
+	}
+	deadLetteredAt := time.Now().UTC()
+	if err := projection_repository.NewEventRepository(reopened).MarkDeadLetter(context.Background(), &failureClaim[0], projection_model.EventFailurePermanent, "payload_invalid", deadLetteredAt); err != nil {
+		t.Fatal(err)
+	}
+	var deadLetter projection_model.Event
+	if err := reopened.Where("instance_id = ? AND resource = ? AND event_key = ?", instance.Id, "retry_test", "retry-event-1").First(&deadLetter).Error; err != nil {
+		t.Fatal(err)
+	}
+	if deadLetter.Status != projection_model.EventStatusDeadLetter || deadLetter.RetryCount != 2 || deadLetter.FailureClass == nil || *deadLetter.FailureClass != projection_model.EventFailurePermanent || deadLetter.DeadLetteredAt == nil || deadLetter.ClaimToken != nil || deadLetter.LeaseUntil != nil {
+		t.Fatalf("unexpected dead-letter transition: %#v", deadLetter)
+	}
+	remaining, err := projection_repository.NewEventRepository(reopened).ClaimPendingFor(context.Background(), "retry_test", []string{"retryable"}, 1, time.Minute)
+	if err != nil || len(remaining) != 0 {
+		t.Fatalf("dead letter was reclaimed: %#v, %v", remaining, err)
+	}
 
 	groupRepository := projection_repository.NewGroupRepository(reopened)
 	newName := "Current group"

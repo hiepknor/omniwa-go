@@ -56,7 +56,13 @@ leaving additive columns and states intact; forward fixes replay dead letters.
 
 Migration 15 is the schema slice: it adds typed failure metadata, a retry-policy
 snapshot, terminal dead-letter timestamps, and work/health indexes. Event
-ingestion initializes policy defaults, while workers retain the legacy retry
-behavior until the bounded-retry slice is deployed. Older binaries ignore the
-new nullable/defaulted columns, so image rollback does not require schema
-rollback.
+ingestion initializes policy defaults. The worker slice classifies malformed or
+unsupported normalized events as permanent, treats unclassified storage and
+provider errors as retryable, and uses deterministic jittered exponential
+backoff capped at five minutes. Permanent failures dead-letter immediately;
+retryable failures dead-letter when the event's persisted attempt ceiling is
+reached. Claim-token fencing makes retry and dead-letter transitions atomic.
+
+Older binaries ignore the new nullable/defaulted columns, so image rollback does
+not require schema rollback. Rolling back worker behavior leaves terminal rows
+intact for later inspection or replay.

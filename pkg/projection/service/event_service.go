@@ -3,20 +3,25 @@ package projection_service
 import (
 	"context"
 	"errors"
+	"hash/fnv"
+	"math"
+	"strconv"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 )
 
-const processingErrorCode = "projection_processing_failed"
+const maxProjectionRetryDelay = 5 * time.Minute
 
 type EventHandler func(context.Context, *projection_model.Event) error
 
 type EventBatchResult struct {
-	Claimed   int
-	Processed int
-	Failed    int
+	Claimed      int
+	Processed    int
+	Failed       int
+	Retried      int
+	DeadLettered int
 }
 
 type EventService interface {
@@ -81,8 +86,26 @@ func (s *eventService) processBatch(ctx context.Context, resource string, eventT
 		event := &events[index]
 		if err := handler(ctx, event); err != nil {
 			result.Failed++
-			if markErr := s.repository.MarkFailed(ctx, event, processingErrorCode, s.now().UTC().Add(s.retryDelay)); markErr != nil {
+			attemptedAt := s.now().UTC()
+			failureClass, errorCode := classifyProcessingFailure(err)
+			attempt := event.RetryCount + 1
+			maxAttempts := event.MaxAttempts
+			if maxAttempts <= 0 {
+				maxAttempts = projection_model.DefaultEventMaxAttempts
+			}
+			if failureClass == projection_model.EventFailurePermanent || attempt >= maxAttempts {
+				if markErr := s.repository.MarkDeadLetter(ctx, event, failureClass, errorCode, attemptedAt); markErr != nil {
+					processingErrors = append(processingErrors, markErr)
+				} else {
+					result.DeadLettered++
+				}
+				continue
+			}
+			retryAt := attemptedAt.Add(projectionRetryDelay(s.retryDelay, event, attempt))
+			if markErr := s.repository.MarkRetry(ctx, event, failureClass, errorCode, attemptedAt, retryAt); markErr != nil {
 				processingErrors = append(processingErrors, markErr)
+			} else {
+				result.Retried++
 			}
 			continue
 		}
@@ -93,4 +116,36 @@ func (s *eventService) processBatch(ctx context.Context, resource string, eventT
 		result.Processed++
 	}
 	return result, errors.Join(processingErrors...)
+}
+
+func projectionRetryDelay(base time.Duration, event *projection_model.Event, attempt int) time.Duration {
+	if base <= 0 {
+		return 0
+	}
+	exponent := attempt - 1
+	if exponent < 0 {
+		exponent = 0
+	}
+	if exponent > 30 {
+		exponent = 30
+	}
+	delay := float64(base) * math.Pow(2, float64(exponent))
+	if delay > float64(maxProjectionRetryDelay) {
+		delay = float64(maxProjectionRetryDelay)
+	}
+	hash := fnv.New32a()
+	if event != nil {
+		_, _ = hash.Write([]byte(event.InstanceID))
+		_, _ = hash.Write([]byte{0})
+		_, _ = hash.Write([]byte(event.Resource))
+		_, _ = hash.Write([]byte{0})
+		_, _ = hash.Write([]byte(event.EventKey))
+	}
+	_, _ = hash.Write([]byte(strconv.Itoa(attempt)))
+	jitterPermille := 750 + int(hash.Sum32()%501)
+	delay = delay * float64(jitterPermille) / 1000
+	if delay > float64(maxProjectionRetryDelay) {
+		delay = float64(maxProjectionRetryDelay)
+	}
+	return time.Duration(delay)
 }
