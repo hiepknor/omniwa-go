@@ -34,6 +34,13 @@ Payload is internal-only, limited to 1 MiB, and excluded from JSON
 serialization. It must contain the minimum normalized data required by the
 projector, not media binaries, credentials, or unrestricted provider payloads.
 
+`GroupInfo` deltas and `JoinedGroup` snapshots are the first wired producers.
+They are normalized and written synchronously with a two-second bound before
+best-effort webhook and queue fan-out. Inbox write failure is logged with a
+safe error code but does not suppress the established external fan-out path.
+The groups capability remains disabled until initial reconciliation succeeds,
+so an ingestion failure cannot make incomplete projection data authoritative.
+
 ## Rollout and recovery
 
 Migration 2 is additive and can be deployed before event producers or workers
@@ -49,5 +56,5 @@ introduced; no cleanup policy is implied by this decision.
 - Crashed work becomes resumable after its lease expires.
 - Inbox persistence and projection mutation are not yet one transaction;
   projectors remain responsible for idempotency.
-- Wiring producers, worker lifecycle, metrics, retention, and resource-specific
-  projection logic are separate increments.
+- Wiring additional producers, worker lifecycle, metrics, retention, and
+  resource-specific projection logic are separate increments.

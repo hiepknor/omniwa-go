@@ -178,6 +178,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	messageRepository := message_repository.NewMessageRepository(db)
 	labelRepository := label_repository.NewLabelRepository(db)
 	projectionStateService := projection_service.NewStateService(projection_repository.NewStateRepository(db))
+	projectionEventService := projection_service.NewEventService(projection_repository.NewEventRepository(db), 30*time.Second, 5*time.Second)
 
 	whatsmeowService := whatsmeow_service.NewWhatsmeowService(
 		instanceRepository,
@@ -195,6 +196,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		mediaStorage,
 		natsProducer,
 		queryGuard,
+		projectionEventService,
 		loggerWrapper,
 	)
 	instanceService := instance_service.NewInstanceService(

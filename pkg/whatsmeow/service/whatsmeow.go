@@ -46,6 +46,7 @@ import (
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
 	"github.com/evolution-foundation/evolution-go/pkg/passkey/ceremony"
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	storage_interfaces "github.com/evolution-foundation/evolution-go/pkg/storage/interfaces"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
@@ -99,6 +100,7 @@ type whatsmeowService struct {
 	loggerWrapper      *logger_wrapper.LoggerManager
 	passkeyCeremony    *ceremony.Store
 	queryGuard         waquery.Guard
+	projectionEvents   projection_service.EventService
 }
 
 type MyClient struct {
@@ -133,6 +135,35 @@ type MyClient struct {
 	qrcodeCount        int
 	passkeyCeremony    *ceremony.Store
 	queryGuard         waquery.Guard
+	projectionEvents   projection_service.EventService
+}
+
+const projectionIngestTimeout = 2 * time.Second
+
+func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
+	if mycli == nil || mycli.projectionEvents == nil {
+		return
+	}
+	event, relevant, err := projection_service.NormalizeGroupEvent(mycli.userID, rawEvent)
+	if err != nil {
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=projection action=normalize instance_id=%s result=failed error_code=invalid_group_event", mycli.userID)
+		return
+	}
+	if !relevant {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), projectionIngestTimeout)
+	defer cancel()
+	inserted, err := mycli.projectionEvents.Ingest(ctx, event)
+	if err != nil {
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=ingest instance_id=%s resource=%s event_type=%s result=failed error_code=inbox_write_failed", mycli.userID, event.Resource, event.EventType)
+		return
+	}
+	result := "duplicate"
+	if inserted {
+		result = "inserted"
+	}
+	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=ingest instance_id=%s resource=%s event_type=%s result=%s", mycli.userID, event.Resource, event.EventType, result)
 }
 
 func (mycli *MyClient) persistMessageAsync(message message_model.Message) {
@@ -498,6 +529,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		qrcodeCount:        0,
 		passkeyCeremony:    w.passkeyCeremony,
 		queryGuard:         w.queryGuard,
+		projectionEvents:   w.projectionEvents,
 	}
 
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
@@ -857,6 +889,10 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 }
 
 func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
+	// Projection ingestion is synchronous and bounded so relevant changes reach
+	// the durable inbox before best-effort webhook/queue fan-out.
+	mycli.ingestProjectionEvent(rawEvt)
+
 	userID := mycli.userID
 	postMap := make(map[string]interface{})
 	postMap["data"] = rawEvt
@@ -2811,6 +2847,7 @@ func NewWhatsmeowService(
 	mediaStorage storage_interfaces.MediaStorage,
 	natsProducer producer_interfaces.Producer,
 	queryGuard waquery.Guard,
+	projectionEvents projection_service.EventService,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) WhatsmeowService {
 	// Inicializar PollService de forma segura
@@ -2836,6 +2873,7 @@ func NewWhatsmeowService(
 		processedMessages:  cache.New(30*time.Minute, 1*time.Hour),
 		natsProducer:       natsProducer,
 		queryGuard:         queryGuard,
+		projectionEvents:   projectionEvents,
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),
 	}
