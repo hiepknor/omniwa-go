@@ -532,6 +532,43 @@ CREATE INDEX projected_groups_search_name_idx
 ON projected_groups (instance_id, (LOWER(LEFT(COALESCE(name, ''), 255))) text_pattern_ops)
 WHERE tombstoned_at IS NULL;`,
 	},
+	{
+		Version: 15,
+		Name:    "add_projection_event_failure_metadata",
+		SQL: `ALTER TABLE projection_event_inbox
+    ADD COLUMN last_attempt_at TIMESTAMPTZ NULL,
+    ADD COLUMN failure_class VARCHAR(32) NULL,
+    ADD COLUMN retry_policy_version SMALLINT NOT NULL DEFAULT 1,
+    ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 8,
+    ADD COLUMN dead_lettered_at TIMESTAMPTZ NULL;
+
+ALTER TABLE projection_event_inbox DROP CONSTRAINT projection_event_inbox_status_check;
+ALTER TABLE projection_event_inbox
+    ADD CONSTRAINT projection_event_inbox_status_check
+    CHECK (status IN ('pending', 'processing', 'processed', 'failed', 'dead_letter'));
+ALTER TABLE projection_event_inbox
+    ADD CONSTRAINT projection_event_inbox_failure_class_check
+    CHECK (failure_class IS NULL OR failure_class IN ('retryable', 'permanent'));
+ALTER TABLE projection_event_inbox
+    ADD CONSTRAINT projection_event_inbox_retry_policy_version_check
+    CHECK (retry_policy_version > 0);
+ALTER TABLE projection_event_inbox
+    ADD CONSTRAINT projection_event_inbox_max_attempts_check
+    CHECK (max_attempts > 0);
+ALTER TABLE projection_event_inbox
+    ADD CONSTRAINT projection_event_inbox_dead_letter_state_check
+    CHECK (
+        (status = 'dead_letter' AND dead_lettered_at IS NOT NULL AND failure_class IS NOT NULL AND last_error_code IS NOT NULL)
+        OR (status <> 'dead_letter' AND dead_lettered_at IS NULL)
+    );
+
+CREATE INDEX projection_event_inbox_dead_letter_idx
+ON projection_event_inbox (resource, dead_lettered_at DESC, instance_id, event_key)
+WHERE status = 'dead_letter';
+CREATE INDEX projection_event_inbox_health_idx
+ON projection_event_inbox (instance_id, resource, status, available_at)
+WHERE status IN ('pending', 'failed', 'dead_letter');`,
+	},
 }
 
 func Run(db *gorm.DB) error {

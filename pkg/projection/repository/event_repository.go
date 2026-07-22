@@ -52,6 +52,11 @@ func (r *eventRepository) Enqueue(ctx context.Context, event *projection_model.E
 	event.ProcessedAt = nil
 	event.RetryCount = 0
 	event.LastErrorCode = nil
+	event.LastAttemptAt = nil
+	event.FailureClass = nil
+	event.RetryPolicyVersion = projection_model.EventRetryPolicyVersion
+	event.MaxAttempts = projection_model.DefaultEventMaxAttempts
+	event.DeadLetteredAt = nil
 	result := r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(event)
 	return result.RowsAffected == 1, result.Error
 }

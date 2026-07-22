@@ -81,7 +81,7 @@ func TestProjectionOverviewWindowIndexesAreVersioned(t *testing.T) {
 }
 
 func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
-	migration := registry[len(registry)-3]
+	migration := registry[len(registry)-4]
 	if migration.Version != 12 || migration.Name != "create_campaign_persistence" {
 		t.Fatalf("campaign migration = %#v", migration)
 	}
@@ -96,7 +96,7 @@ func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
 }
 
 func TestContactsSearchIndexesAreVersioned(t *testing.T) {
-	migration := registry[len(registry)-2]
+	migration := registry[len(registry)-3]
 	if migration.Version != 13 || migration.Name != "index_contacts_projection_search" {
 		t.Fatalf("contacts search migration = %#v", migration)
 	}
@@ -111,13 +111,29 @@ func TestContactsSearchIndexesAreVersioned(t *testing.T) {
 }
 
 func TestGroupsSearchIndexesAreVersioned(t *testing.T) {
-	migration := registry[len(registry)-1]
+	migration := registry[len(registry)-2]
 	if migration.Version != 14 || migration.Name != "index_groups_projection_search" {
 		t.Fatalf("groups search migration = %#v", migration)
 	}
 	for _, expected := range []string{"projected_groups_search_page_idx", "projected_groups_search_jid_idx", "projected_groups_search_name_idx", "text_pattern_ops", "WHERE tombstoned_at IS NULL"} {
 		if !strings.Contains(migration.SQL, expected) {
 			t.Fatalf("groups search migration does not contain %q", expected)
+		}
+	}
+}
+
+func TestProjectionFailureMetadataMigrationIsAdditiveAndIndexed(t *testing.T) {
+	migration := registry[len(registry)-1]
+	if migration.Version != 15 || migration.Name != "add_projection_event_failure_metadata" {
+		t.Fatalf("projection failure migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"ADD COLUMN last_attempt_at", "ADD COLUMN failure_class", "ADD COLUMN retry_policy_version",
+		"ADD COLUMN max_attempts", "ADD COLUMN dead_lettered_at", "'dead_letter'",
+		"projection_event_inbox_dead_letter_idx", "projection_event_inbox_health_idx",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("projection failure migration does not contain %q", expected)
 		}
 	}
 }

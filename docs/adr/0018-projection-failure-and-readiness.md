@@ -53,3 +53,10 @@ checksums automatically or expose raw sensitive payloads.
 Land additive schema first, then dual-compatible repository code, then worker
 behavior, then readiness calculation. Rollback disables new behavior while
 leaving additive columns and states intact; forward fixes replay dead letters.
+
+Migration 15 is the schema slice: it adds typed failure metadata, a retry-policy
+snapshot, terminal dead-letter timestamps, and work/health indexes. Event
+ingestion initializes policy defaults, while workers retain the legacy retry
+behavior until the bounded-retry slice is deployed. Older binaries ignore the
+new nullable/defaulted columns, so image rollback does not require schema
+rollback.
