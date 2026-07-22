@@ -125,6 +125,10 @@ Every endpoint is authenticated with an `apikey` header: admin `/instance`
 routes use the global `GLOBAL_API_KEY`; all other routes use the target
 instance's own token. See [Authentication](docs/wiki-en/authentication.md).
 
+OmniWA GO currently supports one application replica per users database and
+enforces that boundary at startup. Use stop-first/Recreate deployments; see the
+[single-replica deployment runbook](docs/runbooks/single-replica-deployment.md).
+
 ### Key Endpoints
 
 | Method | Endpoint | Description |

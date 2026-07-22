@@ -69,8 +69,8 @@ must remain deployable.
    callers.
 9. Replace the single-connection WebSocket map with bounded per-session write
    pumps.
-10. Enforce and document the single-application-replica topology until
-    distributed leases exist.
+10. Enforce and document the single-application-replica topology with a
+    monitored PostgreSQL advisory lock until distributed leases exist.
 
 ### 4. Projection reliability
 

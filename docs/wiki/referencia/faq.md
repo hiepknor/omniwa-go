@@ -174,8 +174,8 @@ POSTGRES_USERS_DB=postgresql://...
 **Infraestrutura**:
 - Connection pooling adequado
 - Índices de banco otimizados
-- Escalabilidade horizontal (múltiplos servidores)
-- Load balancer para distribuição
+- Vertical capacity sized from measured workload
+- One application replica per users database
 
 ---
 

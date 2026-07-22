@@ -33,6 +33,13 @@ Until distributed ownership is implemented, the supported deployment topology
 is one application replica. Documentation and deployment examples must not
 claim active-active support.
 
+The process enforces this topology with a database-scoped PostgreSQL advisory
+lock held on a dedicated users-database connection. Lock contention fails
+startup before migrations, workers, listeners, or WhatsApp connections begin.
+Loss of that connection triggers graceful shutdown. This guard contains
+accidental duplicate deployments but does not provide per-instance failover or
+remove the need for fenced distributed leases.
+
 When multi-replica operation is accepted as product scope, add a PostgreSQL
 instance-owner lease with a fencing generation. Only the lease owner may open a
 WhatsApp connection, admit queries, or claim outbound work for that instance.

@@ -42,6 +42,9 @@ services:
       - omniwa_logs:/app/logs
     deploy:
       replicas: 1
+      update_config:
+        order: stop-first
+        parallelism: 1
       placement:
         constraints:
           - node.role == manager

@@ -455,8 +455,8 @@ docker service ls
 # Logs
 docker service logs evolution_evolution_go -f
 
-# Escalar
-docker service scale evolution_evolution_go=3
+# Keep exactly one application replica
+docker service scale evolution_evolution_go=1
 
 # Atualizar
 docker service update --image evoapicloud/evolution-go:latest evolution_evolution_go

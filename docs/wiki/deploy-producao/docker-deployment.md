@@ -379,7 +379,7 @@ services:
       - evolution_go_logs:/app/logs
 
     deploy:
-      replicas: 3
+      replicas: 1
       placement:
         constraints:
           - node.role == worker
@@ -392,7 +392,7 @@ services:
         parallelism: 1
         delay: 10s
         failure_action: rollback
-        order: start-first
+        order: stop-first
       rollback_config:
         parallelism: 1
         delay: 5s
@@ -428,8 +428,8 @@ docker service ps evolution_evolution_go
 # Logs
 docker service logs evolution_evolution_go -f
 
-# Escalar
-docker service scale evolution_evolution_go=5
+# Keep exactly one application replica
+docker service scale evolution_evolution_go=1
 
 # Atualizar (rolling update)
 docker service update --image evoapicloud/evolution-go:v1.2.0 evolution_evolution_go
@@ -492,7 +492,9 @@ metadata:
   name: evolution-go
   namespace: evolution-go
 spec:
-  replicas: 3
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: evolution-go
@@ -600,34 +602,9 @@ spec:
 
 #### HorizontalPodAutoscaler
 
-```yaml
-# hpa.yaml
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: evolution-hpa
-  namespace: evolution-go
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: evolution-go
-  minReplicas: 3
-  maxReplicas: 10
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-```
+Do not attach a HorizontalPodAutoscaler. OmniWA GO currently enforces one
+application replica per users database. See the
+[single-replica deployment runbook](../../runbooks/single-replica-deployment.md).
 
 ### Deploy Kubernetes
 
@@ -639,7 +616,6 @@ kubectl apply -f secrets.yaml
 kubectl apply -f deployment.yaml
 kubectl apply -f service.yaml
 kubectl apply -f ingress.yaml
-kubectl apply -f hpa.yaml
 
 # Verificar
 kubectl get all -n evolution-go
@@ -648,8 +624,8 @@ kubectl get pods -n evolution-go
 # Logs
 kubectl logs -f deployment/evolution-go -n evolution-go
 
-# Escalar
-kubectl scale deployment evolution-go --replicas=5 -n evolution-go
+# Keep exactly one application replica
+kubectl scale deployment evolution-go --replicas=1 -n evolution-go
 
 # Atualizar
 kubectl set image deployment/evolution-go \
