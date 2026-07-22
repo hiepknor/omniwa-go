@@ -1,5 +1,26 @@
 basePath: /
 definitions:
+  apidocs.CapabilitiesData:
+    properties:
+      capabilities:
+        example:
+        - rate_limit_retry_after
+        - groups_projection
+        items:
+          type: string
+        type: array
+      version:
+        example: 1.2.3
+        type: string
+    type: object
+  apidocs.CapabilitiesResponse:
+    properties:
+      data:
+        $ref: '#/definitions/apidocs.CapabilitiesData'
+      message:
+        example: success
+        type: string
+    type: object
   apidocs.ConnectData:
     properties:
       eventString:
@@ -10301,6 +10322,28 @@ paths:
       summary: Send a text message
       tags:
       - Send Message
+  /server/capabilities:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            $ref: '#/definitions/apidocs.CapabilitiesResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get server capabilities
+      tags:
+      - Server
   /unlabel/chat:
     post:
       consumes:

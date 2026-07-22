@@ -55,6 +55,8 @@ import (
 	newsletter_service "github.com/evolution-foundation/evolution-go/pkg/newsletter/service"
 	passkey_handler "github.com/evolution-foundation/evolution-go/pkg/passkey/handler"
 	poll_handler "github.com/evolution-foundation/evolution-go/pkg/poll/handler"
+	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	routes "github.com/evolution-foundation/evolution-go/pkg/routes"
 	send_handler "github.com/evolution-foundation/evolution-go/pkg/sendMessage/handler"
 	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
@@ -175,6 +177,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	instanceRepository := instance_repository.NewInstanceRepository(db)
 	messageRepository := message_repository.NewMessageRepository(db)
 	labelRepository := label_repository.NewLabelRepository(db)
+	projectionStateService := projection_service.NewStateService(projection_repository.NewStateRepository(db))
 
 	whatsmeowService := whatsmeow_service.NewWhatsmeowService(
 		instanceRepository,
@@ -260,7 +263,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),
 		pollHandler,
-		server_handler.NewServerHandler(),
+		server_handler.NewServerHandler(version, projectionStateService),
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {
