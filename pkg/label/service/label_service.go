@@ -33,8 +33,11 @@ type labelService struct {
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	labelRepository  label_repository.LabelRepository
 	projectionReader *projection_service.LabelReader
+	projectionWriter *projection_service.LabelWriter
 	loggerWrapper    *logger_wrapper.LoggerManager
 }
+
+const labelProjectionWriteTimeout = 5 * time.Second
 
 type ChatLabelStruct struct {
 	JID     string `json:"jid"`
@@ -114,6 +117,9 @@ func (l *labelService) ChatLabel(data *ChatLabelStruct, instance *instance_model
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label chat: %v", instance.Id, err)
 		return err
 	}
+	l.writeProjection(instance.Id, func(ctx context.Context) error {
+		return l.projectionWriter.WriteChatAssociation(ctx, instance.Id, data.LabelID, jid.String(), true)
+	})
 
 	return nil
 }
@@ -140,6 +146,9 @@ func (l *labelService) MessageLabel(data *MessageLabelStruct, instance *instance
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label message: %v", instance.Id, err)
 		return err
 	}
+	l.writeProjection(instance.Id, func(ctx context.Context) error {
+		return l.projectionWriter.WriteMessageAssociation(ctx, instance.Id, data.LabelID, jid.String(), data.MessageID, true)
+	})
 
 	return nil
 }
@@ -160,6 +169,9 @@ func (l *labelService) EditLabel(data *EditLabelStruct, instance *instance_model
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label message: %v", instance.Id, err)
 		return err
 	}
+	l.writeProjection(instance.Id, func(ctx context.Context) error {
+		return l.projectionWriter.WriteLabel(ctx, instance.Id, data.LabelID, data.Name, int32(data.Color), data.Deleted)
+	})
 
 	return nil
 }
@@ -185,6 +197,9 @@ func (l *labelService) ChatUnlabel(data *ChatLabelStruct, instance *instance_mod
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label chat: %v", instance.Id, err)
 		return err
 	}
+	l.writeProjection(instance.Id, func(ctx context.Context) error {
+		return l.projectionWriter.WriteChatAssociation(ctx, instance.Id, data.LabelID, jid.String(), false)
+	})
 
 	return nil
 }
@@ -211,8 +226,25 @@ func (l *labelService) MessageUnlabel(data *MessageLabelStruct, instance *instan
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label message: %v", instance.Id, err)
 		return err
 	}
+	l.writeProjection(instance.Id, func(ctx context.Context) error {
+		return l.projectionWriter.WriteMessageAssociation(ctx, instance.Id, data.LabelID, jid.String(), data.MessageID, false)
+	})
 
 	return nil
+}
+
+func (l *labelService) writeProjection(instanceID string, write func(context.Context) error) {
+	if l.projectionWriter == nil || write == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), labelProjectionWriteTimeout)
+	defer cancel()
+	if err := write(ctx); err != nil {
+		l.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=write_through instance_id=%s resource=labels result=failed error_code=projection_write_failed", instanceID)
+		if staleErr := l.projectionWriter.MarkStale(instanceID); staleErr != nil {
+			l.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=mark_stale instance_id=%s resource=labels result=failed error_code=projection_state_write_failed", instanceID)
+		}
+	}
 }
 
 func (l *labelService) GetLabels(ctx context.Context, instance *instance_model.Instance) ([]label_model.Label, error) {
@@ -264,6 +296,7 @@ func NewLabelService(
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	labelRepository label_repository.LabelRepository,
 	projectionReader *projection_service.LabelReader,
+	projectionWriter *projection_service.LabelWriter,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) LabelService {
 	return &labelService{
@@ -271,6 +304,7 @@ func NewLabelService(
 		whatsmeowService: whatsmeowService,
 		labelRepository:  labelRepository,
 		projectionReader: projectionReader,
+		projectionWriter: projectionWriter,
 		loggerWrapper:    loggerWrapper,
 	}
 }

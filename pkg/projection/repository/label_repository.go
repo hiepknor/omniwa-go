@@ -13,12 +13,23 @@ import (
 
 type LabelRepository interface {
 	ApplyLabel(context.Context, *projection_model.Label) (bool, error)
+	ApplyLabelMutation(context.Context, LabelMutation) (bool, error)
 	ApplyChatAssociation(context.Context, *projection_model.LabelChatAssociation) (bool, error)
 	ApplyMessageAssociation(context.Context, *projection_model.LabelMessageAssociation) (bool, error)
 	GetLabel(context.Context, string, string) (*projection_model.Label, error)
 	ListLabels(context.Context, string) ([]projection_model.Label, error)
 	ListChatAssociations(context.Context, string, string) ([]projection_model.LabelChatAssociation, error)
 	ListMessageAssociations(context.Context, string, string, string) ([]projection_model.LabelMessageAssociation, error)
+}
+
+type LabelMutation struct {
+	InstanceID string
+	LabelID    string
+	Name       string
+	Color      int32
+	Deleted    bool
+	OccurredAt time.Time
+	EventKey   string
 }
 
 type labelRepository struct {
@@ -43,6 +54,30 @@ func (r *labelRepository) ApplyLabel(ctx context.Context, label *projection_mode
 	)).Create(label)
 	if result.Error != nil {
 		return false, fmt.Errorf("apply label projection: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
+
+func (r *labelRepository) ApplyLabelMutation(ctx context.Context, mutation LabelMutation) (bool, error) {
+	if mutation.InstanceID == "" || mutation.LabelID == "" || mutation.OccurredAt.IsZero() || mutation.EventKey == "" ||
+		len(mutation.LabelID) > 255 || len(mutation.EventKey) > 255 {
+		return false, errors.New("label mutation identity and source version are required")
+	}
+	mutation.OccurredAt = mutation.OccurredAt.UTC()
+	label := &projection_model.Label{
+		InstanceID: mutation.InstanceID, LabelID: mutation.LabelID, Name: &mutation.Name, Color: &mutation.Color,
+		SourceOccurredAt: mutation.OccurredAt, SourceEventKey: mutation.EventKey, LastSyncedAt: r.now().UTC(),
+	}
+	if mutation.Deleted {
+		label.TombstonedAt = &mutation.OccurredAt
+	}
+	result := r.db.WithContext(ctx).Clauses(orderedUpsert(
+		[]clause.Column{{Name: "instance_id"}, {Name: "label_id"}},
+		[]string{"name", "color", "source_occurred_at", "source_event_key", "last_synced_at", "tombstoned_at", "updated_at"},
+		"projected_labels",
+	)).Create(label)
+	if result.Error != nil {
+		return false, fmt.Errorf("apply projected label mutation: %w", result.Error)
 	}
 	return result.RowsAffected > 0, nil
 }
