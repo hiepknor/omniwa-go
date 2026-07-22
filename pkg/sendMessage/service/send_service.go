@@ -2907,10 +2907,12 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		return nil, err
 	}
 
-	go s.whatsmeowService.CallWebhook(instance, queueName, values)
+	if s.whatsmeowService.PersistDurableEvent(instance.Id, "SendMessage", messageSent.Info) {
+		go s.whatsmeowService.CallWebhook(instance, queueName, values)
 
-	if s.config.AmqpGlobalEnabled || s.config.NatsGlobalEnabled {
-		go s.whatsmeowService.SendToGlobalQueues(postMap["event"].(string), values, instance.Id)
+		if s.config.AmqpGlobalEnabled || s.config.NatsGlobalEnabled {
+			go s.whatsmeowService.SendToGlobalQueues(postMap["event"].(string), values, instance.Id)
+		}
 	}
 
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to %s", instance.Id, data.Number)
@@ -3408,9 +3410,11 @@ func (s *sendService) sendStatusWebhook(messageSent *MessageSendStruct, instance
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to marshal webhook payload: %v", instance.Id, err)
 		return
 	}
-	go s.whatsmeowService.CallWebhook(instance, "sendstatus", values)
-	if s.config.AmqpGlobalEnabled || s.config.NatsGlobalEnabled {
-		go s.whatsmeowService.SendToGlobalQueues("SendStatus", values, instance.Id)
+	if s.whatsmeowService.PersistDurableEvent(instance.Id, "SendStatus", messageSent.Info) {
+		go s.whatsmeowService.CallWebhook(instance, "sendstatus", values)
+		if s.config.AmqpGlobalEnabled || s.config.NatsGlobalEnabled {
+			go s.whatsmeowService.SendToGlobalQueues("SendStatus", values, instance.Id)
+		}
 	}
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Status %s sent successfully", instance.Id, messageType)
 }

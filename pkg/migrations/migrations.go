@@ -382,6 +382,22 @@ CREATE INDEX projection_event_inbox_message_retention_idx
 ON projection_event_inbox (occurred_at ASC, ingested_at ASC, event_key ASC)
 WHERE resource = 'messages' AND event_type IN ('message', 'history_message', 'receipt');`,
 	},
+	{
+		Version: 10,
+		Name:    "create_durable_events",
+		SQL: `CREATE TABLE durable_events (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT durable_events_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
+);
+CREATE INDEX durable_events_history_idx ON durable_events (instance_id, occurred_at DESC, id DESC);
+CREATE INDEX durable_events_retention_idx ON durable_events (expires_at ASC, id ASC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {
