@@ -60,6 +60,7 @@ definitions:
         - campaign_orchestration
         - rate_limit_retry_after
         - groups_projection
+        - instance_credential_health
         - instance_token_rotation
         items:
           type: string
@@ -613,6 +614,39 @@ definitions:
         type: string
       groupJid:
         type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_instance_credential.CredentialCoverage:
+    properties:
+      currentDigest:
+        type: integer
+      otherKeyVersion:
+        type: integer
+      plaintextOnly:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_instance_credential.CredentialHealth:
+    properties:
+      currentKeyVersion:
+        type: integer
+      generatedAt:
+        type: string
+      instances:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_credential.CredentialCoverage'
+      plaintextFallback:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_credential.PlaintextFallbackUsage'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_instance_credential.PlaintextFallbackUsage:
+    properties:
+      affectedInstances:
+        type: integer
+      firstObservedAt:
+        type: string
+      lastObservedAt:
+        type: string
+      lookups:
+        type: integer
     type: object
   github_com_evolution-foundation_evolution-go_pkg_instance_credential.RotationResult:
     properties:
@@ -9954,6 +9988,39 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Create a new instance
+      tags:
+      - Instance
+  /instance/credential-health:
+    get:
+      description: Returns global, secret-free migration facts. This endpoint does
+        not declare that plaintext removal is safe.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_credential.CredentialHealth'
+              type: object
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Credential health is not configured
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get instance credential migration health
       tags:
       - Instance
   /instance/delete/{instanceId}:

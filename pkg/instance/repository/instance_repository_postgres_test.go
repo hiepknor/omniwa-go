@@ -76,7 +76,65 @@ func TestPostgresTokenDigestDualReadWriteAndConcurrentBackfill(t *testing.T) {
 			if err != nil || fallback.Id != legacy.Id {
 				t.Fatalf("plaintext fallback = %#v, %v", fallback, err)
 			}
+			if fallback.TokenDigest == nil || fallback.TokenKeyVersion == nil || *fallback.TokenKeyVersion != 9 {
+				t.Fatalf("plaintext fallback did not self-heal digest metadata: %#v", fallback)
+			}
+			var usage struct {
+				LookupCount int64
+				KeyVersion  int
+			}
+			if err := db.Table("instance_token_fallback_usage").
+				Select("lookup_count, key_version").Where("instance_id = ?", legacy.Id).Take(&usage).Error; err != nil {
+				t.Fatal(err)
+			}
+			if usage.LookupCount != 1 || usage.KeyVersion != 9 {
+				t.Fatalf("plaintext fallback usage = %#v", usage)
+			}
 		}
+	}
+	concurrentLegacy := instance_model.Instance{Name: prefix + "-legacy-concurrent", Token: prefix + "-legacy-concurrent-token"}
+	if err := db.Create(&concurrentLegacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	const concurrentLookups = 20
+	start := make(chan struct{})
+	lookupErrors := make(chan error, concurrentLookups)
+	var lookupWorkers sync.WaitGroup
+	for worker := 0; worker < concurrentLookups; worker++ {
+		lookupWorkers.Add(1)
+		go func() {
+			defer lookupWorkers.Done()
+			<-start
+			resolved, err := repository.GetInstanceByToken(concurrentLegacy.Token)
+			if err == nil && resolved.Id != concurrentLegacy.Id {
+				err = fmt.Errorf("resolved unexpected instance %s", resolved.Id)
+			}
+			lookupErrors <- err
+		}()
+	}
+	close(start)
+	lookupWorkers.Wait()
+	close(lookupErrors)
+	for err := range lookupErrors {
+		if err != nil {
+			t.Fatalf("concurrent plaintext fallback: %v", err)
+		}
+	}
+	var concurrentUsage struct {
+		UsageRows   int64
+		LookupCount int64
+	}
+	if err := db.Raw(`SELECT COUNT(*) AS usage_rows, COALESCE(SUM(lookup_count), 0) AS lookup_count
+FROM instance_token_fallback_usage WHERE instance_id = ?`, concurrentLegacy.Id).Scan(&concurrentUsage).Error; err != nil {
+		t.Fatal(err)
+	}
+	if concurrentUsage.UsageRows != 1 || concurrentUsage.LookupCount < 1 || concurrentUsage.LookupCount > concurrentLookups {
+		t.Fatalf("concurrent plaintext fallback usage = %#v", concurrentUsage)
+	}
+	health, err := repository.(instance_repository.CredentialHealthReader).CredentialHealth(context.Background(), 9)
+	if err != nil || health.CurrentKeyVersion != 9 || health.TotalInstances < 5 || health.CurrentDigestInstances < 2 ||
+		health.FallbackLookups < 1 || health.FallbackAffectedInstances < 1 || health.FirstFallbackAt == nil || health.LastFallbackAt == nil {
+		t.Fatalf("credential health = %#v, %v", health, err)
 	}
 
 	backfiller := repository.(instance_repository.TokenBackfiller)

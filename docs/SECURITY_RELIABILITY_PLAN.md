@@ -87,7 +87,10 @@ must remain deployable.
 16. Add dual-write and dual-read token lookup digests and a bounded backfill.
 17. Add audited token rotation and console capability negotiation.
 18. Stop exposing and later remove plaintext tokens only after console migration
-    and a measured rollback window.
+    and a measured rollback window. In progress: durable, secret-free fallback
+    telemetry, transactional digest self-healing, and the admin-only credential
+    health capability are implemented. Plaintext response/storage removal
+    remains gated on Console deployment and an observed rollback window.
 
 ### 6. Maintainability, CI, and release integrity
 

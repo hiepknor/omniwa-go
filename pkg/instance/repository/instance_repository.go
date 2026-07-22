@@ -53,6 +53,23 @@ type TokenBackfiller interface {
 	BackfillTokenDigests(ctx context.Context, batchSize int) (int, error)
 }
 
+type CredentialHealthSnapshot struct {
+	GeneratedAt               time.Time
+	CurrentKeyVersion         int
+	TotalInstances            int64
+	CurrentDigestInstances    int64
+	PlaintextOnlyInstances    int64
+	OtherKeyVersionInstances  int64
+	FallbackLookups           int64
+	FallbackAffectedInstances int64
+	FirstFallbackAt           *time.Time
+	LastFallbackAt            *time.Time
+}
+
+type CredentialHealthReader interface {
+	CredentialHealth(ctx context.Context, currentKeyVersion int) (*CredentialHealthSnapshot, error)
+}
+
 var (
 	ErrTokenRotationUnavailable = errors.New("instance token rotation is unavailable")
 	ErrTokenRotationNotFound    = errors.New("instance was not found")
@@ -114,11 +131,14 @@ func (i *instanceRepository) GetInstanceByToken(token string) (*instance_model.I
 		return nil, errors.New("instance token is required")
 	}
 	var instance instance_model.Instance
+	var fallbackDigest string
+	var fallbackVersion int
 	if i.tokenDigester != nil {
 		digest, version, err := i.tokenDigester.Digest(token)
 		if err != nil {
 			return nil, fmt.Errorf("derive instance token digest: %w", err)
 		}
+		fallbackDigest, fallbackVersion = digest, version
 		err = i.credentialDB().Where("token_key_version = ? AND token_digest = ?", version, digest).First(&instance).Error
 		if err == nil {
 			return &instance, nil
@@ -127,12 +147,73 @@ func (i *instanceRepository) GetInstanceByToken(token string) (*instance_model.I
 			return nil, err
 		}
 	}
-	err := i.credentialDB().Where("token = ?", token).First(&instance).Error
+	if i.tokenDigester == nil {
+		err := i.credentialDB().Where("token = ?", token).First(&instance).Error
+		if err != nil {
+			return nil, err
+		}
+		return &instance, nil
+	}
+
+	err := i.credentialDB().Transaction(func(tx *gorm.DB) error {
+		if err := tx.Raw("SELECT * FROM instances WHERE token = ? FOR UPDATE", token).Scan(&instance).Error; err != nil {
+			return err
+		}
+		if instance.Id == "" {
+			return gorm.ErrRecordNotFound
+		}
+		now := time.Now().UTC()
+		if err := tx.Exec(`INSERT INTO instance_token_fallback_usage
+    (instance_id, key_version, lookup_count, first_used_at, last_used_at)
+VALUES (?, ?, 1, ?, ?)
+ON CONFLICT (instance_id, key_version) DO UPDATE SET
+    lookup_count = instance_token_fallback_usage.lookup_count + 1,
+    first_used_at = LEAST(instance_token_fallback_usage.first_used_at, EXCLUDED.first_used_at),
+    last_used_at = GREATEST(instance_token_fallback_usage.last_used_at, EXCLUDED.last_used_at)`,
+			instance.Id, fallbackVersion, now, now).Error; err != nil {
+			return fmt.Errorf("record instance token fallback: %w", err)
+		}
+		result := tx.Model(&instance_model.Instance{}).
+			Where("id = ? AND token = ?", instance.Id, token).
+			Updates(map[string]interface{}{"token_digest": fallbackDigest, "token_key_version": fallbackVersion})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("instance token changed during fallback authentication")
+		}
+		instance.TokenDigest = &fallbackDigest
+		instance.TokenKeyVersion = &fallbackVersion
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
 	return &instance, nil
+}
+
+func (i *instanceRepository) CredentialHealth(ctx context.Context, currentKeyVersion int) (*CredentialHealthSnapshot, error) {
+	if i == nil || i.db == nil || i.tokenDigester == nil || currentKeyVersion <= 0 {
+		return nil, errors.New("instance credential health is unavailable")
+	}
+	snapshot := &CredentialHealthSnapshot{GeneratedAt: time.Now().UTC(), CurrentKeyVersion: currentKeyVersion}
+	if err := i.credentialDB().WithContext(ctx).Raw(`SELECT
+    COUNT(*) AS total_instances,
+    COUNT(*) FILTER (WHERE token_digest IS NOT NULL AND token_key_version = ?) AS current_digest_instances,
+    COUNT(*) FILTER (WHERE token_digest IS NULL) AS plaintext_only_instances,
+    COUNT(*) FILTER (WHERE token_digest IS NOT NULL AND token_key_version <> ?) AS other_key_version_instances
+FROM instances`, currentKeyVersion, currentKeyVersion).Scan(snapshot).Error; err != nil {
+		return nil, fmt.Errorf("read instance credential coverage: %w", err)
+	}
+	if err := i.credentialDB().WithContext(ctx).Raw(`SELECT
+    COALESCE(SUM(lookup_count), 0) AS fallback_lookups,
+    COUNT(DISTINCT instance_id) AS fallback_affected_instances,
+    MIN(first_used_at) AS first_fallback_at,
+    MAX(last_used_at) AS last_fallback_at
+FROM instance_token_fallback_usage`).Scan(snapshot).Error; err != nil {
+		return nil, fmt.Errorf("read instance token fallback usage: %w", err)
+	}
+	return snapshot, nil
 }
 
 func (i *instanceRepository) GetInstanceByName(name string) (*instance_model.Instance, error) {

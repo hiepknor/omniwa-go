@@ -664,6 +664,24 @@ CREATE TABLE instance_token_rotation_audit (
 CREATE INDEX instance_token_rotation_audit_history_idx
 ON instance_token_rotation_audit (instance_id, occurred_at DESC, id DESC);`,
 	},
+	{
+		Version: 20,
+		Name:    "measure_instance_token_plaintext_fallback",
+		SQL: `CREATE TABLE instance_token_fallback_usage (
+    instance_id UUID NOT NULL,
+    key_version INTEGER NOT NULL,
+    lookup_count BIGINT NOT NULL DEFAULT 1,
+    first_used_at TIMESTAMPTZ NOT NULL,
+    last_used_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (instance_id, key_version),
+    CONSTRAINT instance_token_fallback_usage_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT instance_token_fallback_usage_key_version_check CHECK (key_version > 0),
+    CONSTRAINT instance_token_fallback_usage_lookup_count_check CHECK (lookup_count > 0),
+    CONSTRAINT instance_token_fallback_usage_time_check CHECK (last_used_at >= first_used_at)
+);
+CREATE INDEX instance_token_fallback_usage_last_used_idx
+ON instance_token_fallback_usage (last_used_at DESC, instance_id);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

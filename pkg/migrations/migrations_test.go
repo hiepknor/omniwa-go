@@ -5,6 +5,17 @@ import (
 	"testing"
 )
 
+func registeredMigration(t *testing.T, version int64) Migration {
+	t.Helper()
+	for _, migration := range registry {
+		if migration.Version == version {
+			return migration
+		}
+	}
+	t.Fatalf("migration version %d is not registered", version)
+	return Migration{}
+}
+
 func TestRegistryIsOrderedAndImmutableInputIsChecksummed(t *testing.T) {
 	if err := validateRegistry(registry); err != nil {
 		t.Fatal(err)
@@ -81,7 +92,7 @@ func TestProjectionOverviewWindowIndexesAreVersioned(t *testing.T) {
 }
 
 func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
-	migration := registry[len(registry)-8]
+	migration := registeredMigration(t, 12)
 	if migration.Version != 12 || migration.Name != "create_campaign_persistence" {
 		t.Fatalf("campaign migration = %#v", migration)
 	}
@@ -96,7 +107,7 @@ func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
 }
 
 func TestContactsSearchIndexesAreVersioned(t *testing.T) {
-	migration := registry[len(registry)-7]
+	migration := registeredMigration(t, 13)
 	if migration.Version != 13 || migration.Name != "index_contacts_projection_search" {
 		t.Fatalf("contacts search migration = %#v", migration)
 	}
@@ -111,7 +122,7 @@ func TestContactsSearchIndexesAreVersioned(t *testing.T) {
 }
 
 func TestGroupsSearchIndexesAreVersioned(t *testing.T) {
-	migration := registry[len(registry)-6]
+	migration := registeredMigration(t, 14)
 	if migration.Version != 14 || migration.Name != "index_groups_projection_search" {
 		t.Fatalf("groups search migration = %#v", migration)
 	}
@@ -123,7 +134,7 @@ func TestGroupsSearchIndexesAreVersioned(t *testing.T) {
 }
 
 func TestProjectionFailureMetadataMigrationIsAdditiveAndIndexed(t *testing.T) {
-	migration := registry[len(registry)-5]
+	migration := registeredMigration(t, 15)
 	if migration.Version != 15 || migration.Name != "add_projection_event_failure_metadata" {
 		t.Fatalf("projection failure migration = %#v", migration)
 	}
@@ -139,7 +150,7 @@ func TestProjectionFailureMetadataMigrationIsAdditiveAndIndexed(t *testing.T) {
 }
 
 func TestProjectionWorkHealthIndexIsVersionedAndPartial(t *testing.T) {
-	migration := registry[len(registry)-4]
+	migration := registeredMigration(t, 16)
 	if migration.Version != 16 || migration.Name != "index_projection_work_health" {
 		t.Fatalf("projection work health migration = %#v", migration)
 	}
@@ -153,7 +164,7 @@ func TestProjectionWorkHealthIndexIsVersionedAndPartial(t *testing.T) {
 }
 
 func TestProjectionFailureOperationsMigrationIsAuditedAndTerminal(t *testing.T) {
-	migration := registry[len(registry)-3]
+	migration := registeredMigration(t, 17)
 	if migration.Version != 17 || migration.Name != "create_projection_failure_operations" {
 		t.Fatalf("projection failure operations migration = %#v", migration)
 	}
@@ -170,7 +181,7 @@ func TestProjectionFailureOperationsMigrationIsAuditedAndTerminal(t *testing.T) 
 }
 
 func TestInstanceTokenDigestMigrationIsAdditiveAndConstrained(t *testing.T) {
-	migration := registry[len(registry)-2]
+	migration := registeredMigration(t, 18)
 	if migration.Version != 18 || migration.Name != "add_instance_token_lookup_digests" {
 		t.Fatalf("instance token digest migration = %#v", migration)
 	}
@@ -185,7 +196,7 @@ func TestInstanceTokenDigestMigrationIsAdditiveAndConstrained(t *testing.T) {
 }
 
 func TestInstanceTokenRotationMigrationUsesCASAndSafeAudit(t *testing.T) {
-	migration := registry[len(registry)-1]
+	migration := registeredMigration(t, 19)
 	if migration.Version != 19 || migration.Name != "create_instance_token_rotation_audit" {
 		t.Fatalf("instance token rotation migration = %#v", migration)
 	}
@@ -196,6 +207,27 @@ func TestInstanceTokenRotationMigrationUsesCASAndSafeAudit(t *testing.T) {
 	} {
 		if !strings.Contains(migration.SQL, expected) {
 			t.Fatalf("instance token rotation migration does not contain %q", expected)
+		}
+	}
+}
+
+func TestInstanceTokenFallbackMigrationIsBoundedAndSecretFree(t *testing.T) {
+	migration := registeredMigration(t, 20)
+	if migration.Version != 20 || migration.Name != "measure_instance_token_plaintext_fallback" {
+		t.Fatalf("instance token fallback migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"CREATE TABLE instance_token_fallback_usage", "PRIMARY KEY (instance_id, key_version)",
+		"lookup_count BIGINT", "first_used_at", "last_used_at", "ON DELETE CASCADE",
+		"instance_token_fallback_usage_last_used_idx",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("instance token fallback migration does not contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{" token ", "token_digest", "actor_reference_hash"} {
+		if strings.Contains(strings.ToLower(migration.SQL), forbidden) {
+			t.Fatalf("instance token fallback migration contains secret-bearing field %q", forbidden)
 		}
 	}
 }

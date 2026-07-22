@@ -80,6 +80,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		{
 			routes.POST("/create", r.instanceHandler.Create)
 			routes.POST("/rotate-token/:instanceId", r.instanceHandler.RotateToken)
+			routes.GET("/credential-health", r.instanceHandler.CredentialHealth)
 			routes.GET("/all", r.instanceHandler.All)
 			routes.GET("/info/:instanceId", r.instanceHandler.Info)
 			routes.DELETE("/delete/:instanceId", r.instanceHandler.Delete)
