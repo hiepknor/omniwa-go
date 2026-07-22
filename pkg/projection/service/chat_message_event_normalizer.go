@@ -171,11 +171,11 @@ func populateNormalizedMessage(payload *messageEventPayload, infoType string, me
 	var contextInfo *waE2E.ContextInfo
 	switch {
 	case message.GetConversation() != "":
-		payload.MessageType = messageTypeOr(payload.MessageType, "text")
+		payload.MessageType = "text"
 		payload.ContentText = boundedTextPointer(message.GetConversation(), 32*1024)
 	case message.GetExtendedTextMessage() != nil:
 		item := message.GetExtendedTextMessage()
-		payload.MessageType = messageTypeOr(payload.MessageType, "text")
+		payload.MessageType = "text"
 		payload.ContentText = boundedTextPointer(item.GetText(), 32*1024)
 		contextInfo = item.GetContextInfo()
 	case message.GetImageMessage() != nil:
@@ -269,13 +269,6 @@ func normalizedReceiptType(value types.ReceiptType) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func messageTypeOr(value, fallback string) string {
-	if value != "" {
-		return value
-	}
-	return fallback
 }
 
 func boundedStringPointer(value string, limit int) *string {

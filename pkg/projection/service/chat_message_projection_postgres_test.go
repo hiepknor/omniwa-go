@@ -96,4 +96,31 @@ func TestChatMessageProjectionPostgresReceiptBeforeMessageConverges(t *testing.T
 	if err != nil || chat.LastMessageAt == nil || !chat.LastMessageAt.Equal(messageAt) {
 		t.Fatalf("converged projected chat = %#v, %v", chat, err)
 	}
+
+	writeThroughAt := time.Unix(1_000, 0).UTC()
+	writeThroughInfo := types.MessageInfo{
+		MessageSource: types.MessageSource{
+			Chat: types.NewJID("15550002", types.DefaultUserServer), Sender: types.NewJID("self", types.DefaultUserServer), IsFromMe: true,
+		},
+		ID: "message-write-through", Type: "ExtendedTextMessage", Timestamp: writeThroughAt,
+	}
+	writeThroughMessage := &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("confirmed outbound")}}
+	if err := NewMessageWriteThrough(projector).WriteSent(context.Background(), instance.Id, writeThroughInfo, writeThroughMessage); err != nil {
+		t.Fatal(err)
+	}
+	echoEvent, _, err := NormalizeChatMessageEvent(instance.Id, &events.Message{Info: writeThroughInfo, Message: writeThroughMessage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := projector.Handle(context.Background(), echoEvent); err != nil {
+		t.Fatal(err)
+	}
+	var writeThroughCount int64
+	if err := db.Table("projected_messages").Where("instance_id = ? AND message_id = ?", instance.Id, writeThroughInfo.ID).Count(&writeThroughCount).Error; err != nil || writeThroughCount != 1 {
+		t.Fatalf("write-through/echo message count = %d, %v", writeThroughCount, err)
+	}
+	storedWriteThrough, err := projectionRepository.GetMessage(context.Background(), instance.Id, string(writeThroughInfo.ID))
+	if err != nil || storedWriteThrough.ContentText == nil || *storedWriteThrough.ContentText != "confirmed outbound" || !storedWriteThrough.ProviderTimestamp.Equal(writeThroughAt) {
+		t.Fatalf("write-through/echo message = %#v, %v", storedWriteThrough, err)
+	}
 }

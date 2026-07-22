@@ -299,7 +299,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		identityResolver,
 		loggerWrapper,
 	)
-	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, loggerWrapper)
+	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), loggerWrapper)
 	userService := user_service.NewUserService(clientPointer, whatsmeowService, queryGuard, identityResolver, contactReader, loggerWrapper)
 	messageService := message_service.NewMessageService(clientPointer, messageRepository, whatsmeowService, loggerWrapper)
 	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)
