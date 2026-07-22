@@ -57,6 +57,29 @@ type Guard interface {
 	Snapshot(instanceID string) (Snapshot, bool)
 }
 
+// Do converts the untyped Guard boundary into a type-safe call for services.
+// Keeping the Guard interface untyped allows tests and alternate implementations
+// to remain simple while preventing repeated assertions at every call site.
+func Do[T any](ctx context.Context, guard Guard, instanceID, operation, resource string, query func(context.Context) (T, error)) (T, error) {
+	var zero T
+	if guard == nil {
+		return zero, errors.New("WhatsApp information query guard is required")
+	}
+
+	value, err := guard.Do(ctx, instanceID, operation, resource, func(queryCtx context.Context) (any, error) {
+		return query(queryCtx)
+	})
+	if err != nil {
+		return zero, err
+	}
+
+	typed, ok := value.(T)
+	if !ok {
+		return zero, fmt.Errorf("unexpected WhatsApp information query result type %T", value)
+	}
+	return typed, nil
+}
+
 type Snapshot struct {
 	CircuitState CircuitState
 	OpenUntil    time.Time

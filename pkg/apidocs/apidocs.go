@@ -30,6 +30,15 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"phone number is required"`
 }
 
+// RateLimitResponse is returned when an information query cannot safely reach
+// WhatsApp. Code and RetryAfter are additive fields; Error remains a string for
+// compatibility with existing clients.
+type RateLimitResponse struct {
+	Error      string `json:"error" example:"rate_limited"`
+	Code       string `json:"code,omitempty" example:"rate_limited"`
+	RetryAfter int    `json:"retryAfter,omitempty" example:"90"`
+}
+
 // CreateInstanceResponse is returned by POST /instance/create. `data` is the
 // full instance record, including the per-instance `token` that becomes the
 // `apikey` header for every per-instance route.

@@ -25,6 +25,7 @@ import (
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
+	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"github.com/gabriel-vasile/mimetype"
 	"go.mau.fi/whatsmeow"
@@ -57,6 +58,7 @@ type sendService struct {
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	config           *config.Config
 	loggerWrapper    *logger_wrapper.LoggerManager
+	queryGuard       waquery.Guard
 }
 
 type SendDataStruct struct {
@@ -571,7 +573,9 @@ func (s *sendService) checkSingleUserExists(client *whatsmeow.Client, phone stri
 	}
 
 	// Check if the number exists on WhatsApp
-	resp, err := client.IsOnWhatsApp(context.Background(), phoneNumbers)
+	resp, err := waquery.Do(context.Background(), s.queryGuard, instanceId, waquery.OperationUserExists, waquery.ResourceKey(phoneNumbers...), func(queryCtx context.Context) ([]types.IsOnWhatsAppResponse, error) {
+		return client.IsOnWhatsApp(queryCtx, phoneNumbers)
+	})
 	if err != nil {
 		return "", false, fmt.Errorf("failed to check if number %s exists on WhatsApp: %v", phoneNumbers[0], err)
 	}
@@ -2631,7 +2635,9 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	// Only try to get participants for actual groups, not newsletters
 	if isGroup && !isNewsletter {
 		if data.MentionAll {
-			groupInfo, err := s.clientPointer[instance.Id].GetGroupInfo(context.Background(), recipient)
+			groupInfo, err := waquery.Do(context.Background(), s.queryGuard, instance.Id, waquery.OperationGroupInfo, recipient.String(), func(queryCtx context.Context) (*types.GroupInfo, error) {
+				return s.clientPointer[instance.Id].GetGroupInfo(queryCtx, recipient)
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -3369,12 +3375,14 @@ func NewSendService(
 	clientPointer map[string]*whatsmeow.Client,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	config *config.Config,
+	queryGuard waquery.Guard,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) SendService {
 	return &sendService{
 		clientPointer:    clientPointer,
 		whatsmeowService: whatsmeowService,
 		config:           config,
+		queryGuard:       queryGuard,
 		loggerWrapper:    loggerWrapper,
 	}
 }

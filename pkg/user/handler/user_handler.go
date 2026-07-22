@@ -3,6 +3,7 @@ package user_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,7 @@ type userHandler struct {
 // @Success 200 {object} apidocs.SuccessResponse{data=user_service.UserCollection} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /user/info [post]
 func (u *userHandler) GetUser(ctx *gin.Context) {
@@ -60,8 +62,11 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 		return
 	}
 
-	uc, err := u.userService.GetUser(data, instance)
+	uc, err := u.userService.GetUser(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -79,6 +84,7 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SuccessResponse{data=user_service.CheckUserCollection} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /user/check [post]
 func (u *userHandler) CheckUser(ctx *gin.Context) {
@@ -102,8 +108,11 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 		return
 	}
 
-	uc, err := u.userService.CheckUser(data, instance)
+	uc, err := u.userService.CheckUser(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -121,6 +130,7 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SuccessResponse{data=types.ProfilePictureInfo} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /user/avatar [post]
 func (u *userHandler) GetAvatar(ctx *gin.Context) {
@@ -149,8 +159,11 @@ func (u *userHandler) GetAvatar(ctx *gin.Context) {
 		return
 	}
 
-	pic, err := u.userService.GetAvatar(data, instance)
+	pic, err := u.userService.GetAvatar(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -194,6 +207,7 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 // @Produce json
 // @Success 200 {object} apidocs.SuccessResponse{data=types.PrivacySettings} "success"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /user/privacy [get]
 func (u *userHandler) GetPrivacy(ctx *gin.Context) {
@@ -205,8 +219,11 @@ func (u *userHandler) GetPrivacy(ctx *gin.Context) {
 		return
 	}
 
-	privacy, err := u.userService.GetPrivacy(instance)
+	privacy, err := u.userService.GetPrivacy(ctx.Request.Context(), instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -223,6 +240,7 @@ func (u *userHandler) GetPrivacy(ctx *gin.Context) {
 // @Param message body user_service.PrivacyStruct true "Privacy data"
 // @Success 200 {object} apidocs.SuccessResponse{data=types.PrivacySettings} "success"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /user/privacy [post]
 func (u *userHandler) SetPrivacy(ctx *gin.Context) {
@@ -276,8 +294,11 @@ func (u *userHandler) SetPrivacy(ctx *gin.Context) {
 		return
 	}
 
-	privacy, err := u.userService.SetPrivacy(data, instance)
+	privacy, err := u.userService.SetPrivacy(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -387,6 +408,7 @@ func (u *userHandler) UnblockContact(ctx *gin.Context) {
 // @Produce json
 // @Success 200 {object} apidocs.SuccessResponse{data=types.Blocklist} "success"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /user/blocklist [get]
 func (u *userHandler) GetBlockList(ctx *gin.Context) {
@@ -398,8 +420,11 @@ func (u *userHandler) GetBlockList(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := u.userService.GetBlockList(instance)
+	resp, err := u.userService.GetBlockList(ctx.Request.Context(), instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

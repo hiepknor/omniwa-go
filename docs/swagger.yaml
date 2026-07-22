@@ -194,6 +194,18 @@ definitions:
         example: success
         type: string
     type: object
+  apidocs.RateLimitResponse:
+    properties:
+      code:
+        example: rate_limited
+        type: string
+      error:
+        example: rate_limited
+        type: string
+      retryAfter:
+        example: 90
+        type: integer
+    type: object
   apidocs.SendMessageData:
     properties:
       ID:
@@ -8188,6 +8200,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -8225,6 +8241,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -8317,6 +8337,10 @@ paths:
                     $ref: '#/definitions/types.GroupInfo'
                   type: array
               type: object
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -8345,6 +8369,10 @@ paths:
                     $ref: '#/definitions/types.GroupInfo'
                   type: array
               type: object
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9481,6 +9509,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9518,6 +9550,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9546,6 +9582,10 @@ paths:
                     $ref: '#/definitions/types.NewsletterMetadata'
                   type: array
               type: object
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9585,6 +9625,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9811,6 +9855,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9859,6 +9907,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9891,6 +9943,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9923,6 +9979,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9962,6 +10022,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -9994,6 +10058,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10026,6 +10094,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10058,6 +10130,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10171,6 +10247,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10203,6 +10283,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10304,6 +10388,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10367,6 +10455,10 @@ paths:
                 data:
                   $ref: '#/definitions/types.Blocklist'
               type: object
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10404,6 +10496,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10469,6 +10565,10 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10495,6 +10595,10 @@ paths:
                 data:
                   $ref: '#/definitions/types.PrivacySettings'
               type: object
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:
@@ -10527,6 +10631,10 @@ paths:
                 data:
                   $ref: '#/definitions/types.PrivacySettings'
               type: object
+        "429":
+          description: Information query rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
           schema:

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,13 @@ type sendHandler struct {
 	sendMessageService send_service.SendService
 }
 
+func writeServiceError(ctx *gin.Context, err error) {
+	if httpapi.WriteRateLimit(ctx, err) {
+		return
+	}
+	ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+}
+
 // Send a text message
 // @Summary Send a text message
 // @Description Send a text message
@@ -42,6 +50,7 @@ type sendHandler struct {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/text [post]
 func (s *sendHandler) SendText(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -71,7 +80,7 @@ func (s *sendHandler) SendText(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendText(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -89,6 +98,7 @@ func (s *sendHandler) SendText(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/link [post]
 func (s *sendHandler) SendLink(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -118,7 +128,7 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendLink(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -136,6 +146,7 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/media [post]
 func (s *sendHandler) SendMedia(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -231,7 +242,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 		// Pass fileBytes to the send service
 		message, err := s.sendMessageService.SendMediaFile(data, fileBytes, instance)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			writeServiceError(ctx, err)
 			return
 		}
 
@@ -271,13 +282,13 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 			}
 			message, err = s.sendMessageService.SendMediaFile(data, fileBytes, instance)
 			if err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				writeServiceError(ctx, err)
 				return
 			}
 		} else {
 			message, err = s.sendMessageService.SendMediaUrl(data, instance)
 			if err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				writeServiceError(ctx, err)
 				return
 			}
 		}
@@ -297,6 +308,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/poll [post]
 func (s *sendHandler) SendPoll(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -331,7 +343,7 @@ func (s *sendHandler) SendPoll(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendPoll(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -349,6 +361,7 @@ func (s *sendHandler) SendPoll(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/sticker [post]
 func (s *sendHandler) SendSticker(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -378,7 +391,7 @@ func (s *sendHandler) SendSticker(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendSticker(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -396,6 +409,7 @@ func (s *sendHandler) SendSticker(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/location [post]
 func (s *sendHandler) SendLocation(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -440,7 +454,7 @@ func (s *sendHandler) SendLocation(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendLocation(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -458,6 +472,7 @@ func (s *sendHandler) SendLocation(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/contact [post]
 func (s *sendHandler) SendContact(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -492,7 +507,7 @@ func (s *sendHandler) SendContact(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendContact(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -521,6 +536,7 @@ func (s *sendHandler) SendContact(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/button [post]
 func (s *sendHandler) SendButton(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -560,7 +576,7 @@ func (s *sendHandler) SendButton(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendButton(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -584,6 +600,7 @@ func (s *sendHandler) SendButton(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/list [post]
 func (s *sendHandler) SendList(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -628,7 +645,7 @@ func (s *sendHandler) SendList(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendList(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -661,6 +678,7 @@ func (s *sendHandler) SendList(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Router /send/carousel [post]
 func (s *sendHandler) SendCarousel(ctx *gin.Context) {
 	getInstance := ctx.MustGet("instance")
@@ -690,7 +708,7 @@ func (s *sendHandler) SendCarousel(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendCarousel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -732,7 +750,7 @@ func (s *sendHandler) SendStatusText(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendStatusText(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 
@@ -809,7 +827,7 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 		message, err := s.sendMessageService.SendStatusMediaFile(data, fileBytes, instance)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			writeServiceError(ctx, err)
 			return
 		}
 
@@ -835,7 +853,7 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendStatusMediaUrl(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeServiceError(ctx, err)
 		return
 	}
 

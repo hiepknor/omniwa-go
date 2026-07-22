@@ -3,6 +3,7 @@ package newsletter_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	newsletter_service "github.com/evolution-foundation/evolution-go/pkg/newsletter/service"
 	"github.com/gin-gonic/gin"
@@ -71,6 +72,7 @@ func (n *newsletterHandler) CreateNewsletter(ctx *gin.Context) {
 // @Produce json
 // @Success 200 {object} apidocs.SuccessResponse{data=[]types.NewsletterMetadata} "success"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /newsletter/list [get]
 func (n *newsletterHandler) ListNewsletter(ctx *gin.Context) {
@@ -82,8 +84,11 @@ func (n *newsletterHandler) ListNewsletter(ctx *gin.Context) {
 		return
 	}
 
-	newsletters, err := n.newsletterService.ListNewsletter(instance)
+	newsletters, err := n.newsletterService.ListNewsletter(ctx.Request.Context(), instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -101,6 +106,7 @@ func (n *newsletterHandler) ListNewsletter(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SuccessResponse{data=types.NewsletterMetadata} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /newsletter/info [post]
 func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
@@ -124,8 +130,11 @@ func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 		return
 	}
 
-	newsletter, err := n.newsletterService.GetNewsletter(data, instance)
+	newsletter, err := n.newsletterService.GetNewsletter(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -143,6 +152,7 @@ func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SuccessResponse{data=types.NewsletterMetadata} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /newsletter/link [post]
 func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
@@ -166,8 +176,11 @@ func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
 		return
 	}
 
-	newsletter, err := n.newsletterService.GetNewsletterInvite(data, instance)
+	newsletter, err := n.newsletterService.GetNewsletterInvite(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -227,6 +240,7 @@ func (n *newsletterHandler) SubscribeNewsletter(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SuccessResponse{data=[]types.NewsletterMessage} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /newsletter/messages [post]
 func (n *newsletterHandler) GetNewsletterMessages(ctx *gin.Context) {
@@ -250,8 +264,11 @@ func (n *newsletterHandler) GetNewsletterMessages(ctx *gin.Context) {
 		return
 	}
 
-	messages, err := n.newsletterService.GetNewsletterMessages(data, instance)
+	messages, err := n.newsletterService.GetNewsletterMessages(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

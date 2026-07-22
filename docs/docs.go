@@ -816,6 +816,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -877,6 +883,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -1030,6 +1042,12 @@ const docTemplate = `{
                             ]
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -1077,6 +1095,12 @@ const docTemplate = `{
                                     }
                                 }
                             ]
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -2920,6 +2944,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -2983,6 +3013,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -3030,6 +3066,12 @@ const docTemplate = `{
                                     }
                                 }
                             ]
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -3096,6 +3138,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -3420,6 +3468,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -3469,6 +3523,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -3522,6 +3582,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -3571,6 +3637,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -3624,6 +3696,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -3673,6 +3751,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -3726,6 +3810,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -3775,6 +3865,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -3953,6 +4049,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -4002,6 +4104,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -4169,6 +4277,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -4278,6 +4392,12 @@ const docTemplate = `{
                             ]
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -4339,6 +4459,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -4453,6 +4579,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -4497,6 +4629,12 @@ const docTemplate = `{
                                     }
                                 }
                             ]
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -4552,6 +4690,12 @@ const docTemplate = `{
                                     }
                                 }
                             ]
+                        }
+                    },
+                    "429": {
+                        "description": "Information query rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -5065,6 +5209,23 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "success"
+                }
+            }
+        },
+        "apidocs.RateLimitResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "rate_limited"
+                },
+                "error": {
+                    "type": "string",
+                    "example": "rate_limited"
+                },
+                "retryAfter": {
+                    "type": "integer",
+                    "example": 90
                 }
             }
         },
