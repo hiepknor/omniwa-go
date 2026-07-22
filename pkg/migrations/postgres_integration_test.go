@@ -157,6 +157,103 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		storedIdentity.ContactID != contact.ContactID {
 		t.Fatalf("stored contact identity after reconnect = %#v, %v", storedIdentity, err)
 	}
+	contactRepository := projection_repository.NewContactRepository(reopened)
+	fullName := "First version"
+	projectedContact, applied, err := contactRepository.Apply(context.Background(), projection_repository.ContactPatch{
+		InstanceID: instance.Id, Identities: []projection_repository.ContactIdentityRef{{Kind: projection_model.ContactIdentityKindPhoneJID, Value: "merge@s.whatsapp.net"}},
+		Aspect: projection_repository.ContactAspectDetails, OccurredAt: time.Unix(800, 0), EventKey: "contact-800", FullName: &fullName,
+	})
+	if err != nil || !applied || projectedContact.FullName == nil || *projectedContact.FullName != fullName {
+		t.Fatalf("initial projected contact = %#v, %v, %v", projectedContact, applied, err)
+	}
+	pushName := "Newest push"
+	projectedContact, applied, err = contactRepository.Apply(context.Background(), projection_repository.ContactPatch{
+		InstanceID: instance.Id, Identities: []projection_repository.ContactIdentityRef{{Kind: projection_model.ContactIdentityKindPhoneJID, Value: "merge@s.whatsapp.net"}},
+		Aspect: projection_repository.ContactAspectPushName, OccurredAt: time.Unix(1000, 0), EventKey: "push-1000", PushName: &pushName,
+	})
+	if err != nil || !applied || projectedContact.PushName == nil || *projectedContact.PushName != pushName {
+		t.Fatalf("projected push name = %#v, %v, %v", projectedContact, applied, err)
+	}
+	lateFullName := "Valid late contact details"
+	projectedContact, applied, err = contactRepository.Apply(context.Background(), projection_repository.ContactPatch{
+		InstanceID: instance.Id, Identities: []projection_repository.ContactIdentityRef{{Kind: projection_model.ContactIdentityKindPhoneJID, Value: "merge@s.whatsapp.net"}},
+		Aspect: projection_repository.ContactAspectDetails, OccurredAt: time.Unix(900, 0), EventKey: "contact-900", FullName: &lateFullName,
+	})
+	if err != nil || !applied || projectedContact.FullName == nil || *projectedContact.FullName != lateFullName || projectedContact.PushName == nil || *projectedContact.PushName != pushName {
+		t.Fatalf("independently ordered contact = %#v, %v, %v", projectedContact, applied, err)
+	}
+	stalePush := "Stale push"
+	projectedContact, applied, err = contactRepository.Apply(context.Background(), projection_repository.ContactPatch{
+		InstanceID: instance.Id, Identities: []projection_repository.ContactIdentityRef{{Kind: projection_model.ContactIdentityKindPhoneJID, Value: "merge@s.whatsapp.net"}},
+		Aspect: projection_repository.ContactAspectPushName, OccurredAt: time.Unix(950, 0), EventKey: "push-950", PushName: &stalePush,
+	})
+	if err != nil || applied || projectedContact.PushName == nil || *projectedContact.PushName != pushName {
+		t.Fatalf("stale push-name result = %#v, %v, %v", projectedContact, applied, err)
+	}
+	lidPush := "LID push"
+	lidContact, applied, err := contactRepository.Apply(context.Background(), projection_repository.ContactPatch{
+		InstanceID: instance.Id, Identities: []projection_repository.ContactIdentityRef{{Kind: projection_model.ContactIdentityKindLID, Value: "merge@lid"}},
+		Aspect: projection_repository.ContactAspectPushName, OccurredAt: time.Unix(1100, 0), EventKey: "lid-push-1100", PushName: &lidPush,
+	})
+	if err != nil || !applied || lidContact.ContactID == projectedContact.ContactID {
+		t.Fatalf("independent LID contact = %#v, %v, %v", lidContact, applied, err)
+	}
+	linkedName := "Linked contact"
+	linked, applied, err := contactRepository.Apply(context.Background(), projection_repository.ContactPatch{
+		InstanceID: instance.Id,
+		Identities: []projection_repository.ContactIdentityRef{
+			{Kind: projection_model.ContactIdentityKindPhoneJID, Value: "merge@s.whatsapp.net"},
+			{Kind: projection_model.ContactIdentityKindLID, Value: "merge@lid"},
+		},
+		Aspect: projection_repository.ContactAspectDetails, OccurredAt: time.Unix(1200, 0), EventKey: "link-1200", FullName: &linkedName,
+	})
+	if err != nil || !applied || linked.FullName == nil || *linked.FullName != linkedName || linked.PushName == nil || *linked.PushName != lidPush {
+		t.Fatalf("merged contact = %#v, %v, %v", linked, applied, err)
+	}
+	byPhone, phoneErr := contactRepository.GetByIdentity(context.Background(), instance.Id, projection_model.ContactIdentityKindPhoneJID, "merge@s.whatsapp.net")
+	byLID, lidErr := contactRepository.GetByIdentity(context.Background(), instance.Id, projection_model.ContactIdentityKindLID, "merge@lid")
+	if phoneErr != nil || lidErr != nil || byPhone.ContactID != linked.ContactID || byLID.ContactID != linked.ContactID {
+		t.Fatalf("merged aliases = phone %#v, LID %#v, errors %v/%v", byPhone, byLID, phoneErr, lidErr)
+	}
+	const concurrentContactWrites = 20
+	concurrentErrors := make(chan error, concurrentContactWrites)
+	concurrentIDs := make(chan string, concurrentContactWrites)
+	var concurrentContactWait sync.WaitGroup
+	for index := 0; index < concurrentContactWrites; index++ {
+		concurrentContactWait.Add(1)
+		go func() {
+			defer concurrentContactWait.Done()
+			name := "Concurrent contact"
+			contact, _, applyErr := contactRepository.Apply(context.Background(), projection_repository.ContactPatch{
+				InstanceID: instance.Id, Identities: []projection_repository.ContactIdentityRef{{Kind: projection_model.ContactIdentityKindJID, Value: "concurrent@s.whatsapp.net"}},
+				Aspect: projection_repository.ContactAspectDetails, OccurredAt: time.Unix(1300, 0), EventKey: "concurrent-1300", FullName: &name,
+			})
+			if applyErr != nil {
+				concurrentErrors <- applyErr
+				return
+			}
+			concurrentIDs <- contact.ContactID
+		}()
+	}
+	concurrentContactWait.Wait()
+	close(concurrentErrors)
+	close(concurrentIDs)
+	for applyErr := range concurrentErrors {
+		t.Fatal(applyErr)
+	}
+	var concurrentContactID string
+	for contactID := range concurrentIDs {
+		if concurrentContactID == "" {
+			concurrentContactID = contactID
+		}
+		if contactID != concurrentContactID {
+			t.Fatalf("concurrent alias created multiple contacts: %s and %s", concurrentContactID, contactID)
+		}
+	}
+	var concurrentContactCount int64
+	if err := reopened.Model(&projection_model.Contact{}).Where("instance_id = ? AND preferred_jid = ?", instance.Id, "concurrent@s.whatsapp.net").Count(&concurrentContactCount).Error; err != nil || concurrentContactCount != 1 {
+		t.Fatalf("concurrent projected contact count = %d, %v", concurrentContactCount, err)
+	}
 	stored, err := projection_repository.NewStateRepository(reopened).Get(instance.Id, "groups")
 	if err != nil {
 		t.Fatal(err)
