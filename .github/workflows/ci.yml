@@ -75,5 +75,4 @@ jobs:
           go run github.com/zricethezav/gitleaks/v8@v8.30.1 dir
           --redact
           --exit-code 1
-          --baseline-path .gitleaks-baseline.json
           .

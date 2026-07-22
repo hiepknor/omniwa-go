@@ -213,9 +213,9 @@ The required `build / vet / test` CI check also runs the full test suite against
 a real PostgreSQL service, the race detector, `govulncheck`, deterministic
 Swagger regeneration, and a committed-secret scan. These gates are mandatory
 for every pull request; risk-specific local checks supplement them rather than
-replace them. The redacted Gitleaks baseline records only pre-existing fixture
-and documentation findings. Review any baseline change as security-sensitive;
-never update it merely to make CI pass.
+replace them. The .gitleaksignore file records only the fingerprints of
+pre-existing fixture and documentation findings. Review any ignore-list change
+as security-sensitive; never update it merely to make CI pass.
 
 ## 10. Mandatory self-review
 
