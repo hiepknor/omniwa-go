@@ -12,6 +12,7 @@ import (
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
+	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"github.com/gin-gonic/gin"
 	"github.com/vincent-petithory/dataurl"
@@ -20,18 +21,18 @@ import (
 )
 
 type GroupService interface {
-	ListGroups(instance *instance_model.Instance) ([]*types.GroupInfo, error)
-	GetGroupInfo(data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error)
-	GetGroupInviteLink(data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error)
+	ListGroups(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, error)
+	GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error)
+	GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error)
 	SetGroupPhoto(data *SetGroupPhotoStruct, instance *instance_model.Instance) (string, error)
 	SetGroupName(data *SetGroupNameStruct, instance *instance_model.Instance) error
 	SetGroupDescription(data *SetGroupDescriptionStruct, instance *instance_model.Instance) error
-	CreateGroup(data *CreateGroupStruct, instance *instance_model.Instance) (gin.H, error)
+	CreateGroup(ctx context.Context, data *CreateGroupStruct, instance *instance_model.Instance) (gin.H, error)
 	UpdateParticipant(data *AddParticipantStruct, instance *instance_model.Instance) error
 	UpdateGroupSettings(data *UpdateGroupSettingsStruct, instance *instance_model.Instance) error
-	GetGroupRequestParticipants(data *GetGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]EnrichedGroupParticipantRequest, error)
+	GetGroupRequestParticipants(ctx context.Context, data *GetGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]EnrichedGroupParticipantRequest, error)
 	UpdateGroupRequestParticipants(data *UpdateGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]types.GroupParticipant, error)
-	GetMyGroups(instance *instance_model.Instance) ([]types.GroupInfo, error)
+	GetMyGroups(ctx context.Context, instance *instance_model.Instance) ([]types.GroupInfo, error)
 	JoinGroupLink(data *JoinGroupStruct, instance *instance_model.Instance) error
 	LeaveGroup(data *LeaveGroupStruct, instance *instance_model.Instance) error
 }
@@ -40,6 +41,7 @@ type groupService struct {
 	clientPointer    map[string]*whatsmeow.Client
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
+	queryGuard       waquery.Guard
 }
 
 type SimpleGroupInfo struct {
@@ -155,13 +157,13 @@ func (g *groupService) ensureClientConnected(instanceId string) (*whatsmeow.Clie
 	return client, nil
 }
 
-func (g *groupService) ListGroups(instance *instance_model.Instance) ([]*types.GroupInfo, error) {
+func (g *groupService) ListGroups(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, error) {
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.GetJoinedGroups(context.Background())
+	resp, err := waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupsList, "", client.GetJoinedGroups)
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error getting groups: %v", instance.Id, err)
 		return nil, err
@@ -179,7 +181,7 @@ func (g *groupService) ListGroups(instance *instance_model.Instance) ([]*types.G
 	return resp, nil
 }
 
-func (g *groupService) GetGroupInfo(data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error) {
+func (g *groupService) GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error) {
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
@@ -191,7 +193,9 @@ func (g *groupService) GetGroupInfo(data *GetGroupInfoStruct, instance *instance
 		return nil, errors.New("invalid group jid")
 	}
 
-	resp, err := client.GetGroupInfo(context.Background(), recipient)
+	resp, err := waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupInfo, recipient.String(), func(queryCtx context.Context) (*types.GroupInfo, error) {
+		return client.GetGroupInfo(queryCtx, recipient)
+	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error mute chat: %v", instance.Id, err)
 		return nil, err
@@ -200,7 +204,7 @@ func (g *groupService) GetGroupInfo(data *GetGroupInfoStruct, instance *instance
 	return resp, nil
 }
 
-func (g *groupService) GetGroupInviteLink(data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {
+func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
 		return "", err
@@ -212,7 +216,16 @@ func (g *groupService) GetGroupInviteLink(data *GetGroupInviteLinkStruct, instan
 		return "", errors.New("invalid group jid")
 	}
 
-	resp, err := client.GetGroupInviteLink(context.Background(), recipient, data.Reset)
+	var resp string
+	if data.Reset {
+		// Reset is a mutation, so it must never be single-flighted or consume the
+		// information-query budget.
+		resp, err = client.GetGroupInviteLink(ctx, recipient, true)
+	} else {
+		resp, err = waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupInviteLink, recipient.String(), func(queryCtx context.Context) (string, error) {
+			return client.GetGroupInviteLink(queryCtx, recipient, false)
+		})
+	}
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error mute chat: %v", instance.Id, err)
 		return "", err
@@ -328,7 +341,7 @@ func (g *groupService) SetGroupDescription(data *SetGroupDescriptionStruct, inst
 	return nil
 }
 
-func (g *groupService) CreateGroup(data *CreateGroupStruct, instance *instance_model.Instance) (gin.H, error) {
+func (g *groupService) CreateGroup(ctx context.Context, data *CreateGroupStruct, instance *instance_model.Instance) (gin.H, error) {
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
@@ -344,7 +357,7 @@ func (g *groupService) CreateGroup(data *CreateGroupStruct, instance *instance_m
 		}
 	}
 
-	resp, err := client.CreateGroup(context.Background(), whatsmeow.ReqCreateGroup{
+	resp, err := client.CreateGroup(ctx, whatsmeow.ReqCreateGroup{
 		Name:         data.GroupName,
 		Participants: participants,
 	})
@@ -354,20 +367,27 @@ func (g *groupService) CreateGroup(data *CreateGroupStruct, instance *instance_m
 	}
 
 	var failed []types.JID
+	var added []types.JID
 	for _, participant := range resp.Participants {
 		if participant.Error != 0 {
 			failed = append(failed, participant.JID)
+		} else {
+			added = append(added, participant.JID)
 		}
 	}
 
-	var added []types.JID
-	infoResp, err := client.GetGroupInfo(context.Background(), resp.JID)
+	infoResp, err := waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupInfo, resp.JID.String(), func(queryCtx context.Context) (*types.GroupInfo, error) {
+		return client.GetGroupInfo(queryCtx, resp.JID)
+	})
 	if err != nil {
-		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error get group info: %v", instance.Id, err)
-		return nil, err
-	}
-	for _, add := range infoResp.Participants {
-		added = append(added, add.JID)
+		// The group already exists. A best-effort enrichment failure must not
+		// report the successful mutation as failed or invite unsafe retries.
+		g.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] group created but post-action info query failed: %v", instance.Id, err)
+	} else {
+		added = added[:0]
+		for _, participant := range infoResp.Participants {
+			added = append(added, participant.JID)
+		}
 	}
 
 	response := gin.H{
@@ -406,13 +426,13 @@ func (g *groupService) UpdateParticipant(data *AddParticipantStruct, instance *i
 	return nil
 }
 
-func (g *groupService) GetMyGroups(instance *instance_model.Instance) ([]types.GroupInfo, error) {
+func (g *groupService) GetMyGroups(ctx context.Context, instance *instance_model.Instance) ([]types.GroupInfo, error) {
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.GetJoinedGroups(context.Background())
+	resp, err := waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupsList, "", client.GetJoinedGroups)
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create group: %v", instance.Id, err)
 		return nil, err
@@ -524,7 +544,7 @@ func (g *groupService) UpdateGroupSettings(data *UpdateGroupSettingsStruct, inst
 	return nil
 }
 
-func (g *groupService) GetGroupRequestParticipants(data *GetGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]EnrichedGroupParticipantRequest, error) {
+func (g *groupService) GetGroupRequestParticipants(ctx context.Context, data *GetGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]EnrichedGroupParticipantRequest, error) {
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
@@ -536,7 +556,9 @@ func (g *groupService) GetGroupRequestParticipants(data *GetGroupRequestParticip
 		return nil, errors.New("invalid group jid")
 	}
 
-	requests, err := client.GetGroupRequestParticipants(context.Background(), recipient)
+	requests, err := waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupJoinRequests, recipient.String(), func(queryCtx context.Context) ([]types.GroupParticipantRequest, error) {
+		return client.GetGroupRequestParticipants(queryCtx, recipient)
+	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error getting group request participants: %v", instance.Id, err)
 		return nil, err
@@ -557,7 +579,13 @@ func (g *groupService) GetGroupRequestParticipants(data *GetGroupRequestParticip
 	// Buscar informações de usuário em lote
 	userInfoMap := make(map[types.JID]types.UserInfo)
 	if len(jidsToFetch) > 0 {
-		userInfoMap, err = client.GetUserInfo(context.Background(), jidsToFetch)
+		resources := make([]string, len(jidsToFetch))
+		for i, jid := range jidsToFetch {
+			resources[i] = jid.String()
+		}
+		userInfoMap, err = waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationUserInfo, waquery.ResourceKey(resources...), func(queryCtx context.Context) (map[types.JID]types.UserInfo, error) {
+			return client.GetUserInfo(queryCtx, jidsToFetch)
+		})
 		if err != nil {
 			g.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Could not fetch user info: %v", instance.Id, err)
 			// Continuar sem pushName se falhar
@@ -643,11 +671,13 @@ func (g *groupService) UpdateGroupRequestParticipants(data *UpdateGroupRequestPa
 func NewGroupService(
 	clientPointer map[string]*whatsmeow.Client,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
+	queryGuard waquery.Guard,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) GroupService {
 	return &groupService{
 		clientPointer:    clientPointer,
 		whatsmeowService: whatsmeowService,
+		queryGuard:       queryGuard,
 		loggerWrapper:    loggerWrapper,
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
 )
@@ -35,6 +36,7 @@ type groupHandler struct {
 // @Produce json
 // @Success 200 {object} apidocs.SuccessResponse{data=[]types.GroupInfo} "success"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /group/list [get]
 func (g *groupHandler) ListGroups(ctx *gin.Context) {
@@ -46,8 +48,11 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := g.groupService.ListGroups(instance)
+	resp, err := g.groupService.ListGroups(ctx.Request.Context(), instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -65,6 +70,7 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SuccessResponse{data=types.GroupInfo} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /group/info [post]
 func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
@@ -88,8 +94,11 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := g.groupService.GetGroupInfo(data, instance)
+	resp, err := g.groupService.GetGroupInfo(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -107,6 +116,7 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SuccessResponse{data=string} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /group/invitelink [post]
 func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
@@ -130,8 +140,11 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := g.groupService.GetGroupInviteLink(data, instance)
+	resp, err := g.groupService.GetGroupInviteLink(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -316,8 +329,11 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 		return
 	}
 
-	group, err := g.groupService.CreateGroup(data, instance)
+	group, err := g.groupService.CreateGroup(ctx.Request.Context(), data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -385,6 +401,7 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 // @Produce json
 // @Success 200 {object} apidocs.SuccessResponse{data=[]types.GroupInfo} "success"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /group/myall [get]
 func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
@@ -396,8 +413,11 @@ func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
 		return
 	}
 
-	groups, err := g.groupService.GetMyGroups(instance)
+	groups, err := g.groupService.GetMyGroups(ctx.Request.Context(), instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

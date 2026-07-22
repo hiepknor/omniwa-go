@@ -11,6 +11,7 @@ import (
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
+	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
@@ -18,15 +19,15 @@ import (
 )
 
 type UserService interface {
-	GetUser(data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error)
-	CheckUser(data *CheckUserStruct, instance *instance_model.Instance) (*CheckUserCollection, error)
-	GetAvatar(data *GetAvatarStruct, instance *instance_model.Instance) (*types.ProfilePictureInfo, error)
+	GetUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error)
+	CheckUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*CheckUserCollection, error)
+	GetAvatar(ctx context.Context, data *GetAvatarStruct, instance *instance_model.Instance) (*types.ProfilePictureInfo, error)
 	GetContacts(instance *instance_model.Instance) ([]ContactInfo, error)
-	GetPrivacy(instance *instance_model.Instance) (types.PrivacySettings, error)
-	SetPrivacy(data *PrivacyStruct, instance *instance_model.Instance) (*types.PrivacySettings, error)
+	GetPrivacy(ctx context.Context, instance *instance_model.Instance) (types.PrivacySettings, error)
+	SetPrivacy(ctx context.Context, data *PrivacyStruct, instance *instance_model.Instance) (*types.PrivacySettings, error)
 	BlockContact(data *BlockStruct, instance *instance_model.Instance) (*types.Blocklist, error)
 	UnlockContact(data *BlockStruct, instance *instance_model.Instance) (*types.Blocklist, error)
-	GetBlockList(instance *instance_model.Instance) (*types.Blocklist, error)
+	GetBlockList(ctx context.Context, instance *instance_model.Instance) (*types.Blocklist, error)
 	SetProfilePicture(data *SetProfilePictureStruct, instance *instance_model.Instance) (bool, error)
 	SetProfileName(data *SetProfileNameStruct, instance *instance_model.Instance) (bool, error)
 	SetProfileStatus(data *SetProfileStatusStruct, instance *instance_model.Instance) (bool, error)
@@ -36,6 +37,7 @@ type userService struct {
 	clientPointer    map[string]*whatsmeow.Client
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
+	queryGuard       waquery.Guard
 }
 
 type ContactInfo struct {
@@ -147,7 +149,7 @@ func (u *userService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 	return client, nil
 }
 
-func (u *userService) GetUser(data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error) {
+func (u *userService) GetUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error) {
 	client, err := u.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
@@ -161,7 +163,13 @@ func (u *userService) GetUser(data *CheckUserStruct, instance *instance_model.In
 		}
 		jids = append(jids, jid)
 	}
-	resp, err := client.GetUserInfo(context.Background(), jids)
+	resources := make([]string, len(jids))
+	for i, jid := range jids {
+		resources[i] = jid.String()
+	}
+	resp, err := waquery.Do(ctx, u.queryGuard, instance.Id, waquery.OperationUserInfo, waquery.ResourceKey(resources...), func(queryCtx context.Context) (map[types.JID]types.UserInfo, error) {
+		return client.GetUserInfo(queryCtx, jids)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +201,7 @@ func (u *userService) GetUser(data *CheckUserStruct, instance *instance_model.In
 	return uc, nil
 }
 
-func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.Instance) (*CheckUserCollection, error) {
+func (u *userService) CheckUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*CheckUserCollection, error) {
 	client, err := u.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
@@ -206,7 +214,10 @@ func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.
 	}
 
 	// First attempt with the requested formatJid setting
-	uc, shouldRetry := u.performCheckUser(client, data.Number, formatJid, instance.Id)
+	uc, shouldRetry, err := u.performCheckUser(ctx, client, data.Number, formatJid, instance.Id)
+	if err != nil {
+		return nil, err
+	}
 	if !shouldRetry {
 		return uc, nil
 	}
@@ -214,7 +225,10 @@ func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.
 	// If formatJid was true and we got false results, retry with formatJid=false
 	if formatJid {
 		u.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Some users not found with formatJid=true, retrying with formatJid=false", instance.Id)
-		ucRetry, _ := u.performCheckUser(client, data.Number, false, instance.Id)
+		ucRetry, _, err := u.performCheckUser(ctx, client, data.Number, false, instance.Id)
+		if err != nil {
+			return nil, err
+		}
 
 		// Merge results: use retry results for users that weren't found in first attempt
 		return u.mergeCheckUserResults(uc, ucRetry), nil
@@ -224,18 +238,24 @@ func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.
 }
 
 // performCheckUser executes the actual user check with specified formatJid
-func (u *userService) performCheckUser(client *whatsmeow.Client, numbers []string, formatJid bool, instanceId string) (*CheckUserCollection, bool) {
+func (u *userService) performCheckUser(ctx context.Context, client *whatsmeow.Client, numbers []string, formatJid bool, instanceId string) (*CheckUserCollection, bool, error) {
 	// Use centralized function to prepare numbers for WhatsApp check
 	phoneNumbers, err := utils.PrepareNumbersForWhatsAppCheck(numbers, &formatJid)
 	if err != nil {
 		u.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Failed to prepare numbers for WhatsApp check: %v", instanceId, err)
-		return nil, false
+		return nil, false, nil
 	}
 
-	resp, err := client.IsOnWhatsApp(context.Background(), phoneNumbers)
+	resp, err := waquery.Do(ctx, u.queryGuard, instanceId, waquery.OperationUserExists, waquery.ResourceKey(phoneNumbers...), func(queryCtx context.Context) ([]types.IsOnWhatsAppResponse, error) {
+		return client.IsOnWhatsApp(queryCtx, phoneNumbers)
+	})
 	if err != nil {
 		u.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to check users on WhatsApp: %v", instanceId, err)
-		return nil, false
+		var rateLimitErr *waquery.RateLimitError
+		if errors.As(err, &rateLimitErr) {
+			return nil, false, err
+		}
+		return nil, false, nil
 	}
 
 	uc := new(CheckUserCollection)
@@ -284,7 +304,7 @@ func (u *userService) performCheckUser(client *whatsmeow.Client, numbers []strin
 		}
 	}
 
-	return uc, shouldRetry
+	return uc, shouldRetry, nil
 }
 
 // mergeCheckUserResults merges results from two CheckUser attempts
@@ -315,7 +335,7 @@ func (u *userService) mergeCheckUserResults(original, retry *CheckUserCollection
 	return merged
 }
 
-func (u *userService) GetAvatar(data *GetAvatarStruct, instance *instance_model.Instance) (*types.ProfilePictureInfo, error) {
+func (u *userService) GetAvatar(ctx context.Context, data *GetAvatarStruct, instance *instance_model.Instance) (*types.ProfilePictureInfo, error) {
 	client, err := u.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
@@ -342,12 +362,13 @@ func (u *userService) GetAvatar(data *GetAvatarStruct, instance *instance_model.
 
 	// 🔒 FIX: Adicionar timeout ao contexto para evitar que a requisição trave indefinidamente
 	// Usar timeout maior que o padrão do sendIQ (75s) para dar tempo suficiente
-	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 80*time.Second)
 	defer cancel()
 
 	u.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Starting GetProfilePictureInfo request...", instance.Id)
-	pic, err = client.GetProfilePictureInfo(ctx, jid, &whatsmeow.GetProfilePictureParams{
-		Preview: data.Preview,
+	resource := fmt.Sprintf("%s:preview=%t", jid.String(), data.Preview)
+	pic, err = waquery.Do(ctx, u.queryGuard, instance.Id, waquery.OperationUserAvatar, resource, func(queryCtx context.Context) (*types.ProfilePictureInfo, error) {
+		return client.GetProfilePictureInfo(queryCtx, jid, &whatsmeow.GetProfilePictureParams{Preview: data.Preview})
 	})
 	if err != nil {
 		u.loggerWrapper.GetLogger(instance.Id).LogError("[%s] GetProfilePictureInfo failed: %v", instance.Id, err)
@@ -391,18 +412,28 @@ func (u *userService) GetContacts(instance *instance_model.Instance) ([]ContactI
 
 }
 
-func (u *userService) GetPrivacy(instance *instance_model.Instance) (types.PrivacySettings, error) {
+func (u *userService) GetPrivacy(ctx context.Context, instance *instance_model.Instance) (types.PrivacySettings, error) {
 	client, err := u.ensureClientConnected(instance.Id)
+	if err != nil {
+		var rateLimitErr *waquery.RateLimitError
+		if errors.As(err, &rateLimitErr) {
+			return types.PrivacySettings{}, err
+		}
+		// Preserve GetPrivacySettings' historical behavior for non-rate-limit
+		// provider errors while making known throttling machine-readable.
+		return types.PrivacySettings{}, nil
+	}
+
+	privacy, err := waquery.Do(ctx, u.queryGuard, instance.Id, waquery.OperationUserPrivacy, "", func(queryCtx context.Context) (*types.PrivacySettings, error) {
+		return client.TryFetchPrivacySettings(queryCtx, false)
+	})
 	if err != nil {
 		return types.PrivacySettings{}, err
 	}
-
-	privacy := client.GetPrivacySettings(context.Background())
-
-	return privacy, nil
+	return *privacy, nil
 }
 
-func (u *userService) SetPrivacy(data *PrivacyStruct, instance *instance_model.Instance) (*types.PrivacySettings, error) {
+func (u *userService) SetPrivacy(ctx context.Context, data *PrivacyStruct, instance *instance_model.Instance) (*types.PrivacySettings, error) {
 	client, err := u.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
@@ -421,15 +452,21 @@ func (u *userService) SetPrivacy(data *PrivacyStruct, instance *instance_model.I
 		{types.PrivacySettingTypeOnline, data.Online},
 	}
 
+	// Populate the provider cache through the query guard before mutations. This
+	// prevents SetPrivacySetting from issuing an unguarded prerequisite query.
+	if _, err := waquery.Do(ctx, u.queryGuard, instance.Id, waquery.OperationUserPrivacy, "", func(queryCtx context.Context) (*types.PrivacySettings, error) {
+		return client.TryFetchPrivacySettings(queryCtx, false)
+	}); err != nil {
+		return nil, err
+	}
+
+	var privacy types.PrivacySettings
 	for _, setting := range privacySettings {
-		_, err := client.SetPrivacySetting(context.Background(), setting.name, setting.value)
+		privacy, err = client.SetPrivacySetting(ctx, setting.name, setting.value)
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	privacy := client.GetPrivacySettings(context.Background())
-
 	return &privacy, nil
 }
 
@@ -471,13 +508,13 @@ func (u *userService) UnlockContact(data *BlockStruct, instance *instance_model.
 	return resp, nil
 }
 
-func (u *userService) GetBlockList(instance *instance_model.Instance) (*types.Blocklist, error) {
+func (u *userService) GetBlockList(ctx context.Context, instance *instance_model.Instance) (*types.Blocklist, error) {
 	client, err := u.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.GetBlocklist(context.Background())
+	resp, err := waquery.Do(ctx, u.queryGuard, instance.Id, waquery.OperationUserBlocklist, "", client.GetBlocklist)
 	if err != nil {
 		return nil, err
 	}
@@ -543,11 +580,13 @@ func (u *userService) SetProfileStatus(data *SetProfileStatusStruct, instance *i
 func NewUserService(
 	clientPointer map[string]*whatsmeow.Client,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
+	queryGuard waquery.Guard,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) UserService {
 	return &userService{
 		clientPointer:    clientPointer,
 		whatsmeowService: whatsmeowService,
+		queryGuard:       queryGuard,
 		loggerWrapper:    loggerWrapper,
 	}
 }

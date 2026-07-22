@@ -3,10 +3,12 @@ package newsletter_service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
@@ -14,17 +16,18 @@ import (
 
 type NewsletterService interface {
 	CreateNewsletter(data *CreateNewsletterStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error)
-	ListNewsletter(instance *instance_model.Instance) ([]*types.NewsletterMetadata, error)
-	GetNewsletter(data *GetNewsletterStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error)
-	GetNewsletterInvite(data *GetNewsletterInviteStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error)
+	ListNewsletter(ctx context.Context, instance *instance_model.Instance) ([]*types.NewsletterMetadata, error)
+	GetNewsletter(ctx context.Context, data *GetNewsletterStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error)
+	GetNewsletterInvite(ctx context.Context, data *GetNewsletterInviteStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error)
 	SubscribeNewsletter(data *GetNewsletterStruct, instance *instance_model.Instance) error
-	GetNewsletterMessages(data *GetNewsletterMessagesStruct, instance *instance_model.Instance) ([]*types.NewsletterMessage, error)
+	GetNewsletterMessages(ctx context.Context, data *GetNewsletterMessagesStruct, instance *instance_model.Instance) ([]*types.NewsletterMessage, error)
 }
 
 type newsletterService struct {
 	clientPointer    map[string]*whatsmeow.Client
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
+	queryGuard       waquery.Guard
 }
 
 type CreateNewsletterStruct struct {
@@ -103,13 +106,13 @@ func (n *newsletterService) CreateNewsletter(data *CreateNewsletterStruct, insta
 	return newsletter, nil
 }
 
-func (n *newsletterService) ListNewsletter(instance *instance_model.Instance) ([]*types.NewsletterMetadata, error) {
+func (n *newsletterService) ListNewsletter(ctx context.Context, instance *instance_model.Instance) ([]*types.NewsletterMetadata, error) {
 	client, err := n.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	newsletters, err := client.GetSubscribedNewsletters(context.Background())
+	newsletters, err := waquery.Do(ctx, n.queryGuard, instance.Id, waquery.OperationNewslettersList, "", client.GetSubscribedNewsletters)
 	if err != nil {
 		n.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error list newsletters: %v", instance.Id, err)
 		return nil, err
@@ -117,10 +120,20 @@ func (n *newsletterService) ListNewsletter(instance *instance_model.Instance) ([
 
 	// For each newsletter, fetch full info to get subscribers_count
 	fullNewsletters := make([]*types.NewsletterMetadata, 0, len(newsletters))
-	for _, newsletter := range newsletters {
-		fullInfo, err := client.GetNewsletterInfo(context.Background(), newsletter.ID)
+	for index, newsletter := range newsletters {
+		fullInfo, err := waquery.Do(ctx, n.queryGuard, instance.Id, waquery.OperationNewsletterInfo, newsletter.ID.String(), func(queryCtx context.Context) (*types.NewsletterMetadata, error) {
+			return client.GetNewsletterInfo(queryCtx, newsletter.ID)
+		})
 		if err != nil {
-			// If we can't get full info, use the basic one
+			var rateLimitErr *waquery.RateLimitError
+			if errors.As(err, &rateLimitErr) {
+				// The subscribed-newsletter query already returned valid basic
+				// metadata. Stop optional enrichment without turning that result
+				// into an error or attempting more guarded queries.
+				fullNewsletters = append(fullNewsletters, newsletters[index:]...)
+				break
+			}
+			// If a non-rate-limit lookup fails, preserve the existing basic result.
 			n.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] error getting full info for newsletter %s: %v", instance.Id, newsletter.ID.String(), err)
 			fullNewsletters = append(fullNewsletters, newsletter)
 			continue
@@ -131,13 +144,15 @@ func (n *newsletterService) ListNewsletter(instance *instance_model.Instance) ([
 	return fullNewsletters, nil
 }
 
-func (n *newsletterService) GetNewsletter(data *GetNewsletterStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error) {
+func (n *newsletterService) GetNewsletter(ctx context.Context, data *GetNewsletterStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error) {
 	client, err := n.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	newsletter, err := client.GetNewsletterInfo(context.Background(), data.JID)
+	newsletter, err := waquery.Do(ctx, n.queryGuard, instance.Id, waquery.OperationNewsletterInfo, data.JID.String(), func(queryCtx context.Context) (*types.NewsletterMetadata, error) {
+		return client.GetNewsletterInfo(queryCtx, data.JID)
+	})
 	if err != nil {
 		n.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error list newsletter: %v", instance.Id, err)
 		return nil, err
@@ -146,13 +161,15 @@ func (n *newsletterService) GetNewsletter(data *GetNewsletterStruct, instance *i
 	return newsletter, nil
 }
 
-func (n *newsletterService) GetNewsletterInvite(data *GetNewsletterInviteStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error) {
+func (n *newsletterService) GetNewsletterInvite(ctx context.Context, data *GetNewsletterInviteStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error) {
 	client, err := n.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	newsletter, err := client.GetNewsletterInfoWithInvite(context.Background(), data.Key)
+	newsletter, err := waquery.Do(ctx, n.queryGuard, instance.Id, waquery.OperationNewsletterInviteInfo, data.Key, func(queryCtx context.Context) (*types.NewsletterMetadata, error) {
+		return client.GetNewsletterInfoWithInvite(queryCtx, data.Key)
+	})
 	if err != nil {
 		n.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error list newsletter: %v", instance.Id, err)
 		return nil, err
@@ -176,16 +193,18 @@ func (n *newsletterService) SubscribeNewsletter(data *GetNewsletterStruct, insta
 	return nil
 }
 
-func (n *newsletterService) GetNewsletterMessages(data *GetNewsletterMessagesStruct, instance *instance_model.Instance) ([]*types.NewsletterMessage, error) {
+func (n *newsletterService) GetNewsletterMessages(ctx context.Context, data *GetNewsletterMessagesStruct, instance *instance_model.Instance) ([]*types.NewsletterMessage, error) {
 	client, err := n.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	messages, err := client.GetNewsletterMessages(context.Background(), data.JID,
-		&whatsmeow.GetNewsletterMessagesParams{
+	resource := fmt.Sprintf("%s:count=%d:before=%d", data.JID.String(), data.Count, data.BeforeID)
+	messages, err := waquery.Do(ctx, n.queryGuard, instance.Id, waquery.OperationNewsletterMessages, resource, func(queryCtx context.Context) ([]*types.NewsletterMessage, error) {
+		return client.GetNewsletterMessages(queryCtx, data.JID, &whatsmeow.GetNewsletterMessagesParams{
 			Count: data.Count, Before: data.BeforeID,
 		})
+	})
 	if err != nil {
 		n.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error list newsletter: %v", instance.Id, err)
 		return nil, err
@@ -197,11 +216,13 @@ func (n *newsletterService) GetNewsletterMessages(data *GetNewsletterMessagesStr
 func NewNewsletterService(
 	clientPointer map[string]*whatsmeow.Client,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
+	queryGuard waquery.Guard,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) NewsletterService {
 	return &newsletterService{
 		clientPointer:    clientPointer,
 		whatsmeowService: whatsmeowService,
+		queryGuard:       queryGuard,
 		loggerWrapper:    loggerWrapper,
 	}
 }

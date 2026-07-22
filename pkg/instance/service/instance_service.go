@@ -20,6 +20,7 @@ import (
 	event_types "github.com/evolution-foundation/evolution-go/pkg/internal/event_types"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
+	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
@@ -54,6 +55,7 @@ type instances struct {
 	clientPointer      map[string]*whatsmeow.Client
 	whatsmeowService   whatsmeow_service.WhatsmeowService
 	loggerWrapper      *logger_wrapper.LoggerManager
+	queryGuard         waquery.Guard
 }
 
 type ProxyConfig struct {
@@ -359,6 +361,7 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 
 		delete(i.clientPointer, instance.Id)
 		delete(i.killChannel, instance.Id)
+		i.queryGuard.RemoveInstance(instance.Id)
 
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Logout successful", instance.Id)
 		return instance, nil
@@ -374,6 +377,7 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 
 		delete(i.clientPointer, instance.Id)
 		delete(i.killChannel, instance.Id)
+		i.queryGuard.RemoveInstance(instance.Id)
 
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Disconnection successful", instance.Id)
 		return instance, nil
@@ -611,6 +615,7 @@ func (i instances) Delete(id string) error {
 	if err != nil {
 		return err
 	}
+	i.queryGuard.RemoveInstance(instance.Id)
 
 	return nil
 }
@@ -916,6 +921,7 @@ func NewInstanceService(
 	clientPointer map[string]*whatsmeow.Client,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	config *config.Config,
+	queryGuard waquery.Guard,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) InstanceService {
 	return &instances{
@@ -924,6 +930,7 @@ func NewInstanceService(
 		clientPointer:      clientPointer,
 		whatsmeowService:   whatsmeowService,
 		config:             config,
+		queryGuard:         queryGuard,
 		loggerWrapper:      loggerWrapper,
 	}
 }

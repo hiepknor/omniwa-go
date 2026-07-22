@@ -62,6 +62,7 @@ import (
 	minio_storage "github.com/evolution-foundation/evolution-go/pkg/storage/minio"
 	user_handler "github.com/evolution-foundation/evolution-go/pkg/user/handler"
 	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
+	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -87,6 +88,15 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	clientPointer := make(map[string]*whatsmeow.Client)
 
 	loggerWrapper := logger_wrapper.NewLoggerManager(config)
+	queryGuard, err := waquery.New(waquery.Settings{
+		RatePerSecond: config.WAInfoRatePerSecond,
+		Burst:         config.WAInfoBurst,
+		MaxWait:       config.WAInfoMaxWait,
+		Cooldown:      config.WAInfoCooldown,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	var rabbitmqProducer producer_interfaces.Producer
 	if conn != nil {
@@ -143,7 +153,6 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 
 	var mediaStorage storage_interfaces.MediaStorage
-	var err error
 	if config.MinioEnabled {
 		mediaStorage, err = minio_storage.NewMinioMediaStorage(
 			config.MinioEndpoint,
@@ -177,6 +186,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		exPath,
 		mediaStorage,
 		natsProducer,
+		queryGuard,
 		loggerWrapper,
 	)
 	instanceService := instance_service.NewInstanceService(
@@ -185,17 +195,18 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		clientPointer,
 		whatsmeowService,
 		config,
+		queryGuard,
 		loggerWrapper,
 	)
-	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, loggerWrapper)
-	userService := user_service.NewUserService(clientPointer, whatsmeowService, loggerWrapper)
+	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, loggerWrapper)
+	userService := user_service.NewUserService(clientPointer, whatsmeowService, queryGuard, loggerWrapper)
 	messageService := message_service.NewMessageService(clientPointer, messageRepository, whatsmeowService, loggerWrapper)
 	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)
-	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, loggerWrapper)
+	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, queryGuard, loggerWrapper)
 	callService := call_service.NewCallService(clientPointer, whatsmeowService, loggerWrapper)
 	communityService := community_service.NewCommunityService(clientPointer, whatsmeowService, loggerWrapper)
 	labelService := label_service.NewLabelService(clientPointer, whatsmeowService, labelRepository, loggerWrapper)
-	newsletterService := newsletter_service.NewNewsletterService(clientPointer, whatsmeowService, loggerWrapper)
+	newsletterService := newsletter_service.NewNewsletterService(clientPointer, whatsmeowService, queryGuard, loggerWrapper)
 
 	// NOVO: PollHandler usando PollService já inicializado no whatsmeowService (evita dupla inicialização)
 	pollHandler := poll_handler.NewPollHandler(whatsmeowService.GetPollService(), loggerWrapper)
@@ -208,7 +219,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, Retry-After")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(200)
 			return

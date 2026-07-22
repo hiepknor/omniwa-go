@@ -48,6 +48,7 @@ import (
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
 	storage_interfaces "github.com/evolution-foundation/evolution-go/pkg/storage/interfaces"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
+	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 )
 
 type WhatsmeowService interface {
@@ -97,6 +98,7 @@ type whatsmeowService struct {
 	natsProducer       producer_interfaces.Producer
 	loggerWrapper      *logger_wrapper.LoggerManager
 	passkeyCeremony    *ceremony.Store
+	queryGuard         waquery.Guard
 }
 
 type MyClient struct {
@@ -130,6 +132,7 @@ type MyClient struct {
 	loggerWrapper      *logger_wrapper.LoggerManager
 	qrcodeCount        int
 	passkeyCeremony    *ceremony.Store
+	queryGuard         waquery.Guard
 }
 
 func (mycli *MyClient) persistMessageAsync(message message_model.Message) {
@@ -494,6 +497,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		loggerWrapper:      w.loggerWrapper,
 		qrcodeCount:        0,
 		passkeyCeremony:    w.passkeyCeremony,
+		queryGuard:         w.queryGuard,
 	}
 
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
@@ -1594,7 +1598,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 		isGroup := strings.HasSuffix(evt.Info.Chat.String(), "@g.us")
 		if isGroup {
-			groupData, err := mycli.WAClient.GetGroupInfo(context.Background(), evt.Info.Chat)
+			groupData, err := waquery.Do(context.Background(), mycli.queryGuard, mycli.userID, waquery.OperationGroupInfo, evt.Info.Chat.String(), func(queryCtx context.Context) (*types.GroupInfo, error) {
+				return mycli.WAClient.GetGroupInfo(queryCtx, evt.Info.Chat)
+			})
 			if err == nil {
 				dataMap["groupData"] = groupData
 			}
@@ -2804,6 +2810,7 @@ func NewWhatsmeowService(
 	exPath string,
 	mediaStorage storage_interfaces.MediaStorage,
 	natsProducer producer_interfaces.Producer,
+	queryGuard waquery.Guard,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) WhatsmeowService {
 	// Inicializar PollService de forma segura
@@ -2828,6 +2835,7 @@ func NewWhatsmeowService(
 		mediaStorage:       mediaStorage,
 		processedMessages:  cache.New(30*time.Minute, 1*time.Hour),
 		natsProducer:       natsProducer,
+		queryGuard:         queryGuard,
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),
 	}

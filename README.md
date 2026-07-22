@@ -116,6 +116,7 @@ OmniWA GO keeps this behavior by default, but makes it opt-out:
   **Authorize** button): `http://localhost:8080/swagger/index.html`
 - **WebUI Integration Guide** (English): [`docs/wiki-en/`](docs/wiki-en/) —
   authentication, the create → connect → QR → send flow, response conventions,
+  the [information-query 429 contract](docs/wiki-en/information-query-rate-limits.md),
   and the realtime [WebSocket event stream](docs/wiki-en/websocket-events.md)
   (which Swagger cannot describe).
 
