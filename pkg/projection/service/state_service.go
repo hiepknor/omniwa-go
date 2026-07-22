@@ -13,6 +13,7 @@ import (
 const CapabilityRateLimitRetryAfter = "rate_limit_retry_after"
 
 var resourceCapabilities = map[string]string{
+	"groups":   "groups_projection",
 	"labels":   "labels_projection",
 	"contacts": "contacts_projection",
 	"chats":    "chats_projection",
@@ -115,6 +116,9 @@ func (s *stateService) Capabilities(instanceID string) ([]string, error) {
 	}
 	for _, state := range states {
 		if state.SyncStatus == projection_model.SyncStatusReady {
+			if state.Resource == groupResource && state.SchemaVersion < GroupsProjectionSchemaVersion {
+				continue
+			}
 			if capability := resourceCapabilities[state.Resource]; capability != "" {
 				capabilities = append(capabilities, capability)
 			}

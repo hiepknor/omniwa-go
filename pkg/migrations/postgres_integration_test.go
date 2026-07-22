@@ -279,8 +279,12 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	}
 	groupsState, err := stateService.Get(instance.Id, "groups")
 	capabilities, capabilityErr := stateService.Capabilities(instance.Id)
-	if err != nil || capabilityErr != nil || groupsState.SyncStatus != projection_model.SyncStatusReady || groupsState.LastReconciledAt == nil || containsString(capabilities, "groups_projection") {
+	if err != nil || capabilityErr != nil || groupsState.SyncStatus != projection_model.SyncStatusReady || groupsState.LastReconciledAt == nil || !containsString(capabilities, "groups_projection") {
 		t.Fatalf("ready groups state = %#v capabilities=%v errors=%v/%v", groupsState, capabilities, err, capabilityErr)
+	}
+	groupRecords, err := groupRepository.List(context.Background(), instance.Id)
+	if err != nil || len(groupRecords) != 1 || groupRecords[0].Group.GroupID != "authoritative@g.us" || len(groupRecords[0].Participants) != 1 {
+		t.Fatalf("projection group list = %#v, %v", groupRecords, err)
 	}
 }
 

@@ -192,6 +192,17 @@ definitions:
       voterPhone:
         type: string
     type: object
+  apidocs.ProjectionMeta:
+    properties:
+      lastSyncedAt:
+        type: string
+      source:
+        example: projection
+        type: string
+      syncStatus:
+        example: ready
+        type: string
+    type: object
   apidocs.QRCodeData:
     properties:
       code:
@@ -285,6 +296,8 @@ definitions:
       message:
         example: success
         type: string
+      meta:
+        $ref: '#/definitions/apidocs.ProjectionMeta'
     type: object
   apidocs.TimestampData:
     properties:

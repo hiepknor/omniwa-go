@@ -48,7 +48,7 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := g.groupService.ListGroups(ctx.Request.Context(), instance)
+	resp, meta, err := g.groupService.ListGroupsRead(ctx.Request.Context(), instance)
 	if err != nil {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
@@ -57,7 +57,11 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": resp})
+	response := gin.H{"message": "success", "data": resp}
+	if meta != nil {
+		response["meta"] = meta
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 // Get group info
@@ -94,7 +98,7 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := g.groupService.GetGroupInfo(ctx.Request.Context(), data, instance)
+	resp, meta, err := g.groupService.GetGroupInfoRead(ctx.Request.Context(), data, instance)
 	if err != nil {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
@@ -103,7 +107,11 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": resp})
+	response := gin.H{"message": "success", "data": resp}
+	if meta != nil {
+		response["meta"] = meta
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 // Get group invite link
