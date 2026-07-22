@@ -5834,6 +5834,88 @@ const docTemplate = `{
                 }
             }
         },
+        "/user/contacts/search": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Prefix-search normalized contacts from the persisted instance projection without querying WhatsApp",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Search projected contacts",
+                "parameters": [
+                    {
+                        "maxLength": 128,
+                        "type": "string",
+                        "description": "Case-insensitive prefix matched against normalized contact fields",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 200,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque cursor bound to the normalized search query",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid search or cursor",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/user/info": {
             "post": {
                 "security": [

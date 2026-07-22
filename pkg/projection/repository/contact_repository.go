@@ -34,6 +34,16 @@ type ContactIdentityRef struct {
 	Value string
 }
 
+type ContactCursor struct {
+	SortKey   string
+	ContactID string
+}
+
+type ContactPage struct {
+	Items      []projection_model.Contact
+	NextCursor *ContactCursor
+}
+
 // ContactPatch updates one independently ordered field group. A non-nil field
 // is authoritative for that aspect, including pointers to empty values.
 type ContactPatch struct {
@@ -67,6 +77,7 @@ type ContactRepository interface {
 	Get(context.Context, string, string) (*projection_model.Contact, error)
 	GetByIdentity(context.Context, string, projection_model.ContactIdentityKind, string) (*projection_model.Contact, error)
 	List(context.Context, string) ([]projection_model.Contact, error)
+	Search(context.Context, string, string, int, *ContactCursor) (*ContactPage, error)
 }
 
 type contactRepository struct {
@@ -187,6 +198,60 @@ func (r *contactRepository) List(ctx context.Context, instanceID string) ([]proj
 	err := r.db.WithContext(ctx).Where("instance_id = ? AND tombstoned_at IS NULL", instanceID).
 		Order("COALESCE(NULLIF(full_name, ''), NULLIF(push_name, ''), preferred_jid) ASC, contact_id ASC").Find(&contacts).Error
 	return contacts, err
+}
+
+const (
+	maxContactSearchLimit = 200
+	contactSearchSortSQL  = "LOWER(preferred_jid)"
+)
+
+type contactSearchRow struct {
+	projection_model.Contact
+	SearchSortKey string `gorm:"column:search_sort_key"`
+}
+
+func (r *contactRepository) Search(ctx context.Context, instanceID, term string, limit int, cursor *ContactCursor) (*ContactPage, error) {
+	term = strings.TrimSpace(term)
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" || len(term) > 128 || limit < 1 || limit > maxContactSearchLimit ||
+		(cursor != nil && (cursor.SortKey == "" || cursor.ContactID == "")) {
+		return nil, errors.New("valid contact search parameters are required")
+	}
+
+	query := r.db.WithContext(ctx).Model(&projection_model.Contact{}).
+		Select("projected_contacts.*, "+contactSearchSortSQL+" AS search_sort_key").
+		Where("instance_id = ? AND tombstoned_at IS NULL", instanceID)
+	if term != "" {
+		pattern := escapeContactSearchPattern(strings.ToLower(term)) + "%"
+		query = query.Where(`(LOWER(preferred_jid) LIKE ? OR
+LOWER(COALESCE(first_name, '')) LIKE ? OR
+LOWER(COALESCE(full_name, '')) LIKE ? OR
+LOWER(COALESCE(push_name, '')) LIKE ? OR
+LOWER(COALESCE(business_name, '')) LIKE ? OR
+LOWER(COALESCE(username, '')) LIKE ? OR
+LOWER(COALESCE(redacted_phone, '')) LIKE ?)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+	}
+	if cursor != nil {
+		query = query.Where("("+contactSearchSortSQL+" > ? OR ("+contactSearchSortSQL+" = ? AND contact_id > ?))", cursor.SortKey, cursor.SortKey, cursor.ContactID)
+	}
+
+	var rows []contactSearchRow
+	if err := query.Order(contactSearchSortSQL + " ASC, contact_id ASC").Limit(limit + 1).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	page := &ContactPage{Items: make([]projection_model.Contact, min(len(rows), limit))}
+	for index := range page.Items {
+		page.Items[index] = rows[index].Contact
+	}
+	if len(rows) > limit {
+		last := rows[limit-1]
+		page.NextCursor = &ContactCursor{SortKey: last.SearchSortKey, ContactID: last.ContactID}
+	}
+	return page, nil
+}
+
+func escapeContactSearchPattern(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return replacer.Replace(value)
 }
 
 func validateContactPatch(patch ContactPatch) ([]ContactIdentityRef, error) {

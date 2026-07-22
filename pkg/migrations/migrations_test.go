@@ -81,7 +81,7 @@ func TestProjectionOverviewWindowIndexesAreVersioned(t *testing.T) {
 }
 
 func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
-	migration := registry[len(registry)-1]
+	migration := registry[len(registry)-2]
 	if migration.Version != 12 || migration.Name != "create_campaign_persistence" {
 		t.Fatalf("campaign migration = %#v", migration)
 	}
@@ -91,6 +91,21 @@ func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
 	} {
 		if !strings.Contains(migration.SQL, expected) {
 			t.Fatalf("campaign migration does not contain %q", expected)
+		}
+	}
+}
+
+func TestContactsSearchIndexesAreVersioned(t *testing.T) {
+	migration := registry[len(registry)-1]
+	if migration.Version != 13 || migration.Name != "index_contacts_projection_search" {
+		t.Fatalf("contacts search migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"projected_contacts_search_sort_idx", "projected_contacts_search_jid_idx", "projected_contacts_search_full_name_idx",
+		"text_pattern_ops", "WHERE tombstoned_at IS NULL",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("contacts search migration does not contain %q", expected)
 		}
 	}
 }

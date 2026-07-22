@@ -56,3 +56,9 @@ func TestApplyContactAspectOnlyChangesSelectedFieldGroup(t *testing.T) {
 		t.Fatalf("contact after details patch = %#v", contact)
 	}
 }
+
+func TestEscapeContactSearchPatternTreatsWildcardsLiterally(t *testing.T) {
+	if got, want := escapeContactSearchPattern(`a%b_c\d`), `a\%b\_c\\d`; got != want {
+		t.Fatalf("escaped pattern = %q, want %q", got, want)
+	}
+}
