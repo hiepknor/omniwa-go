@@ -41,8 +41,8 @@ invite-link, and delete deltas, and shuts down through the application context.
 It claims only event types with a registered projector. Existing group API
 reads remain unchanged. A completed initial reconciliation makes internal state
 `ready`, but the public `groups_projection` capability remains unpublished
-until the compatible read cutover is delivered. Periodic reconciliation and
-write-through mutations must also still be completed.
+until the compatible read cutover is delivered. Write-through mutations must
+also still be completed.
 
 Initial reconciliation starts asynchronously after a client connects and uses
 the shared information-query guard. It marks the instance `syncing`, captures a
@@ -50,7 +50,15 @@ version fence before the provider query, applies the authoritative list, and
 tombstones missing groups. Events after the fence win the merge even if the
 query completes later. Only a complete successful run marks the projection
 `ready`; failure becomes `failed` for initial sync or `stale` when prior
-reconciled data exists. Periodic scheduling remains a separate increment.
+reconciled data exists.
+
+Each connected client owns one cancellable periodic reconciliation loop. Runs
+are non-overlapping, use a stable per-instance jitter around
+`WA_GROUP_RECONCILE_INTERVAL` (default `6h`), and continue to use the shared
+information-query guard. Disconnect, logout, stream replacement, client
+restart, and application shutdown cancel the loop and any in-flight query.
+Setting the interval to `0` disables periodic runs without disabling the
+initial reconciliation.
 
 Application rollback leaves the new tables unused. Instance deletion cascades
 to groups, and group deletion cascades to participants. Physical cleanup is not
