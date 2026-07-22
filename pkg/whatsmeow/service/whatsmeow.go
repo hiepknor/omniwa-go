@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"image/png"
@@ -45,6 +46,7 @@ import (
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
+	"github.com/evolution-foundation/evolution-go/pkg/outbound"
 	"github.com/evolution-foundation/evolution-go/pkg/passkey/ceremony"
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
@@ -62,6 +64,7 @@ type WhatsmeowService interface {
 	CallWebhook(instance *instance_model.Instance, queueName string, jsonData []byte)
 	SendToGlobalQueues(event string, jsonData []byte, userId string)
 	PersistDurableEvent(instanceID, eventType string, raw any) bool
+	WaitOutbound(ctx context.Context, instanceID string, cost int) error
 	ForceUpdateJid(instanceId string, number string) error
 	UpdateInstanceSettings(instanceId string) error
 	UpdateInstanceAdvancedSettings(instanceId string) error
@@ -102,6 +105,7 @@ type whatsmeowService struct {
 	loggerWrapper      *logger_wrapper.LoggerManager
 	passkeyCeremony    *ceremony.Store
 	queryGuard         waquery.Guard
+	outboundGuard      outbound.Guard
 	projectionEvents   projection_service.EventService
 	groupReconciler    *projection_service.GroupReconciler
 	labelSyncer        *projection_service.LabelSyncer
@@ -109,6 +113,13 @@ type whatsmeowService struct {
 	historySyncer      *projection_service.HistorySyncer
 	durableEvents      *projection_service.DurableEventService
 	appCtx             context.Context
+}
+
+func (w *whatsmeowService) WaitOutbound(ctx context.Context, instanceID string, cost int) error {
+	if w == nil || w.outboundGuard == nil {
+		return errors.New("outbound guard is not configured")
+	}
+	return w.outboundGuard.Wait(ctx, instanceID, cost)
 }
 
 type MyClient struct {
@@ -2276,6 +2287,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					},
 				}
 
+				if err := mycli.service.WaitOutbound(context.Background(), mycli.userID, 1); err != nil {
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Reject call message rate limited: %v", mycli.userID, err)
+					return
+				}
 				_, err := mycli.WAClient.SendMessage(context.Background(), evt.CallCreator, msg)
 				if err != nil {
 					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to send reject call message: %v", mycli.userID, err)
@@ -3123,10 +3138,16 @@ func (w whatsmeowService) UpdateInstanceAdvancedSettings(instanceId string) erro
 }
 
 func (w whatsmeowService) ClearInstanceCache(instanceId string, token string) error {
-	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Clearing instance cache - Token: %s", instanceId, token)
+	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Clearing instance cache", instanceId)
 
 	// Limpar userInfoCache
 	w.userInfoCache.Delete(token)
+	if w.queryGuard != nil {
+		w.queryGuard.RemoveInstance(instanceId)
+	}
+	if w.outboundGuard != nil {
+		w.outboundGuard.RemoveInstance(instanceId)
+	}
 
 	// Limpar myClientPointer se existir
 	if _, exists := w.myClientPointer[instanceId]; exists {
@@ -3173,6 +3194,7 @@ func NewWhatsmeowService(
 	mediaStorage storage_interfaces.MediaStorage,
 	natsProducer producer_interfaces.Producer,
 	queryGuard waquery.Guard,
+	outboundGuard outbound.Guard,
 	projectionEvents projection_service.EventService,
 	groupReconciler *projection_service.GroupReconciler,
 	labelSyncer *projection_service.LabelSyncer,
@@ -3205,6 +3227,7 @@ func NewWhatsmeowService(
 		processedMessages:  cache.New(30*time.Minute, 1*time.Hour),
 		natsProducer:       natsProducer,
 		queryGuard:         queryGuard,
+		outboundGuard:      outboundGuard,
 		projectionEvents:   projectionEvents,
 		groupReconciler:    groupReconciler,
 		labelSyncer:        labelSyncer,

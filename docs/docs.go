@@ -171,6 +171,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Outbound rate limited",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -2758,6 +2764,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Outbound rate limited",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -2882,6 +2894,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Outbound rate limited",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
                         }
                     },
                     "500": {
@@ -3122,6 +3140,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Outbound rate limited",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
                         }
                     },
                     "500": {
@@ -3967,7 +3991,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -4024,7 +4048,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -4081,7 +4105,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -4138,7 +4162,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -4195,7 +4219,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -4252,7 +4276,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -4309,7 +4333,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -4366,7 +4390,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -4445,6 +4469,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Outbound rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -4494,6 +4524,12 @@ const docTemplate = `{
                         "description": "Error on validation",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Outbound rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
                         }
                     },
                     "500": {
@@ -4548,7 +4584,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -4605,7 +4641,7 @@ const docTemplate = `{
                         }
                     },
                     "429": {
-                        "description": "Information query rate limited; see Retry-After header",
+                        "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
                         }
@@ -5878,6 +5914,23 @@ const docTemplate = `{
                 "timestamp": {
                     "type": "string",
                     "example": "2026-07-21T10:30:00Z"
+                }
+            }
+        },
+        "apidocs.OutboundRateLimitResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "outbound_rate_limited"
+                },
+                "error": {
+                    "type": "string",
+                    "example": "outbound_rate_limited"
+                },
+                "retryAfter": {
+                    "type": "integer",
+                    "example": 5
                 }
             }
         },

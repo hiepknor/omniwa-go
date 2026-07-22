@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	chat_service "github.com/evolution-foundation/evolution-go/pkg/chat/service"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/gin-gonic/gin"
@@ -434,6 +435,7 @@ func (c *chatHandler) ChatUnmute(ctx *gin.Context) {
 // @Param message body chat_service.HistorySyncRequestStruct true "Chat"
 // @Success 200 {object} apidocs.SuccessResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 429 {object} apidocs.OutboundRateLimitResponse "Outbound rate limited"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /chat/history-sync [post]
@@ -455,6 +457,9 @@ func (c *chatHandler) HistorySyncRequest(ctx *gin.Context) {
 
 	resp, err := c.chatService.HistorySyncRequest(data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	message_service "github.com/evolution-foundation/evolution-go/pkg/message/service"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
@@ -105,6 +106,7 @@ func writeMessageProjectionReadError(ctx *gin.Context, err error) {
 // @Param message body message_service.ReactStruct true "React to a message with fromMe and participant fields"
 // @Success 200 {object} apidocs.SuccessResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 429 {object} apidocs.OutboundRateLimitResponse "Outbound rate limited"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /message/react [post]
@@ -136,6 +138,9 @@ func (m *messageHandler) React(ctx *gin.Context) {
 
 	message, err := m.messageService.React(data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -394,6 +399,7 @@ func (m *messageHandler) GetMessageStatus(ctx *gin.Context) {
 // @Param message body message_service.MessageStruct true "Delete a message for everyone"
 // @Success 200 {object} apidocs.SuccessResponse{data=apidocs.MessageIdData} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 429 {object} apidocs.OutboundRateLimitResponse "Outbound rate limited"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /message/delete [post]
@@ -425,6 +431,9 @@ func (m *messageHandler) DeleteMessageEveryone(ctx *gin.Context) {
 
 	msgId, ts, err := m.messageService.DeleteMessageEveryone(data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -446,6 +455,7 @@ func (m *messageHandler) DeleteMessageEveryone(ctx *gin.Context) {
 // @Param message body message_service.EditMessageStruct true "Edit a message"
 // @Success 200 {object} apidocs.SuccessResponse{data=apidocs.MessageIdData} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 429 {object} apidocs.OutboundRateLimitResponse "Outbound rate limited"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /message/edit [post]
@@ -482,6 +492,9 @@ func (m *messageHandler) EditMessage(ctx *gin.Context) {
 
 	msgId, ts, err := m.messageService.EditMessage(data, instance)
 	if err != nil {
+		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

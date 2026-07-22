@@ -195,6 +195,9 @@ func (m *messageService) React(data *ReactStruct, instance *instance_model.Insta
 	// original message ID as the reaction envelope ID; WhatsApp silently
 	// deduplicates it and drops the reaction. Let whatsmeow generate a
 	// fresh, unique ID for the envelope.
+	if err := m.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
+		return nil, err
+	}
 	response, err := client.SendMessage(context.Background(), recipient, msg)
 	if err != nil {
 		return nil, err
@@ -480,6 +483,9 @@ func (m *messageService) DeleteMessageEveryone(data *MessageStruct, instance *in
 
 	m.loggerWrapper.GetLogger(instance.Id).LogInfo("Revoking message %s from %s", data.MessageID, recipient)
 
+	if err := m.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
+		return "", "", err
+	}
 	resp, err := client.SendMessage(
 		context.Background(),
 		recipient,
@@ -506,6 +512,9 @@ func (m *messageService) EditMessage(data *EditMessageStruct, instance *instance
 		return "", "", errors.New("invalid phone number")
 	}
 
+	if err := m.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
+		return "", "", err
+	}
 	resp, err := client.SendMessage(
 		context.Background(),
 		recipient,

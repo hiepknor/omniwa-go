@@ -59,6 +59,14 @@ type RateLimitResponse struct {
 	RetryAfter int    `json:"retryAfter,omitempty" example:"90"`
 }
 
+// OutboundRateLimitResponse is returned when a message mutation exceeds the
+// operator-configured outbound safety limit.
+type OutboundRateLimitResponse struct {
+	Error      string `json:"error" example:"outbound_rate_limited"`
+	Code       string `json:"code,omitempty" example:"outbound_rate_limited"`
+	RetryAfter int    `json:"retryAfter,omitempty" example:"5"`
+}
+
 // CreateInstanceResponse is returned by POST /instance/create. `data` is the
 // full instance record, including the per-instance `token` that becomes the
 // `apikey` header for every per-instance route.
