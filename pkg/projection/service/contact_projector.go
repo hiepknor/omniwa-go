@@ -3,7 +3,6 @@ package projection_service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
@@ -35,30 +34,30 @@ func NewContactProjector(contacts contactProjectionWriter, state contactProjecti
 
 func (p *ContactProjector) Handle(ctx context.Context, event *projection_model.Event) error {
 	if p == nil || p.contacts == nil || p.state == nil || p.readiness == nil {
-		return errors.New("contact projector dependencies are required")
+		return permanentProjectionFailure(errorCodeMisconfigured)
 	}
 	if event == nil || event.Resource != contactResource || event.InstanceID == "" || event.EventKey == "" {
-		return errors.New("unsupported contact projection event")
+		return permanentProjectionFailure(errorCodeUnsupportedEvent)
 	}
 	var payload contactEventPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return errors.New("invalid normalized contact projection payload")
+		return permanentProjectionFailure(errorCodeInvalidPayload)
 	}
 	if event.EventType == "contact_sync_complete" {
 		if payload.PreferredJID != event.EntityKey || payload.CompletedAt == nil || payload.CompletedAt.IsZero() {
-			return errors.New("contact sync completion payload is incomplete")
+			return permanentProjectionFailure(errorCodeIncompletePayload)
 		}
 		unprocessed, err := p.readiness.HasUnprocessedEvents(ctx, event.InstanceID, contactResource, contactMutationEventTypes, event.EventKey)
 		if err != nil {
 			return err
 		}
 		if unprocessed {
-			return errors.New("contact sync completion is waiting for prior events")
+			return retryableProjectionFailure(errorCodeDependencyPending)
 		}
 		return p.state.MarkReady(event.InstanceID, contactResource, ContactsProjectionSchemaVersion, payload.CompletedAt.UTC())
 	}
 	if payload.PreferredJID == "" || payload.PreferredJID != event.EntityKey || len(payload.Identities) == 0 {
-		return errors.New("contact projection payload identity mismatch")
+		return permanentProjectionFailure(errorCodeIdentityMismatch)
 	}
 	patch := projection_repository.ContactPatch{
 		InstanceID: event.InstanceID, Aspect: contactEventAspect(event.EventType), OccurredAt: event.OccurredAt, EventKey: event.EventKey,
@@ -69,7 +68,7 @@ func (p *ContactProjector) Handle(ctx context.Context, event *projection_model.E
 		PictureUpdatedAt: payload.PictureUpdatedAt, About: payload.About, AboutUpdatedAt: payload.AboutUpdatedAt,
 	}
 	if patch.Aspect == "" {
-		return errors.New("unsupported contact projection event")
+		return permanentProjectionFailure(errorCodeUnsupportedEvent)
 	}
 	for _, identity := range payload.Identities {
 		patch.Identities = append(patch.Identities, projection_repository.ContactIdentityRef{Kind: identity.Kind, Value: identity.Value})

@@ -26,7 +26,8 @@ type EventRepository interface {
 	ClaimPending(ctx context.Context, limit int, leaseDuration time.Duration) ([]projection_model.Event, error)
 	ClaimPendingFor(ctx context.Context, resource string, eventTypes []string, limit int, leaseDuration time.Duration) ([]projection_model.Event, error)
 	MarkProcessed(ctx context.Context, event *projection_model.Event) error
-	MarkFailed(ctx context.Context, event *projection_model.Event, errorCode string, retryAt time.Time) error
+	MarkRetry(ctx context.Context, event *projection_model.Event, failureClass projection_model.EventFailureClass, errorCode string, attemptedAt, retryAt time.Time) error
+	MarkDeadLetter(ctx context.Context, event *projection_model.Event, failureClass projection_model.EventFailureClass, errorCode string, attemptedAt time.Time) error
 }
 
 type eventRepository struct {
@@ -94,7 +95,7 @@ func (r *eventRepository) claimPending(ctx context.Context, resource string, eve
     LIMIT ?
 )
 UPDATE projection_event_inbox AS inbox
-SET status = 'processing', claim_token = ?, lease_until = ?, last_error_code = NULL
+SET status = 'processing', claim_token = ?, lease_until = ?
 FROM candidates
 WHERE inbox.instance_id = candidates.instance_id
   AND inbox.resource = candidates.resource
@@ -111,23 +112,45 @@ func (r *eventRepository) MarkProcessed(ctx context.Context, event *projection_m
 	result := r.claimedEventQuery(ctx, event).Updates(map[string]any{
 		"status": projection_model.EventStatusProcessed, "processed_at": now,
 		"claim_token": nil, "lease_until": nil, "last_error_code": nil,
+		"last_attempt_at": now, "failure_class": nil, "dead_lettered_at": nil,
 	})
 	return claimResult(result)
 }
 
-func (r *eventRepository) MarkFailed(ctx context.Context, event *projection_model.Event, errorCode string, retryAt time.Time) error {
+func (r *eventRepository) MarkRetry(ctx context.Context, event *projection_model.Event, failureClass projection_model.EventFailureClass, errorCode string, attemptedAt, retryAt time.Time) error {
 	if err := validateClaimedEvent(event); err != nil {
 		return err
 	}
-	if errorCode == "" || len(errorCode) > 64 || retryAt.IsZero() {
-		return errors.New("safe error code and retry time are required")
+	if failureClass != projection_model.EventFailureRetryable || !validFailureCode(errorCode) || attemptedAt.IsZero() || retryAt.IsZero() || retryAt.Before(attemptedAt) {
+		return errors.New("retryable failure class, safe error code, attempt time, and retry time are required")
 	}
 	result := r.claimedEventQuery(ctx, event).Updates(map[string]any{
 		"status": projection_model.EventStatusFailed, "available_at": retryAt.UTC(),
 		"retry_count": gorm.Expr("retry_count + 1"), "last_error_code": errorCode,
-		"claim_token": nil, "lease_until": nil,
+		"last_attempt_at": attemptedAt.UTC(), "failure_class": failureClass,
+		"claim_token": nil, "lease_until": nil, "dead_lettered_at": nil,
 	})
 	return claimResult(result)
+}
+
+func (r *eventRepository) MarkDeadLetter(ctx context.Context, event *projection_model.Event, failureClass projection_model.EventFailureClass, errorCode string, attemptedAt time.Time) error {
+	if err := validateClaimedEvent(event); err != nil {
+		return err
+	}
+	if (failureClass != projection_model.EventFailureRetryable && failureClass != projection_model.EventFailurePermanent) || !validFailureCode(errorCode) || attemptedAt.IsZero() {
+		return errors.New("failure class, safe error code, and attempt time are required")
+	}
+	result := r.claimedEventQuery(ctx, event).Updates(map[string]any{
+		"status": projection_model.EventStatusDeadLetter, "available_at": attemptedAt.UTC(),
+		"retry_count": gorm.Expr("retry_count + 1"), "last_error_code": errorCode,
+		"last_attempt_at": attemptedAt.UTC(), "failure_class": failureClass,
+		"claim_token": nil, "lease_until": nil, "dead_lettered_at": attemptedAt.UTC(),
+	})
+	return claimResult(result)
+}
+
+func validFailureCode(code string) bool {
+	return code != "" && len(code) <= 64
 }
 
 func (r *eventRepository) claimedEventQuery(ctx context.Context, event *projection_model.Event) *gorm.DB {

@@ -3,7 +3,6 @@ package projection_service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
@@ -40,30 +39,30 @@ func NewLabelProjector(labels labelProjectionWriter, state labelProjectionState,
 
 func (p *LabelProjector) Handle(ctx context.Context, event *projection_model.Event) error {
 	if p == nil || p.labels == nil || p.state == nil || p.readiness == nil {
-		return errors.New("label projector dependencies are required")
+		return permanentProjectionFailure(errorCodeMisconfigured)
 	}
 	if event == nil || event.Resource != labelResource || event.InstanceID == "" || event.EventKey == "" {
-		return errors.New("unsupported label projection event")
+		return permanentProjectionFailure(errorCodeUnsupportedEvent)
 	}
 	var payload labelEventPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return errors.New("invalid normalized label projection payload")
+		return permanentProjectionFailure(errorCodeInvalidPayload)
 	}
 	if payload.LabelID == "" || payload.LabelID != event.EntityKey {
-		return errors.New("label projection payload identity mismatch")
+		return permanentProjectionFailure(errorCodeIdentityMismatch)
 	}
 	var err error
 	switch event.EventType {
 	case "label_sync_complete":
 		if payload.Collection != "regular" || payload.CompletedAt.IsZero() {
-			return errors.New("label sync completion payload is incomplete")
+			return permanentProjectionFailure(errorCodeIncompletePayload)
 		}
 		unprocessed, err := p.readiness.HasUnprocessedEvents(ctx, event.InstanceID, labelResource, labelMutationEventTypes, event.EventKey)
 		if err != nil {
 			return err
 		}
 		if unprocessed {
-			return errors.New("label sync completion is waiting for prior events")
+			return retryableProjectionFailure(errorCodeDependencyPending)
 		}
 		return p.state.MarkReady(event.InstanceID, labelResource, LabelsProjectionSchemaVersion, payload.CompletedAt)
 	case "label_edit":
@@ -79,7 +78,7 @@ func (p *LabelProjector) Handle(ctx context.Context, event *projection_model.Eve
 		_, err = p.labels.ApplyLabel(ctx, label)
 	case "label_chat_association":
 		if payload.ChatID == "" || payload.Labeled == nil {
-			return errors.New("label chat association payload is incomplete")
+			return permanentProjectionFailure(errorCodeIncompletePayload)
 		}
 		association := &projection_model.LabelChatAssociation{
 			InstanceID: event.InstanceID, LabelID: payload.LabelID, ChatID: payload.ChatID,
@@ -89,7 +88,7 @@ func (p *LabelProjector) Handle(ctx context.Context, event *projection_model.Eve
 		_, err = p.labels.ApplyChatAssociation(ctx, association)
 	case "label_message_association":
 		if payload.ChatID == "" || payload.MessageID == "" || payload.Labeled == nil {
-			return errors.New("label message association payload is incomplete")
+			return permanentProjectionFailure(errorCodeIncompletePayload)
 		}
 		association := &projection_model.LabelMessageAssociation{
 			InstanceID: event.InstanceID, LabelID: payload.LabelID, ChatID: payload.ChatID, MessageID: payload.MessageID,
@@ -98,7 +97,7 @@ func (p *LabelProjector) Handle(ctx context.Context, event *projection_model.Eve
 		association.TombstonedAt = labelTombstone(event.OccurredAt, *payload.Labeled)
 		_, err = p.labels.ApplyMessageAssociation(ctx, association)
 	default:
-		return errors.New("unsupported label projection event")
+		return permanentProjectionFailure(errorCodeUnsupportedEvent)
 	}
 	if err != nil {
 		return err

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
@@ -40,14 +39,14 @@ func NewChatMessageProjector(repository chatMessageProjectionWriter, state proje
 
 func (p *ChatMessageProjector) Handle(ctx context.Context, event *projection_model.Event) error {
 	if p == nil || p.repository == nil || p.state == nil || p.retention <= 0 {
-		return errors.New("chat and message projector dependencies are required")
+		return permanentProjectionFailure(errorCodeMisconfigured)
 	}
 	if event == nil || event.Resource != messageResource || event.InstanceID == "" || event.EventKey == "" {
-		return errors.New("unsupported chat and message projection event")
+		return permanentProjectionFailure(errorCodeUnsupportedEvent)
 	}
 	var payload messageEventPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return errors.New("invalid normalized message projection payload")
+		return permanentProjectionFailure(errorCodeInvalidPayload)
 	}
 	switch event.EventType {
 	case "message", "history_message":
@@ -67,7 +66,7 @@ func (p *ChatMessageProjector) Handle(ctx context.Context, event *projection_mod
 		}
 		return p.state.RecordEvent(event.InstanceID, "chats", ChatsProjectionSchemaVersion, event.OccurredAt)
 	default:
-		return errors.New("unsupported chat and message projection event")
+		return permanentProjectionFailure(errorCodeUnsupportedEvent)
 	}
 	return p.state.RecordEvent(event.InstanceID, messageResource, MessagesProjectionSchemaVersion, event.OccurredAt)
 }
@@ -75,7 +74,7 @@ func (p *ChatMessageProjector) Handle(ctx context.Context, event *projection_mod
 func (p *ChatMessageProjector) applyMessage(ctx context.Context, event *projection_model.Event, payload *messageEventPayload) error {
 	if payload.ChatID == "" || payload.MessageID == "" || payload.MessageID != event.EntityKey || payload.ProviderTimestamp.IsZero() ||
 		payload.MessageType == "" || payload.Direction == "" || payload.Provenance == "" {
-		return errors.New("normalized message projection payload is incomplete")
+		return permanentProjectionFailure(errorCodeIncompletePayload)
 	}
 	activityAt := payload.ProviderTimestamp.UTC()
 	retentionExpiresAt := activityAt.Add(p.retention)
@@ -108,7 +107,7 @@ func (p *ChatMessageProjector) applyMessage(ctx context.Context, event *projecti
 
 func (p *ChatMessageProjector) applyHistoryChat(ctx context.Context, event *projection_model.Event, payload *messageEventPayload) error {
 	if payload.ChatID == "" || payload.ChatID != event.EntityKey || payload.ChatType == "" {
-		return errors.New("normalized history chat projection payload is incomplete")
+		return permanentProjectionFailure(errorCodeIncompletePayload)
 	}
 	chat := &projection_model.Chat{
 		InstanceID: event.InstanceID, ChatID: payload.ChatID, Type: payload.ChatType, DisplayName: payload.DisplayName,
@@ -131,7 +130,7 @@ func (p *ChatMessageProjector) applyHistoryChat(ctx context.Context, event *proj
 func (p *ChatMessageProjector) applyReceipts(ctx context.Context, event *projection_model.Event, payload *messageEventPayload) error {
 	if payload.ChatID == "" || len(payload.MessageIDs) == 0 || payload.RecipientJID == nil || *payload.RecipientJID == "" ||
 		payload.ReceiptType == "" || payload.ReceiptAt == nil || payload.ReceiptAt.IsZero() || payload.Direction == "" {
-		return errors.New("normalized receipt projection payload is incomplete")
+		return permanentProjectionFailure(errorCodeIncompletePayload)
 	}
 	chat := &projection_model.Chat{
 		InstanceID: event.InstanceID, ChatID: payload.ChatID, Type: payload.ChatType,
@@ -142,7 +141,7 @@ func (p *ChatMessageProjector) applyReceipts(ctx context.Context, event *project
 	}
 	for _, messageID := range payload.MessageIDs {
 		if messageID == "" {
-			return errors.New("normalized receipt contains an empty message identity")
+			return permanentProjectionFailure(errorCodeIdentityMismatch)
 		}
 		retentionExpiresAt := payload.ReceiptAt.UTC().Add(p.retention)
 		placeholder := &projection_model.ProjectedMessage{

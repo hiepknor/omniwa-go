@@ -3,7 +3,6 @@ package projection_service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"sort"
 	"time"
 
@@ -34,17 +33,17 @@ func NewGroupProjector(groups groupSnapshotRepository, state projectionEventStat
 
 func (p *GroupProjector) Handle(ctx context.Context, event *projection_model.Event) error {
 	if p == nil || p.groups == nil || p.state == nil {
-		return errors.New("group projector dependencies are required")
+		return permanentProjectionFailure(errorCodeMisconfigured)
 	}
 	if event == nil || event.Resource != groupResource || (event.EventType != "joined_group" && event.EventType != "group_info") || event.InstanceID == "" || event.EventKey == "" {
-		return errors.New("unsupported group projection event")
+		return permanentProjectionFailure(errorCodeUnsupportedEvent)
 	}
 	var payload groupEventPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return errors.New("invalid normalized group projection payload")
+		return permanentProjectionFailure(errorCodeInvalidPayload)
 	}
 	if payload.GroupID == "" || payload.GroupID != event.EntityKey || (event.EventType == "joined_group" && payload.Joined == nil) {
-		return errors.New("group projection payload identity mismatch")
+		return permanentProjectionFailure(errorCodeIdentityMismatch)
 	}
 	if event.EventType == "joined_group" {
 		group := groupFromSnapshot(event, &payload)
