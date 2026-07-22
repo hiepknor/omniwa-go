@@ -519,6 +519,19 @@ CREATE INDEX projected_contacts_search_redacted_phone_idx
 ON projected_contacts (instance_id, (LOWER(COALESCE(redacted_phone, ''))) text_pattern_ops)
 WHERE tombstoned_at IS NULL;`,
 	},
+	{
+		Version: 14,
+		Name:    "index_groups_projection_search",
+		SQL: `CREATE INDEX projected_groups_search_page_idx
+ON projected_groups (instance_id, group_id)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_groups_search_jid_idx
+ON projected_groups (instance_id, (LOWER(group_id)) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_groups_search_name_idx
+ON projected_groups (instance_id, (LOWER(LEFT(COALESCE(name, ''), 255))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

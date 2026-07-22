@@ -55,6 +55,11 @@ func (r *groupServiceReadRepository) List(context.Context, string) ([]projection
 	return []projection_repository.GroupRecord{r.record}, nil
 }
 
+func (r *groupServiceReadRepository) Search(context.Context, string, string, int, *projection_repository.GroupCursor) (*projection_repository.GroupPage, error) {
+	r.listCalls++
+	return &projection_repository.GroupPage{Items: []projection_repository.GroupRecord{r.record}}, nil
+}
+
 func (r *groupServiceReadRepository) Get(context.Context, string, string) (*projection_model.Group, []projection_model.GroupParticipant, error) {
 	r.getCalls++
 	return &r.record.Group, r.record.Participants, nil
@@ -87,6 +92,20 @@ func TestGroupServiceReadyReadsDoNotRequireWhatsAppClient(t *testing.T) {
 	info, infoMeta, err := service.GetGroupInfoRead(context.Background(), &GetGroupInfoStruct{GroupJID: "group@g.us"}, instance)
 	if err != nil || info == nil || info.Name != name || infoMeta == nil || repository.getCalls != 1 {
 		t.Fatalf("GetGroupInfoRead() = %#v, %#v, %v calls=%d", info, infoMeta, err, repository.getCalls)
+	}
+}
+
+func TestGroupServiceSearchDoesNotRequireWhatsAppClient(t *testing.T) {
+	reconciledAt := time.Unix(1000, 0)
+	name := "Database group"
+	repository := &groupServiceReadRepository{record: projection_repository.GroupRecord{Group: projection_model.Group{GroupID: "group@g.us", Name: &name}}}
+	reader := projection_service.NewGroupReader(repository, groupServiceReadState{state: projection_model.State{
+		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: projection_service.GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
+	}})
+	service := &groupService{groupReader: reader, clientPointer: nil}
+	groups, meta, err := service.SearchGroupsRead(context.Background(), &instance_model.Instance{Id: "instance-a"}, "database", 25, "")
+	if err != nil || len(groups) != 1 || groups[0].Name != name || meta == nil || repository.listCalls != 1 {
+		t.Fatalf("SearchGroupsRead() = %#v, %#v, %v calls=%d", groups, meta, err, repository.listCalls)
 	}
 }
 

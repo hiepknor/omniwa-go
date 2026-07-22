@@ -9594,6 +9594,58 @@ paths:
       summary: Set group photo
       tags:
       - Group
+  /group/search:
+    get:
+      description: Prefix-search groups from the persisted instance projection without
+        querying WhatsApp
+      parameters:
+      - description: Case-insensitive group JID or name prefix
+        in: query
+        maxLength: 128
+        name: q
+        type: string
+      - default: 50
+        description: Page size (1-200)
+        in: query
+        maximum: 200
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Opaque cursor bound to the instance and normalized query
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/types.GroupInfo'
+                  type: array
+              type: object
+        "400":
+          description: Invalid search or cursor
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Groups projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Search projected groups
+      tags:
+      - Group
   /group/settings:
     post:
       consumes:

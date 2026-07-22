@@ -15,11 +15,22 @@ type groupReaderRepositoryStub struct {
 	records []projection_repository.GroupRecord
 	get     *projection_repository.GroupRecord
 	calls   int
+	page    *projection_repository.GroupPage
+	cursor  *projection_repository.GroupCursor
 }
 
 func (s *groupReaderRepositoryStub) List(context.Context, string) ([]projection_repository.GroupRecord, error) {
 	s.calls++
 	return s.records, nil
+}
+
+func (s *groupReaderRepositoryStub) Search(_ context.Context, _ string, _ string, _ int, cursor *projection_repository.GroupCursor) (*projection_repository.GroupPage, error) {
+	s.calls++
+	s.cursor = cursor
+	if s.page != nil {
+		return s.page, nil
+	}
+	return &projection_repository.GroupPage{Items: s.records}, nil
 }
 
 func (s *groupReaderRepositoryStub) Get(context.Context, string, string) (*projection_model.Group, []projection_model.GroupParticipant, error) {
@@ -114,6 +125,30 @@ func TestGroupReaderReturnsCachedInviteLink(t *testing.T) {
 	got, meta, found, err := reader.InviteLink(context.Background(), "instance-a", "group@g.us")
 	if err != nil || !found || got != inviteLink || meta == nil || repository.calls != 1 {
 		t.Fatalf("InviteLink() = %q, %#v, %v, %v calls=%d", got, meta, found, err, repository.calls)
+	}
+}
+
+func TestGroupReaderSearchCursorIsOpaqueAndQueryScoped(t *testing.T) {
+	reconciledAt := time.Unix(500, 0)
+	repository := &groupReaderRepositoryStub{page: &projection_repository.GroupPage{
+		Items: []projection_repository.GroupRecord{}, NextCursor: &projection_repository.GroupCursor{GroupID: "123@g.us"},
+	}}
+	reader := NewGroupReader(repository, groupReaderStateStub{state: &projection_model.State{
+		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
+	}})
+	items, meta, err := reader.Search(context.Background(), "instance-a", " Alpha ", 10, "")
+	if err != nil || items == nil || meta == nil || meta.NextCursor == "" {
+		t.Fatalf("Search() = %#v, %#v, %v", items, meta, err)
+	}
+	repository.page.NextCursor = nil
+	if _, _, err := reader.Search(context.Background(), "instance-a", "alpha", 10, meta.NextCursor); err != nil || repository.cursor == nil || repository.cursor.GroupID != "123@g.us" {
+		t.Fatalf("decoded cursor = %#v, error=%v", repository.cursor, err)
+	}
+	if _, _, err := reader.Search(context.Background(), "instance-a", "beta", 10, meta.NextCursor); !errors.Is(err, ErrInvalidGroupCursor) {
+		t.Fatalf("cross-query cursor error = %v", err)
+	}
+	if _, _, err := reader.Search(context.Background(), "instance-b", "alpha", 10, meta.NextCursor); !errors.Is(err, ErrInvalidGroupCursor) {
+		t.Fatalf("cross-instance cursor error = %v", err)
 	}
 }
 

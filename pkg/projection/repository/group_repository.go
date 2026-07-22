@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
@@ -19,12 +20,20 @@ type GroupRepository interface {
 	TombstoneMissing(ctx context.Context, instanceID string, activeGroupIDs []string, eventKey string, occurredAt time.Time) (int, error)
 	Get(ctx context.Context, instanceID, groupID string) (*projection_model.Group, []projection_model.GroupParticipant, error)
 	List(ctx context.Context, instanceID string) ([]GroupRecord, error)
+	Search(ctx context.Context, instanceID, term string, limit int, cursor *GroupCursor) (*GroupPage, error)
 	GetInviteLink(ctx context.Context, instanceID, groupID string) (*string, error)
 }
 
 type GroupRecord struct {
 	Group        projection_model.Group
 	Participants []projection_model.GroupParticipant
+}
+
+type GroupCursor struct{ GroupID string }
+
+type GroupPage struct {
+	Items      []GroupRecord
+	NextCursor *GroupCursor
 }
 
 func (r *groupRepository) TombstoneMissing(ctx context.Context, instanceID string, activeGroupIDs []string, eventKey string, occurredAt time.Time) (int, error) {
@@ -492,11 +501,56 @@ func (r *groupRepository) List(ctx context.Context, instanceID string) ([]GroupR
 		Order("name ASC NULLS LAST, group_id ASC").Find(&groups).Error; err != nil {
 		return nil, err
 	}
+	return r.recordsWithParticipants(ctx, instanceID, groups)
+}
+
+func (r *groupRepository) Search(ctx context.Context, instanceID, term string, limit int, cursor *GroupCursor) (*GroupPage, error) {
+	term = strings.ToLower(strings.TrimSpace(term))
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" || len(term) > 128 || limit < 1 || limit > 200 ||
+		(cursor != nil && (cursor.GroupID == "" || len(cursor.GroupID) > 255)) {
+		return nil, errors.New("valid group search parameters are required")
+	}
+	query := r.db.WithContext(ctx).Where("instance_id = ? AND tombstoned_at IS NULL", instanceID)
+	if term != "" {
+		pattern := escapeGroupSearchPattern(term) + "%"
+		query = query.Where("(LOWER(group_id) LIKE ? OR LOWER(LEFT(COALESCE(name, ''), 255)) LIKE ?)", pattern, pattern)
+	}
+	if cursor != nil {
+		query = query.Where("group_id > ?", cursor.GroupID)
+	}
+	var groups []projection_model.Group
+	if err := query.Order("group_id ASC").Limit(limit + 1).Find(&groups).Error; err != nil {
+		return nil, err
+	}
+	hasNext := len(groups) > limit
+	if hasNext {
+		groups = groups[:limit]
+	}
+	records, err := r.recordsWithParticipants(ctx, instanceID, groups)
+	if err != nil {
+		return nil, err
+	}
+	page := &GroupPage{Items: records}
+	if hasNext {
+		page.NextCursor = &GroupCursor{GroupID: groups[len(groups)-1].GroupID}
+	}
+	return page, nil
+}
+
+func escapeGroupSearchPattern(value string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
+}
+
+func (r *groupRepository) recordsWithParticipants(ctx context.Context, instanceID string, groups []projection_model.Group) ([]GroupRecord, error) {
 	if len(groups) == 0 {
 		return []GroupRecord{}, nil
 	}
+	groupIDs := make([]string, len(groups))
+	for index := range groups {
+		groupIDs[index] = groups[index].GroupID
+	}
 	var participants []projection_model.GroupParticipant
-	if err := r.db.WithContext(ctx).Where("instance_id = ? AND tombstoned_at IS NULL", instanceID).
+	if err := r.db.WithContext(ctx).Where("instance_id = ? AND group_id IN ? AND tombstoned_at IS NULL", instanceID, groupIDs).
 		Order("group_id ASC, participant_id ASC").Find(&participants).Error; err != nil {
 		return nil, err
 	}
