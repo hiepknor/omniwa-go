@@ -3,6 +3,7 @@ package config
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
@@ -62,6 +63,10 @@ type Config struct {
 	QrcodeMaxCount       int
 	CheckUserExists      bool
 	LicenseGateEnabled   bool
+	WAInfoRatePerSecond  float64
+	WAInfoBurst          int
+	WAInfoMaxWait        time.Duration
+	WAInfoCooldown       time.Duration
 
 	// Logger configurations
 	LogMaxSize    int
@@ -286,6 +291,42 @@ func Load() *Config {
 	// the associated remote heartbeat.
 	licenseGateEnabled := os.Getenv(config_env.LICENSE_GATE_ENABLED) != "false"
 
+	waInfoRateValue := os.Getenv(config_env.WA_INFO_RATE)
+	if waInfoRateValue == "" {
+		waInfoRateValue = "5/min"
+	}
+	waInfoRatePerSecond, err := parseRatePerSecond(waInfoRateValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_INFO_RATE, err)
+	}
+
+	waInfoBurstValue := os.Getenv(config_env.WA_INFO_BURST)
+	if waInfoBurstValue == "" {
+		waInfoBurstValue = "3"
+	}
+	waInfoBurst, err := parsePositiveInt(waInfoBurstValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_INFO_BURST, err)
+	}
+
+	waInfoMaxWaitValue := os.Getenv(config_env.WA_INFO_MAX_WAIT)
+	if waInfoMaxWaitValue == "" {
+		waInfoMaxWaitValue = "5s"
+	}
+	waInfoMaxWait, err := parseNonNegativeDuration(waInfoMaxWaitValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_INFO_MAX_WAIT, err)
+	}
+
+	waInfoCooldownValue := os.Getenv(config_env.WA_INFO_COOLDOWN)
+	if waInfoCooldownValue == "" {
+		waInfoCooldownValue = "90s"
+	}
+	waInfoCooldown, err := parsePositiveDuration(waInfoCooldownValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_INFO_COOLDOWN, err)
+	}
+
 	// Convertendo para int com valores padrão caso estejam vazios
 	major := 0
 	if whatsappVersionMajor != "" {
@@ -382,6 +423,10 @@ func Load() *Config {
 		QrcodeMaxCount:       qrMaxCount,
 		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
 		LicenseGateEnabled:   licenseGateEnabled,
+		WAInfoRatePerSecond:  waInfoRatePerSecond,
+		WAInfoBurst:          waInfoBurst,
+		WAInfoMaxWait:        waInfoMaxWait,
+		WAInfoCooldown:       waInfoCooldown,
 		AmqpGlobalEvents:     amqpGlobalEvents,
 		AmqpSpecificEvents:   amqpSpecificEvents,
 		NatsUrl:              natsUrl,
@@ -401,6 +446,56 @@ func Load() *Config {
 	}
 
 	return config
+}
+
+func parseRatePerSecond(value string) (float64, error) {
+	parts := strings.Split(strings.TrimSpace(value), "/")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("rate must use <count>/<unit>, for example 5/min")
+	}
+
+	count, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	if err != nil || count <= 0 || math.IsNaN(count) || math.IsInf(count, 0) {
+		return 0, fmt.Errorf("rate count must be a finite positive number")
+	}
+
+	var unitSeconds float64
+	switch strings.ToLower(strings.TrimSpace(parts[1])) {
+	case "s", "sec", "second", "seconds":
+		unitSeconds = float64(time.Second / time.Second)
+	case "m", "min", "minute", "minutes":
+		unitSeconds = float64(time.Minute / time.Second)
+	case "h", "hr", "hour", "hours":
+		unitSeconds = float64(time.Hour / time.Second)
+	default:
+		return 0, fmt.Errorf("unsupported rate unit %q", strings.TrimSpace(parts[1]))
+	}
+
+	return count / unitSeconds, nil
+}
+
+func parsePositiveInt(value string) (int, error) {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("value must be a positive integer")
+	}
+	return parsed, nil
+}
+
+func parseNonNegativeDuration(value string) (time.Duration, error) {
+	parsed, err := time.ParseDuration(strings.TrimSpace(value))
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("value must be a non-negative Go duration")
+	}
+	return parsed, nil
+}
+
+func parsePositiveDuration(value string) (time.Duration, error) {
+	parsed, err := parseNonNegativeDuration(value)
+	if err != nil || parsed == 0 {
+		return 0, fmt.Errorf("value must be a positive Go duration")
+	}
+	return parsed, nil
 }
 
 func loadMinioConfig(config *Config) {
