@@ -30,6 +30,27 @@ type StateService interface {
 	MarkStale(instanceID, resource string, schemaVersion int64) error
 	MarkFailed(instanceID, resource string, schemaVersion int64) error
 	Capabilities(instanceID string) ([]string, error)
+	Health(instanceID string) (*ProjectionHealth, error)
+}
+
+type ProjectionHealth struct {
+	Status      string                     `json:"status"`
+	GeneratedAt time.Time                  `json:"generatedAt"`
+	Total       int                        `json:"total"`
+	ByStatus    map[string]int             `json:"byStatus"`
+	Resources   []ProjectionResourceHealth `json:"resources"`
+}
+
+type ProjectionResourceHealth struct {
+	InstanceID          string                      `json:"instanceId"`
+	Resource            string                      `json:"resource"`
+	SyncStatus          projection_model.SyncStatus `json:"syncStatus"`
+	SchemaVersion       int64                       `json:"schemaVersion"`
+	LastEventAt         *time.Time                  `json:"lastEventAt,omitempty"`
+	LastReconciledAt    *time.Time                  `json:"lastReconciledAt,omitempty"`
+	StaleSince          *time.Time                  `json:"staleSince,omitempty"`
+	EventLagSeconds     *int64                      `json:"eventLagSeconds,omitempty"`
+	ReconcileAgeSeconds *int64                      `json:"reconcileAgeSeconds,omitempty"`
 }
 
 type stateService struct {
@@ -126,4 +147,70 @@ func (s *stateService) Capabilities(instanceID string) ([]string, error) {
 	}
 	sort.Strings(capabilities)
 	return capabilities, nil
+}
+
+func (s *stateService) Health(instanceID string) (*ProjectionHealth, error) {
+	var states []projection_model.State
+	var err error
+	if instanceID == "" {
+		states, err = s.repository.ListAll()
+	} else {
+		states, err = s.repository.ListByInstance(instanceID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	health := &ProjectionHealth{
+		Status:      "healthy",
+		GeneratedAt: now,
+		Total:       len(states),
+		ByStatus:    map[string]int{},
+		Resources:   make([]ProjectionResourceHealth, len(states)),
+	}
+	for index := range states {
+		state := &states[index]
+		health.ByStatus[string(state.SyncStatus)]++
+		resource := ProjectionResourceHealth{
+			InstanceID:       state.InstanceID,
+			Resource:         state.Resource,
+			SyncStatus:       state.SyncStatus,
+			SchemaVersion:    state.SchemaVersion,
+			LastEventAt:      utcTimePointer(state.LastEventAt),
+			LastReconciledAt: utcTimePointer(state.LastReconciledAt),
+			StaleSince:       utcTimePointer(state.StaleSince),
+		}
+		resource.EventLagSeconds = ageSeconds(now, state.LastEventAt)
+		resource.ReconcileAgeSeconds = ageSeconds(now, state.LastReconciledAt)
+		health.Resources[index] = resource
+		switch state.SyncStatus {
+		case projection_model.SyncStatusStale, projection_model.SyncStatusFailed:
+			health.Status = "degraded"
+		case projection_model.SyncStatusSyncing, projection_model.SyncStatusNotStarted:
+			if health.Status == "healthy" {
+				health.Status = "syncing"
+			}
+		}
+	}
+	return health, nil
+}
+
+func utcTimePointer(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copy := value.UTC()
+	return &copy
+}
+
+func ageSeconds(now time.Time, value *time.Time) *int64 {
+	if value == nil {
+		return nil
+	}
+	age := now.Sub(value.UTC())
+	if age < 0 {
+		age = 0
+	}
+	seconds := int64(age / time.Second)
+	return &seconds
 }

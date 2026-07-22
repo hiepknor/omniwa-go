@@ -693,6 +693,58 @@ definitions:
       jid:
         $ref: '#/definitions/types.JID'
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus:
+    enum:
+    - not_started
+    - syncing
+    - ready
+    - stale
+    - failed
+    type: string
+    x-enum-varnames:
+    - SyncStatusNotStarted
+    - SyncStatusSyncing
+    - SyncStatusReady
+    - SyncStatusStale
+    - SyncStatusFailed
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionHealth:
+    properties:
+      byStatus:
+        additionalProperties:
+          type: integer
+        type: object
+      generatedAt:
+        type: string
+      resources:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionResourceHealth'
+        type: array
+      status:
+        type: string
+      total:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionResourceHealth:
+    properties:
+      eventLagSeconds:
+        type: integer
+      instanceId:
+        type: string
+      lastEventAt:
+        type: string
+      lastReconciledAt:
+        type: string
+      reconcileAgeSeconds:
+        type: integer
+      resource:
+        type: string
+      schemaVersion:
+        type: integer
+      staleSince:
+        type: string
+      syncStatus:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus'
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_sendMessage_service.Button:
     properties:
       copyCode:
@@ -10355,6 +10407,33 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get server capabilities
+      tags:
+      - Server
+  /server/projection-health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionHealth'
+              type: object
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get projection health metrics
       tags:
       - Server
   /unlabel/chat:

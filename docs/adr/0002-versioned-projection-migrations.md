@@ -27,6 +27,13 @@ Legacy upstream tables continue through the existing `AutoMigrate` call for
 now. New projection tables and changes must not be added to that call. They
 must use forward-only, additive versioned migrations.
 
+Persisted state is also the source for authenticated projection health metrics
+at `GET /server/projection-health`. Instance tokens receive only their own
+resources; the admin key receives the global view. The response reports status
+counts and per-resource schema version, event lag, reconciliation age, and
+source timestamps. These are synchronization metrics, not API liveness;
+`GET /server/ok` remains the unauthenticated process liveness endpoint.
+
 ## Rollout and rollback
 
 Migrations run before services and background workers start. Multiple replicas

@@ -13,6 +13,7 @@ import (
 type StateRepository interface {
 	Get(instanceID, resource string) (*projection_model.State, error)
 	ListByInstance(instanceID string) ([]projection_model.State, error)
+	ListAll() ([]projection_model.State, error)
 	Upsert(state *projection_model.State) error
 	RecordEvent(instanceID, resource string, schemaVersion int64, occurredAt time.Time) error
 }
@@ -32,6 +33,14 @@ func (r *stateRepository) Get(instanceID, resource string) (*projection_model.St
 func (r *stateRepository) ListByInstance(instanceID string) ([]projection_model.State, error) {
 	var states []projection_model.State
 	if err := r.db.Where("instance_id = ?", instanceID).Order("resource ASC").Find(&states).Error; err != nil {
+		return nil, err
+	}
+	return states, nil
+}
+
+func (r *stateRepository) ListAll() ([]projection_model.State, error) {
+	var states []projection_model.State
+	if err := r.db.Order("instance_id ASC, resource ASC").Find(&states).Error; err != nil {
 		return nil, err
 	}
 	return states, nil

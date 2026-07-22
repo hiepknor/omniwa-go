@@ -312,6 +312,20 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if _, _, err := reader.Get(context.Background(), instance.Id, "authoritative@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("write-through tombstone remained readable: %v", err)
 	}
+	health, err := stateService.Health(instance.Id)
+	if err != nil || health.Total != 2 || health.Status != "syncing" || health.ByStatus["ready"] != 1 || health.ByStatus["not_started"] != 1 ||
+		len(health.Resources) != 2 || !containsHealthResource(health.Resources, "groups", projection_model.SyncStatusReady) {
+		t.Fatalf("projection health = %#v, %v", health, err)
+	}
+}
+
+func containsHealthResource(resources []projection_service.ProjectionResourceHealth, resource string, status projection_model.SyncStatus) bool {
+	for _, item := range resources {
+		if item.Resource == resource && item.SyncStatus == status {
+			return true
+		}
+	}
+	return false
 }
 
 func containsString(values []string, expected string) bool {

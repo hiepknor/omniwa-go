@@ -33,6 +33,13 @@ func (r *memoryStateRepository) ListByInstance(instanceID string) ([]projection_
 	}
 	return result, nil
 }
+func (r *memoryStateRepository) ListAll() ([]projection_model.State, error) {
+	result := make([]projection_model.State, 0, len(r.states))
+	for _, state := range r.states {
+		result = append(result, state)
+	}
+	return result, nil
+}
 func (r *memoryStateRepository) Upsert(state *projection_model.State) error {
 	r.states[stateKey(state.InstanceID, state.Resource)] = *state
 	return nil
@@ -102,5 +109,32 @@ func TestAdminCapabilitiesOnlyExposeServerFeatures(t *testing.T) {
 	capabilities, err := service.Capabilities("")
 	if err != nil || len(capabilities) != 1 || capabilities[0] != CapabilityRateLimitRetryAfter {
 		t.Fatalf("Capabilities() = %v, %v", capabilities, err)
+	}
+}
+
+func TestProjectionHealthMetricsAreScopedAndTimestamped(t *testing.T) {
+	repository := newMemoryRepository()
+	now := time.Unix(1000, 0).UTC()
+	eventAt := time.Unix(900, 0).UTC()
+	reconciledAt := time.Unix(800, 0).UTC()
+	staleSince := time.Unix(950, 0).UTC()
+	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "groups", SyncStatus: projection_model.SyncStatusReady, SchemaVersion: 3,
+		LastEventAt: &eventAt, LastReconciledAt: &reconciledAt,
+	}
+	repository.states[stateKey("instance-b", "contacts")] = projection_model.State{
+		InstanceID: "instance-b", Resource: "contacts", SyncStatus: projection_model.SyncStatusStale, SchemaVersion: 1, StaleSince: &staleSince,
+	}
+	service := &stateService{repository: repository, now: func() time.Time { return now }}
+
+	scoped, err := service.Health("instance-a")
+	if err != nil || scoped.Status != "healthy" || scoped.Total != 1 || scoped.ByStatus["ready"] != 1 || len(scoped.Resources) != 1 ||
+		scoped.Resources[0].InstanceID != "instance-a" || scoped.Resources[0].EventLagSeconds == nil || *scoped.Resources[0].EventLagSeconds != 100 ||
+		scoped.Resources[0].ReconcileAgeSeconds == nil || *scoped.Resources[0].ReconcileAgeSeconds != 200 || !scoped.GeneratedAt.Equal(now) {
+		t.Fatalf("scoped Health() = %#v, %v", scoped, err)
+	}
+	global, err := service.Health("")
+	if err != nil || global.Status != "degraded" || global.Total != 2 || global.ByStatus["stale"] != 1 || len(global.Resources) != 2 {
+		t.Fatalf("global Health() = %#v, %v", global, err)
 	}
 }
