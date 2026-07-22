@@ -1,10 +1,10 @@
 package poll_handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
+	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	poll_model "github.com/evolution-foundation/evolution-go/pkg/poll/model"
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
@@ -54,14 +54,9 @@ func (h *PollHandler) GetPollResults(c *gin.Context) {
 		return
 	}
 
-	// Converter para struct Instance
-	type Instance struct {
-		Id string `json:"id"`
-	}
-	instanceBytes, _ := json.Marshal(instanceInterface)
-	var instance Instance
-	if err := json.Unmarshal(instanceBytes, &instance); err != nil {
-		h.loggerWrapper.GetLogger("poll-handler").LogError("[POLL] Failed to parse instance: %v", err)
+	instance, ok := instanceInterface.(*instance_model.Instance)
+	if !ok || instance == nil || instance.Id == "" {
+		h.loggerWrapper.GetLogger("poll-handler").LogError("[POLL] Invalid instance context")
 		httpapi.WriteError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}

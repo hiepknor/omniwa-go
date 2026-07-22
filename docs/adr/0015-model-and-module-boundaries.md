@@ -73,3 +73,12 @@ HTTP errors, and bootstrap extraction follow as separate changes.
 Individual DTO mappings can be rolled back without schema changes. Replacing
 the modular-monolith decision requires a separate ADR and explicit evidence
 that independent deployment is worth the operational and sync cost.
+
+The first adoption slice introduces an explicit instance compatibility view for
+create, list, and info responses. Every persistence field is marked
+`json:"-"`, and handlers map the selected public fields instead of serializing
+the GORM record. The existing response keys remain stable, including the token
+during the credential migration window, while stored proxy credentials and QR
+ceremony material are always redacted. Internal handlers obtain the authenticated
+instance by type assertion rather than JSON round-tripping the persistence
+record.

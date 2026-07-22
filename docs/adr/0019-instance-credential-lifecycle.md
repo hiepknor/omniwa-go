@@ -48,3 +48,10 @@ Global admin-key lifecycle remains a separate product and security decision.
 Every schema change is additive until plaintext removal. Authentication can
 fall back to plaintext during the measured compatibility window. Token removal
 is a later explicitly gated migration with backup and recovery evidence.
+
+The public-DTO prerequisite is implemented first. Create, list, and info now
+serialize an explicit compatibility view, never the persistence model. The
+token field remains temporarily populated on all three paths to avoid changing
+the contract before digest lookup, rotation, and console negotiation exist.
+Proxy credentials and QR ceremony material are not compatibility fields and are
+redacted immediately while retaining their existing JSON keys.

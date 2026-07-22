@@ -98,14 +98,6 @@ definitions:
         example: success
         type: string
     type: object
-  apidocs.CreateInstanceResponse:
-    properties:
-      data:
-        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_model.Instance'
-      message:
-        example: success
-        type: string
-    type: object
   apidocs.DownloadMediaData:
     properties:
       base64:
@@ -125,24 +117,6 @@ definitions:
         type: string
       requestId:
         example: 0123456789abcdef0123456789abcdef
-        type: string
-    type: object
-  apidocs.InstanceListResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_model.Instance'
-        type: array
-      message:
-        example: success
-        type: string
-    type: object
-  apidocs.InstanceResponse:
-    properties:
-      data:
-        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_instance_model.Instance'
-      message:
-        example: success
         type: string
     type: object
   apidocs.LabelItem:
@@ -653,56 +627,6 @@ definitions:
         type: boolean
       rejectCall:
         type: boolean
-    type: object
-  github_com_evolution-foundation_evolution-go_pkg_instance_model.Instance:
-    properties:
-      alwaysOnline:
-        description: Advanced Settings
-        type: boolean
-      client_name:
-        type: string
-      connected:
-        type: boolean
-      createdAt:
-        type: string
-      disconnect_reason:
-        type: string
-      events:
-        type: string
-      expiration:
-        type: integer
-      id:
-        type: string
-      ignoreGroups:
-        type: boolean
-      ignoreStatus:
-        type: boolean
-      jid:
-        type: string
-      msgRejectCall:
-        type: string
-      name:
-        type: string
-      natsEnable:
-        type: string
-      os_name:
-        type: string
-      proxy:
-        type: string
-      qrcode:
-        type: string
-      rabbitmqEnable:
-        type: string
-      readMessages:
-        type: boolean
-      rejectCall:
-        type: boolean
-      token:
-        type: string
-      webhook:
-        type: string
-      websocketEnable:
-        type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_instance_service.ConnectStruct:
     properties:
@@ -1965,6 +1889,55 @@ definitions:
         type: string
     required:
     - startsAt
+    type: object
+  pkg_instance_handler.InstanceView:
+    properties:
+      alwaysOnline:
+        type: boolean
+      client_name:
+        type: string
+      connected:
+        type: boolean
+      createdAt:
+        type: string
+      disconnect_reason:
+        type: string
+      events:
+        type: string
+      expiration:
+        type: integer
+      id:
+        type: string
+      ignoreGroups:
+        type: boolean
+      ignoreStatus:
+        type: boolean
+      jid:
+        type: string
+      msgRejectCall:
+        type: string
+      name:
+        type: string
+      natsEnable:
+        type: string
+      os_name:
+        type: string
+      proxy:
+        type: string
+      qrcode:
+        type: string
+      rabbitmqEnable:
+        type: string
+      readMessages:
+        type: boolean
+      rejectCall:
+        type: boolean
+      token:
+        type: string
+      webhook:
+        type: string
+      websocketEnable:
+        type: string
     type: object
   pkg_server_handler.ProjectionFailureOperationRequest:
     properties:
@@ -9871,7 +9844,14 @@ paths:
         "200":
           description: All instances
           schema:
-            $ref: '#/definitions/apidocs.InstanceListResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/pkg_instance_handler.InstanceView'
+                  type: array
+              type: object
         "500":
           description: Internal server error
           schema:
@@ -9933,7 +9913,12 @@ paths:
           description: Instance created successfully; data.token is the apikey for
             this instance
           schema:
-            $ref: '#/definitions/apidocs.CreateInstanceResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/pkg_instance_handler.InstanceView'
+              type: object
         "400":
           description: Error on validation
           schema:
@@ -10053,7 +10038,12 @@ paths:
         "200":
           description: Instance
           schema:
-            $ref: '#/definitions/apidocs.InstanceResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/pkg_instance_handler.InstanceView'
+              type: object
         "400":
           description: Error on validation
           schema:
