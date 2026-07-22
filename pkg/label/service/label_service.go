@@ -7,6 +7,7 @@ import (
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
@@ -29,7 +30,7 @@ type LabelService interface {
 }
 
 type labelService struct {
-	clientPointer    map[string]*whatsmeow.Client
+	clients          instance_runtime.ClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	labelRepository  label_repository.LabelRepository
 	projectionReader *projection_service.LabelReader
@@ -58,7 +59,7 @@ type EditLabelStruct struct {
 }
 
 func (l *labelService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	client := l.clientPointer[instanceId]
+	client := l.clients.Get(instanceId)
 	l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
 	if client == nil {
@@ -72,7 +73,7 @@ func (l *labelService) ensureClientConnected(instanceId string) (*whatsmeow.Clie
 		l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
 		time.Sleep(2 * time.Second)
 
-		client = l.clientPointer[instanceId]
+		client = l.clients.Get(instanceId)
 		l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,
@@ -292,7 +293,7 @@ func legacyLabelFromProjection(instanceID string, label *projection_model.Label)
 }
 
 func NewLabelService(
-	clientPointer map[string]*whatsmeow.Client,
+	clients instance_runtime.ClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	labelRepository label_repository.LabelRepository,
 	projectionReader *projection_service.LabelReader,
@@ -300,7 +301,7 @@ func NewLabelService(
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) LabelService {
 	return &labelService{
-		clientPointer:    clientPointer,
+		clients:          clients,
 		whatsmeowService: whatsmeowService,
 		labelRepository:  labelRepository,
 		projectionReader: projectionReader,
