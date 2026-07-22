@@ -60,6 +60,7 @@ definitions:
         - campaign_orchestration
         - rate_limit_retry_after
         - groups_projection
+        - instance_metadata_views
         - instance_credential_health
         - instance_token_rotation
         items:
@@ -1935,6 +1936,51 @@ definitions:
         type: string
     required:
     - startsAt
+    type: object
+  pkg_instance_handler.InstanceMetadataView:
+    properties:
+      alwaysOnline:
+        type: boolean
+      client_name:
+        type: string
+      connected:
+        type: boolean
+      createdAt:
+        type: string
+      credentialVersion:
+        type: integer
+      disconnect_reason:
+        type: string
+      events:
+        type: string
+      expiration:
+        type: integer
+      id:
+        type: string
+      ignoreGroups:
+        type: boolean
+      ignoreStatus:
+        type: boolean
+      jid:
+        type: string
+      msgRejectCall:
+        type: string
+      name:
+        type: string
+      natsEnable:
+        type: string
+      os_name:
+        type: string
+      rabbitmqEnable:
+        type: string
+      readMessages:
+        type: boolean
+      rejectCall:
+        type: boolean
+      webhook:
+        type: string
+      websocketEnable:
+        type: string
     type: object
   pkg_instance_handler.InstanceView:
     properties:
@@ -10215,6 +10261,80 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get instance logs
+      tags:
+      - Instance
+  /instance/metadata:
+    get:
+      description: Lists instances without returning bearer tokens, proxy credentials,
+        or QR ceremony material.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: All instance metadata
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/pkg_instance_handler.InstanceMetadataView'
+                  type: array
+              type: object
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List credential-free instance metadata
+      tags:
+      - Instance
+  /instance/metadata/{instanceId}:
+    get:
+      description: Gets one instance without returning bearer tokens, proxy credentials,
+        or QR ceremony material.
+      parameters:
+      - description: Instance Id
+        in: path
+        name: instanceId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Instance metadata
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/pkg_instance_handler.InstanceMetadataView'
+              type: object
+        "400":
+          description: Invalid instance ID
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Instance not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get credential-free instance metadata
       tags:
       - Instance
   /instance/pair:

@@ -103,6 +103,11 @@ plaintext fallback usage without exposing tokens or digests. These facts do not
 by themselves authorize plaintext removal; complete the Console rollout and
 the agreed rollback window first.
 
+Admin capability discovery always advertises `instance_metadata_views`.
+Administrative list/detail screens should use `GET /instance/metadata` and
+`GET /instance/metadata/:instanceId`; these contracts never return bearer
+tokens, token digests, proxy credentials, or QR ceremony material.
+
 ---
 
 ## License Gate

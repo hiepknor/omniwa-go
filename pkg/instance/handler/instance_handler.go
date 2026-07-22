@@ -14,6 +14,8 @@ import (
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
 	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type InstanceHandler interface {
@@ -27,6 +29,8 @@ type InstanceHandler interface {
 	Qr(ctx *gin.Context)
 	All(ctx *gin.Context)
 	Info(ctx *gin.Context)
+	AllMetadata(ctx *gin.Context)
+	Metadata(ctx *gin.Context)
 	Pair(ctx *gin.Context)
 	SetProxy(ctx *gin.Context)
 	DeleteProxy(ctx *gin.Context)
@@ -38,9 +42,77 @@ type InstanceHandler interface {
 	CredentialHealth(ctx *gin.Context)
 }
 
+type instanceMetadataReader interface {
+	GetAll() ([]*instance_model.Instance, error)
+	Info(instanceID string) (*instance_model.Instance, error)
+}
+
+// AllMetadata returns credential-free instance metadata for administrative UIs.
+// @Summary List credential-free instance metadata
+// @Description Lists instances without returning bearer tokens, proxy credentials, or QR ceremony material.
+// @Tags Instance
+// @Produce json
+// @Success 200 {object} apidocs.SuccessResponse{data=[]InstanceMetadataView} "All instance metadata"
+// @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /instance/metadata [get]
+func (i *instanceHandler) AllMetadata(ctx *gin.Context) {
+	if i.metadataReader == nil {
+		httpapi.WriteInternal(ctx, nil)
+		return
+	}
+	instances, err := i.metadataReader.GetAll()
+	if err != nil {
+		httpapi.WriteInternal(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": instanceMetadataViewList(instances)})
+}
+
+// Metadata returns credential-free metadata for one instance.
+// @Summary Get credential-free instance metadata
+// @Description Gets one instance without returning bearer tokens, proxy credentials, or QR ceremony material.
+// @Tags Instance
+// @Produce json
+// @Param instanceId path string true "Instance Id"
+// @Success 200 {object} apidocs.SuccessResponse{data=InstanceMetadataView} "Instance metadata"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid instance ID"
+// @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
+// @Failure 404 {object} apidocs.ErrorResponse "Instance not found"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /instance/metadata/{instanceId} [get]
+func (i *instanceHandler) Metadata(ctx *gin.Context) {
+	if i.metadataReader == nil {
+		httpapi.WriteInternal(ctx, nil)
+		return
+	}
+	instanceID := ctx.Param("instanceId")
+	if _, err := uuid.Parse(instanceID); err != nil {
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_instance_id", "a valid instanceId is required")
+		return
+	}
+	instance, err := i.metadataReader.Info(instanceID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		httpapi.WriteError(ctx, http.StatusNotFound, "instance_not_found", "instance not found")
+		return
+	}
+	if err != nil {
+		httpapi.WriteInternal(ctx, err)
+		return
+	}
+	if instance == nil {
+		httpapi.WriteInternal(ctx, nil)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": instanceMetadataView(instance)})
+}
+
 type instanceHandler struct {
 	config           *config.Config
 	instanceService  instance_service.InstanceService
+	metadataReader   instanceMetadataReader
 	tokenRotation    *instance_credential.RotationService
 	credentialHealth *instance_credential.HealthService
 }
@@ -769,7 +841,7 @@ func WithCredentialHealth(service *instance_credential.HealthService) Option {
 }
 
 func NewInstanceHandler(instanceService instance_service.InstanceService, config *config.Config, options ...Option) InstanceHandler {
-	handler := &instanceHandler{instanceService: instanceService, config: config}
+	handler := &instanceHandler{instanceService: instanceService, metadataReader: instanceService, config: config}
 	for _, option := range options {
 		if option != nil {
 			option(handler)

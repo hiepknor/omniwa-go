@@ -82,6 +82,13 @@ discard that secret ad hoc: the current rollout has a single active digest key
 and retains plaintext only as a measured rollback path. Backfill work is
 bounded per startup and safely resumes on a later restart.
 
+Admin clients should discover `instance_metadata_views` and use
+`GET /instance/metadata` plus `GET /instance/metadata/{instanceId}` for ordinary
+list/detail screens. These responses exclude bearer tokens, lookup digests,
+proxy credentials, and QR ceremony material. The legacy `/instance/all` and
+`/instance/info/{instanceId}` responses remain temporarily compatible while
+older consumers migrate.
+
 ### Credential migration health
 
 With the HMAC key configured, admin capability discovery includes
