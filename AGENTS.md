@@ -84,6 +84,16 @@ upstream syncs stay low-conflict.
 
 `main` is protected — **never push to `main` directly**.
 
+Every repository-changing task must follow
+[docs/ENGINEERING_WORKFLOW.md](./docs/ENGINEERING_WORKFLOW.md). Before editing,
+classify the task's risk, define testable acceptance criteria, identify
+compatibility constraints, and create a task branch from an up-to-date `main`.
+
+Changes involving database migrations, authentication, concurrency, public API
+contracts, destructive operations, or external production state require an
+explicit rollback plan and staged rollout. Decisions that are difficult to
+reverse require an ADR.
+
 Every task that changes repository files must be completed on a new branch and
 delivered through a pull request targeting `main`. Do not leave completed
 changes only in the local working tree. A task is not complete until the branch
@@ -92,9 +102,12 @@ PR. After the PR is merged, delete the task branch from both the remote and the
 local repository.
 
 1. Branch from `main`: `git switch -c <type>/<short-description>`.
-2. Make a focused change; run build/vet/test.
-3. Open a PR against `main`; the `build / vet / test` check must be green.
-4. Squash-merge and delete the task branch locally and remotely.
+2. Make a focused change and review the complete diff.
+3. Run `git diff --check`, `go build ./...`, `go vet ./...`, and `go test ./...`.
+   Also run `go test -race ./...` for concurrency-sensitive changes and
+   regenerate Swagger after changing handlers or public API contracts.
+4. Open a PR against `main`; the `build / vet / test` check must be green.
+5. Squash-merge and delete the task branch locally and remotely.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`,
 `chore:`, `docs:`, `ci:`, `refactor:`, `test:`.
