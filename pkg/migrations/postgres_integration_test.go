@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -206,6 +207,41 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		t.Fatalf("stored durable event after reconnect = %#v, %v", storedDurableEvent, err)
 	}
 	reopenedDurableRepository := projection_repository.NewDurableEventRepository(reopened)
+	for index, occurredAt := range []time.Time{time.Unix(100, 0), time.Unix(200, 0), time.Unix(300, 0)} {
+		pageEvent := projection_model.DurableEvent{
+			ID: fmt.Sprintf("00000000-0000-0000-0000-%012d", 991+index), InstanceID: instance.Id, Type: "PaginationTest",
+			OccurredAt: occurredAt, IngestedAt: occurredAt, ExpiresAt: time.Now().Add(time.Hour), Summary: json.RawMessage(`{}`),
+		}
+		if err := reopenedDurableRepository.Append(context.Background(), &pageEvent); err != nil {
+			t.Fatalf("append paged durable event: %v", err)
+		}
+	}
+	otherInstance := instance_model.Instance{Name: "event-pagination-isolation", Token: "event-pagination-isolation-token"}
+	if err := reopened.Create(&otherInstance).Error; err != nil {
+		t.Fatalf("create isolated event instance: %v", err)
+	}
+	otherEvent := projection_model.DurableEvent{
+		ID: "00000000-0000-0000-0000-000000000995", InstanceID: otherInstance.Id, Type: "PaginationTest",
+		OccurredAt: time.Unix(350, 0), IngestedAt: time.Unix(350, 0), ExpiresAt: time.Now().Add(time.Hour), Summary: json.RawMessage(`{}`),
+	}
+	if err := reopenedDurableRepository.Append(context.Background(), &otherEvent); err != nil {
+		t.Fatalf("append isolated durable event: %v", err)
+	}
+	firstEventPage, err := reopenedDurableRepository.List(context.Background(), instance.Id, "PaginationTest", 2, nil)
+	if err != nil || len(firstEventPage.Items) != 2 || firstEventPage.Items[0].OccurredAt.Unix() != 300 || firstEventPage.Items[1].OccurredAt.Unix() != 200 || firstEventPage.NextCursor == nil {
+		t.Fatalf("first durable event page = %#v, %v", firstEventPage, err)
+	}
+	newerPageEvent := projection_model.DurableEvent{
+		ID: "00000000-0000-0000-0000-000000000994", InstanceID: instance.Id, Type: "PaginationTest",
+		OccurredAt: time.Unix(400, 0), IngestedAt: time.Unix(400, 0), ExpiresAt: time.Now().Add(time.Hour), Summary: json.RawMessage(`{}`),
+	}
+	if err := reopenedDurableRepository.Append(context.Background(), &newerPageEvent); err != nil {
+		t.Fatalf("append newer durable event: %v", err)
+	}
+	secondEventPage, err := reopenedDurableRepository.List(context.Background(), instance.Id, "PaginationTest", 2, firstEventPage.NextCursor)
+	if err != nil || len(secondEventPage.Items) != 1 || secondEventPage.Items[0].OccurredAt.Unix() != 100 || secondEventPage.NextCursor != nil {
+		t.Fatalf("stable second durable event page = %#v, %v", secondEventPage, err)
+	}
 	expiredEvent := projection_model.DurableEvent{
 		ID: "00000000-0000-0000-0000-000000000999", InstanceID: instance.Id, Type: "Expired",
 		OccurredAt: time.Unix(1, 0), IngestedAt: time.Unix(2, 0), ExpiresAt: time.Unix(3, 0), Summary: json.RawMessage(`{}`),

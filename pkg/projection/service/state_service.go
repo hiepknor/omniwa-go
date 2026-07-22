@@ -10,7 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const CapabilityRateLimitRetryAfter = "rate_limit_retry_after"
+const (
+	CapabilityRateLimitRetryAfter = "rate_limit_retry_after"
+	CapabilityEventsProjection    = "events_projection"
+)
 
 var resourceCapabilities = map[string]string{
 	"groups":   "groups_projection",
@@ -18,7 +21,6 @@ var resourceCapabilities = map[string]string{
 	"contacts": "contacts_projection",
 	"chats":    "chats_projection",
 	"messages": "messages_projection",
-	"events":   "events_projection",
 }
 
 var resourceSchemaVersions = map[string]int64{
@@ -135,7 +137,9 @@ func (s *stateService) setStatus(instanceID, resource string, schemaVersion int6
 }
 
 func (s *stateService) Capabilities(instanceID string) ([]string, error) {
-	capabilities := []string{CapabilityRateLimitRetryAfter}
+	// Durable history has no initial-sync barrier: it is validly empty for a new
+	// instance and explicitly does not claim pre-deployment backfill.
+	capabilities := []string{CapabilityEventsProjection, CapabilityRateLimitRetryAfter}
 	if instanceID == "" {
 		return capabilities, nil
 	}

@@ -33,8 +33,11 @@ Expired rows are hard-deleted by a bounded, `SKIP LOCKED` background sweep so
 multiple replicas can clean safely without long blocking transactions.
 
 No backfill is promised for events emitted before this persistence layer is
-deployed. A later additive API will expose instance-scoped cursor pagination;
-the `(instance_id, occurred_at, id)` index defines its stable ordering.
+deployed. `GET /events` exposes instance-token-scoped history with an opaque
+cursor ordered by `(occurred_at, id)`, an optional exact event-type filter, and
+explicit retention and no-backfill metadata. `events_projection` is a server
+capability rather than a sync-gated resource capability because a new
+instance's empty history is immediately valid.
 
 ## Consequences
 

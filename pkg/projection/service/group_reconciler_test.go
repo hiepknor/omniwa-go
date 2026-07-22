@@ -81,7 +81,7 @@ func TestGroupReconcilerMarksInitialFailureWithoutPublishingCapability(t *testin
 	}
 	stored, _ := state.Get("instance-a", groupResource)
 	capabilities, _ := state.Capabilities("instance-a")
-	if stored.SyncStatus != projection_model.SyncStatusFailed || len(capabilities) != 1 {
+	if stored.SyncStatus != projection_model.SyncStatusFailed || containsCapability(capabilities, "groups_projection") {
 		t.Fatalf("failure published projection: state=%#v capabilities=%v", stored, capabilities)
 	}
 }

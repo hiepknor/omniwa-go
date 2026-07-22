@@ -65,6 +65,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	eng.GET("/server/ok", r.serverHandler.ServerOk)
 	eng.GET("/server/capabilities", r.authMiddleware.AuthAdminOrInstance, r.serverHandler.Capabilities)
 	eng.GET("/server/projection-health", r.authMiddleware.AuthAdminOrInstance, r.serverHandler.ProjectionHealth)
+	eng.GET("/events", r.authMiddleware.Auth, r.serverHandler.EventHistory)
 
 	routes := eng.Group("/instance")
 	{
