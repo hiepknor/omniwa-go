@@ -92,3 +92,12 @@ with shutdown `Wait` and removes per-worker goroutine bookkeeping from
 runtime lifecycle behavior remains in `pkg/instance/runtime` and the WhatsApp
 adapter. Domain workers still own their processing logic and accept context,
 so bootstrap remains composition rather than a generic business layer.
+
+Architecture boundaries are enforced by AST-based tests in
+`pkg/architecture`. They reject reverse layer imports, direct construction or
+use of process-global HTTP clients outside `pkg/netguard`, serializable
+sensitive fields in persistence model packages, and raw maps of WhatsApp
+runtime clients. The checks inspect production Go syntax rather than matching
+comments or documentation, understand aliased `net/http` imports, and exclude
+the protected `pkg/core` implementation. New exceptions require an explicit
+architecture decision instead of silently growing an allowlist.
