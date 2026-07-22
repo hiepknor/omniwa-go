@@ -56,10 +56,18 @@ func TestChatsMessagesProjectionMigrationIsVersionedAndIndexed(t *testing.T) {
 }
 
 func TestMessageRetentionCutoffIndexIsVersioned(t *testing.T) {
+	migration := registry[8]
+	if migration.Version != 9 || migration.Name != "index_message_retention_cutoff" ||
+		!strings.Contains(migration.SQL, "projected_messages_retention_cutoff_idx") ||
+		!strings.Contains(migration.SQL, "projection_event_inbox_message_retention_idx") {
+		t.Fatalf("message retention migration = %#v", migration)
+	}
+}
+
+func TestDurableEventsMigrationIsVersionedAndIndexed(t *testing.T) {
 	last := registry[len(registry)-1]
-	if last.Version != 9 || last.Name != "index_message_retention_cutoff" ||
-		!strings.Contains(last.SQL, "projected_messages_retention_cutoff_idx") ||
-		!strings.Contains(last.SQL, "projection_event_inbox_message_retention_idx") {
-		t.Fatalf("message retention migration = %#v", last)
+	if last.Version != 10 || last.Name != "create_durable_events" || !strings.Contains(last.SQL, "CREATE TABLE durable_events") ||
+		!strings.Contains(last.SQL, "durable_events_history_idx") || !strings.Contains(last.SQL, "durable_events_retention_idx") {
+		t.Fatalf("durable events migration = %#v", last)
 	}
 }

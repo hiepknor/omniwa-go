@@ -16,6 +16,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_INFO_COOLDOWN, "")
 	t.Setenv(config_env.WA_GROUP_RECONCILE_INTERVAL, "")
 	t.Setenv(config_env.WA_MSG_RETENTION, "")
+	t.Setenv(config_env.WA_EVENT_RETENTION, "")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
@@ -36,6 +37,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.MessageRetention != 90*24*time.Hour {
 		t.Fatalf("MessageRetention = %v, want 2160h", config.MessageRetention)
 	}
+	if config.EventRetention != 30*24*time.Hour {
+		t.Fatalf("EventRetention = %v, want 720h", config.EventRetention)
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -46,6 +50,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_INFO_COOLDOWN, "2m")
 	t.Setenv(config_env.WA_GROUP_RECONCILE_INTERVAL, "45m")
 	t.Setenv(config_env.WA_MSG_RETENTION, "720h")
+	t.Setenv(config_env.WA_EVENT_RETENTION, "168h")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(12.0/3600.0)) > 1e-12 {
@@ -59,6 +64,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if config.MessageRetention != 30*24*time.Hour {
 		t.Fatalf("MessageRetention = %v, want 720h", config.MessageRetention)
+	}
+	if config.EventRetention != 7*24*time.Hour {
+		t.Fatalf("EventRetention = %v, want 168h", config.EventRetention)
 	}
 }
 

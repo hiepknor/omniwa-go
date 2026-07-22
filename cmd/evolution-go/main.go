@@ -192,6 +192,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	chatMessageReader := projection_service.NewChatMessageReader(chatMessageProjectionRepository, projectionStateService, config.MessageRetention)
 	historySyncer := projection_service.NewHistorySyncer(projectionEventService, projectionStateService)
 	historyReadinessProjector := projection_service.NewHistoryReadinessProjector(projectionStateService, projectionReadinessRepository)
+	durableEventRepository := projection_repository.NewDurableEventRepository(db)
+	durableEventService := projection_service.NewDurableEventService(durableEventRepository, config.EventRetention)
 	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
 	contactReader := projection_service.NewContactReader(contactProjectionRepository, projectionStateService)
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
@@ -302,6 +304,23 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			logger.LogError("component=projection action=worker resource=message_retention result=stopped error_code=invalid_worker_configuration")
 		}
 	}()
+	durableEventRetentionWorker := projection_service.NewDurableEventRetentionWorker(
+		durableEventRepository, 5_000, time.Minute,
+		func(deleted int64, err error) {
+			if err != nil {
+				logger.LogError("component=events action=retention result=failed error_code=delete_failed")
+			} else if deleted > 0 {
+				logger.LogInfo("component=events action=retention result=deleted count=%d", deleted)
+			}
+		},
+	)
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		if err := durableEventRetentionWorker.Run(appCtx); err != nil {
+			logger.LogError("component=events action=worker resource=event_retention result=stopped error_code=invalid_worker_configuration")
+		}
+	}()
 
 	whatsmeowService := whatsmeow_service.NewWhatsmeowService(
 		instanceRepository,
@@ -324,6 +343,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		labelSyncer,
 		contactSyncer,
 		historySyncer,
+		durableEventService,
 		appCtx,
 		loggerWrapper,
 	)

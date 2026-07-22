@@ -166,6 +166,12 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || inserted {
 		t.Fatalf("duplicate enqueue = %v, %v", inserted, err)
 	}
+	durableEventRepository := projection_repository.NewDurableEventRepository(db)
+	durableEventService := projection_service.NewDurableEventService(durableEventRepository, 30*24*time.Hour)
+	durableEvent, err := durableEventService.Record(context.Background(), instance.Id, "Connected", nil)
+	if err != nil {
+		t.Fatalf("record durable event: %v", err)
+	}
 
 	raw, _ := db.DB()
 	_ = raw.Close()
@@ -193,6 +199,26 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := reopened.First(&storedReceipt, "instance_id = ? AND message_id = ? AND recipient_jid = ? AND receipt_type = ?", instance.Id, receipt.MessageID, receipt.RecipientJID, receipt.ReceiptType).Error; err != nil ||
 		!storedReceipt.ReceiptAt.Equal(receipt.ReceiptAt) {
 		t.Fatalf("stored message receipt after reconnect = %#v, %v", storedReceipt, err)
+	}
+	var storedDurableEvent projection_model.DurableEvent
+	if err := reopened.First(&storedDurableEvent, "id = ?", durableEvent.ID).Error; err != nil ||
+		storedDurableEvent.InstanceID != instance.Id || storedDurableEvent.Type != "Connected" || string(storedDurableEvent.Summary) != "{}" {
+		t.Fatalf("stored durable event after reconnect = %#v, %v", storedDurableEvent, err)
+	}
+	reopenedDurableRepository := projection_repository.NewDurableEventRepository(reopened)
+	expiredEvent := projection_model.DurableEvent{
+		ID: "00000000-0000-0000-0000-000000000999", InstanceID: instance.Id, Type: "Expired",
+		OccurredAt: time.Unix(1, 0), IngestedAt: time.Unix(2, 0), ExpiresAt: time.Unix(3, 0), Summary: json.RawMessage(`{}`),
+	}
+	if err := reopenedDurableRepository.Append(context.Background(), &expiredEvent); err != nil {
+		t.Fatalf("append expired durable event: %v", err)
+	}
+	deleted, err := reopenedDurableRepository.DeleteExpired(context.Background(), time.Unix(4, 0), 1)
+	if err != nil || deleted != 1 {
+		t.Fatalf("delete expired durable events = %d, %v", deleted, err)
+	}
+	if err := reopened.First(&storedDurableEvent, "id = ?", durableEvent.ID).Error; err != nil {
+		t.Fatalf("unexpired durable event was removed: %v", err)
 	}
 	contactRepository := projection_repository.NewContactRepository(reopened)
 	fullName := "First version"
