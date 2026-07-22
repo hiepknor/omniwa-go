@@ -1,0 +1,42 @@
+# ADR 0003: Labels projection storage
+
+- Status: Accepted
+- Date: 2026-07-22
+
+## Context
+
+The legacy `labels` table stores label definitions only. Label association
+events are logged but not persisted, reads require a connected WhatsApp
+client, and the records do not contain source versions needed to resolve
+duplicate or out-of-order app-state events.
+
+## Decision
+
+Store the new read model in three versioned PostgreSQL tables:
+
+- `projected_labels` for normalized label definitions.
+- `projected_label_chat_associations` for chat assignments.
+- `projected_label_message_associations` for message assignments.
+
+Every record carries the source occurrence time and a deterministic event key.
+An update is applied only when the tuple `(source_occurred_at,
+source_event_key)` is newer than the stored tuple. Exact duplicate events and
+older events therefore do not change the read model. Removal is represented by
+a tombstone so a late add event cannot restore a deleted association.
+
+Association tables intentionally do not reference `projected_labels`. WhatsApp
+can deliver an association before its label definition, and ingestion must not
+drop that valid out-of-order event. All three tables reference the instance and
+are deleted with it.
+
+This migration does not switch public endpoints or advertise the
+`labels_projection` capability. Those changes require event ingestion and a
+ready projection state first.
+
+## Consequences
+
+- Existing label behavior remains compatible while the projection is built.
+- List and lookup indexes are scoped by instance and exclude tombstones.
+- Projectors can process label definitions and associations independently.
+- A later reconciliation step must handle an association whose definition
+  never arrives.

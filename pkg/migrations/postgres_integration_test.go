@@ -43,6 +43,66 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := db.Create(&instance).Error; err != nil {
 		t.Fatal(err)
 	}
+	labelRepository := projection_repository.NewLabelProjectionRepository(db)
+	labelName := "Priority"
+	labelColor := int32(4)
+	labelTime := time.Unix(200, 0)
+	applied, err := labelRepository.ApplyLabel(context.Background(), &projection_model.Label{
+		InstanceID: instance.Id, LabelID: "label-1", Name: &labelName, Color: &labelColor,
+		SourceOccurredAt: labelTime, SourceEventKey: "label-200",
+	})
+	if err != nil || !applied {
+		t.Fatalf("new label projection = %v, %v", applied, err)
+	}
+	staleName := "Stale"
+	applied, err = labelRepository.ApplyLabel(context.Background(), &projection_model.Label{
+		InstanceID: instance.Id, LabelID: "label-1", Name: &staleName,
+		SourceOccurredAt: time.Unix(100, 0), SourceEventKey: "label-100",
+	})
+	if err != nil || applied {
+		t.Fatalf("stale label projection = %v, %v", applied, err)
+	}
+	storedLabel, err := labelRepository.GetLabel(context.Background(), instance.Id, "label-1")
+	if err != nil || storedLabel.Name == nil || *storedLabel.Name != labelName {
+		t.Fatalf("stored label after stale event = %#v, %v", storedLabel, err)
+	}
+	applied, err = labelRepository.ApplyChatAssociation(context.Background(), &projection_model.LabelChatAssociation{
+		InstanceID: instance.Id, LabelID: "label-1", ChatID: "chat@s.whatsapp.net",
+		SourceOccurredAt: time.Unix(300, 0), SourceEventKey: "chat-label-300",
+	})
+	if err != nil || !applied {
+		t.Fatalf("new chat label association = %v, %v", applied, err)
+	}
+	tombstonedAt := time.Unix(400, 0)
+	applied, err = labelRepository.ApplyChatAssociation(context.Background(), &projection_model.LabelChatAssociation{
+		InstanceID: instance.Id, LabelID: "label-1", ChatID: "chat@s.whatsapp.net",
+		SourceOccurredAt: tombstonedAt, SourceEventKey: "chat-unlabel-400", TombstonedAt: &tombstonedAt,
+	})
+	if err != nil || !applied {
+		t.Fatalf("chat unlabel association = %v, %v", applied, err)
+	}
+	applied, err = labelRepository.ApplyChatAssociation(context.Background(), &projection_model.LabelChatAssociation{
+		InstanceID: instance.Id, LabelID: "label-1", ChatID: "chat@s.whatsapp.net",
+		SourceOccurredAt: time.Unix(350, 0), SourceEventKey: "late-chat-label-350",
+	})
+	if err != nil || applied {
+		t.Fatalf("late chat label association = %v, %v", applied, err)
+	}
+	chatLabels, err := labelRepository.ListChatAssociations(context.Background(), instance.Id, "chat@s.whatsapp.net")
+	if err != nil || len(chatLabels) != 0 {
+		t.Fatalf("tombstoned chat association remained readable = %#v, %v", chatLabels, err)
+	}
+	applied, err = labelRepository.ApplyMessageAssociation(context.Background(), &projection_model.LabelMessageAssociation{
+		InstanceID: instance.Id, LabelID: "label-1", ChatID: "chat@s.whatsapp.net", MessageID: "message-1",
+		SourceOccurredAt: time.Unix(500, 0), SourceEventKey: "message-label-500",
+	})
+	if err != nil || !applied {
+		t.Fatalf("new message label association = %v, %v", applied, err)
+	}
+	messageLabels, err := labelRepository.ListMessageAssociations(context.Background(), instance.Id, "chat@s.whatsapp.net", "message-1")
+	if err != nil || len(messageLabels) != 1 || messageLabels[0].LabelID != "label-1" {
+		t.Fatalf("message label associations = %#v, %v", messageLabels, err)
+	}
 	repository := projection_repository.NewStateRepository(db)
 	state := &projection_model.State{InstanceID: instance.Id, Resource: "groups", SyncStatus: projection_model.SyncStatusNotStarted, SchemaVersion: 1}
 	if err := repository.Upsert(state); err != nil {
@@ -103,7 +163,7 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	creatorCountryCode := "84"
 	approvalMode := "request_required"
 	newer := time.Unix(500, 0)
-	applied, err := groupRepository.ApplySnapshot(context.Background(), &projection_model.Group{
+	applied, err = groupRepository.ApplySnapshot(context.Background(), &projection_model.Group{
 		InstanceID: instance.Id, GroupID: "group@g.us", Name: &newName, NameSetAt: &nameSetAt, TopicID: &topicID,
 		AnnounceVersion: &announceVersion, Incognito: &incognito, ParticipantCount: &participantCount,
 		CreatorCountryCode: &creatorCountryCode, DefaultApprovalMode: &approvalMode,

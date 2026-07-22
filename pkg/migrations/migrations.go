@@ -162,7 +162,62 @@ SET field_versions = jsonb_build_object(
     ADD COLUMN creator_country_code VARCHAR(32) NULL,
     ADD COLUMN participant_count INTEGER NULL,
     ADD COLUMN default_membership_approval_mode VARCHAR(64) NULL,
-    ADD CONSTRAINT projected_groups_participant_count_check CHECK (participant_count IS NULL OR participant_count >= 0);`,
+		    ADD CONSTRAINT projected_groups_participant_count_check CHECK (participant_count IS NULL OR participant_count >= 0);`,
+	},
+	{
+		Version: 6,
+		Name:    "create_labels_projection",
+		SQL: `CREATE TABLE projected_labels (
+    instance_id UUID NOT NULL,
+    label_id VARCHAR(255) NOT NULL,
+    name TEXT NULL,
+    color INTEGER NULL,
+    predefined_id INTEGER NULL,
+    order_index INTEGER NULL,
+    active BOOLEAN NULL,
+    immutable BOOLEAN NULL,
+    kind VARCHAR(64) NULL,
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    tombstoned_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, label_id),
+    CONSTRAINT projected_labels_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
+);
+CREATE INDEX projected_labels_list_idx ON projected_labels (instance_id, order_index, label_id) WHERE tombstoned_at IS NULL;
+
+CREATE TABLE projected_label_chat_associations (
+    instance_id UUID NOT NULL,
+    label_id VARCHAR(255) NOT NULL,
+    chat_id VARCHAR(255) NOT NULL,
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    tombstoned_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, label_id, chat_id),
+    CONSTRAINT projected_label_chats_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
+);
+CREATE INDEX projected_label_chats_by_chat_idx ON projected_label_chat_associations (instance_id, chat_id, label_id) WHERE tombstoned_at IS NULL;
+
+CREATE TABLE projected_label_message_associations (
+    instance_id UUID NOT NULL,
+    label_id VARCHAR(255) NOT NULL,
+    chat_id VARCHAR(255) NOT NULL,
+    message_id VARCHAR(255) NOT NULL,
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    tombstoned_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, label_id, chat_id, message_id),
+    CONSTRAINT projected_label_messages_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
+);
+CREATE INDEX projected_label_messages_by_message_idx ON projected_label_message_associations (instance_id, chat_id, message_id, label_id) WHERE tombstoned_at IS NULL;`,
 	},
 }
 
