@@ -27,7 +27,8 @@ func TestMessageWriteThroughPersistsConfirmedOutboundMessage(t *testing.T) {
 	}
 	if len(writes.messages) != 1 || writes.messages[0].Provenance != projection_model.MessageProvenanceWriteThrough ||
 		writes.messages[0].MessageType != "text" || writes.messages[0].ContentText == nil || *writes.messages[0].ContentText != "confirmed" ||
-		writes.messages[0].SentAt == nil || !writes.messages[0].SentAt.Equal(sentAt) {
+		writes.messages[0].SentAt == nil || !writes.messages[0].SentAt.Equal(sentAt) || writes.messages[0].RetentionExpiresAt == nil ||
+		!writes.messages[0].RetentionExpiresAt.Equal(sentAt.Add(DefaultMessageRetention)) {
 		t.Fatalf("write-through projected message = %#v", writes.messages)
 	}
 	if len(writes.chats) != 1 || len(state.records) != 2 {

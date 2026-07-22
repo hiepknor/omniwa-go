@@ -2,6 +2,8 @@ package projection_repository
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -200,5 +202,44 @@ func TestChatMessageRepositoryPostgresOrderingPaginationAndConcurrency(t *testin
 	}
 	if appliedCount.Load() != 1 {
 		t.Fatalf("concurrent applied count = %d", appliedCount.Load())
+	}
+
+	retentionTimestamp := time.Unix(10, 0).UTC()
+	retentionMessage := projection_model.ProjectedMessage{
+		InstanceID: instance.Id, MessageID: "message-expired", ChatID: chat.ChatID,
+		Direction: projection_model.MessageDirectionIncoming, MessageType: "text", ProviderTimestamp: retentionTimestamp,
+		Provenance: projection_model.MessageProvenanceLive, SourceOccurredAt: retentionTimestamp, SourceEventKey: "message-expired",
+	}
+	if _, err := repository.ApplyMessage(context.Background(), &retentionMessage, MessageAspectEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	retentionReceipt := projection_model.MessageReceipt{
+		InstanceID: instance.Id, MessageID: retentionMessage.MessageID, RecipientJID: "recipient@s.whatsapp.net", ReceiptType: "delivered",
+		ReceiptAt: retentionTimestamp, SourceOccurredAt: retentionTimestamp, SourceEventKey: "message-expired-receipt",
+	}
+	if _, err := repository.ApplyReceipt(context.Background(), &retentionReceipt); err != nil {
+		t.Fatal(err)
+	}
+	retentionEvent := &projection_model.Event{
+		InstanceID: instance.Id, Resource: "messages", EventKey: "message-expired-event", EntityKey: retentionMessage.MessageID,
+		EventType: "history_message", OccurredAt: retentionTimestamp, Payload: json.RawMessage(`{"contentText":"expired"}`),
+	}
+	if inserted, err := NewEventRepository(db).Enqueue(context.Background(), retentionEvent); err != nil || !inserted {
+		t.Fatalf("retention event ingest = %v, %v", inserted, err)
+	}
+	deleted, err := NewMessageRetentionRepository(db).DeleteBefore(context.Background(), retentionTimestamp, 1)
+	if err != nil || deleted != 1 {
+		t.Fatalf("retention delete = %d, %v", deleted, err)
+	}
+	if _, err := repository.GetMessage(context.Background(), instance.Id, retentionMessage.MessageID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expired message still exists: %v", err)
+	}
+	retentionReceipts, err := repository.ListReceipts(context.Background(), instance.Id, retentionMessage.MessageID)
+	if err != nil || len(retentionReceipts) != 0 {
+		t.Fatalf("expired message receipts = %#v, %v", retentionReceipts, err)
+	}
+	var retentionEventCount int64
+	if err := db.Model(&projection_model.Event{}).Where("instance_id = ? AND resource = ? AND event_key = ?", instance.Id, "messages", retentionEvent.EventKey).Count(&retentionEventCount).Error; err != nil || retentionEventCount != 0 {
+		t.Fatalf("expired projection event count = %d, %v", retentionEventCount, err)
 	}
 }

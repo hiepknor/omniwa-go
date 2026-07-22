@@ -68,6 +68,7 @@ type Config struct {
 	WAInfoMaxWait        time.Duration
 	WAInfoCooldown       time.Duration
 	GroupSyncInterval    time.Duration
+	MessageRetention     time.Duration
 
 	// Logger configurations
 	LogMaxSize    int
@@ -337,6 +338,15 @@ func Load() *Config {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_GROUP_RECONCILE_INTERVAL, err)
 	}
 
+	messageRetentionValue := os.Getenv(config_env.WA_MSG_RETENTION)
+	if messageRetentionValue == "" {
+		messageRetentionValue = "2160h"
+	}
+	messageRetention, err := parsePositiveDuration(messageRetentionValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_MSG_RETENTION, err)
+	}
+
 	// Convertendo para int com valores padrão caso estejam vazios
 	major := 0
 	if whatsappVersionMajor != "" {
@@ -438,6 +448,7 @@ func Load() *Config {
 		WAInfoMaxWait:        waInfoMaxWait,
 		WAInfoCooldown:       waInfoCooldown,
 		GroupSyncInterval:    waGroupReconcileInterval,
+		MessageRetention:     messageRetention,
 		AmqpGlobalEvents:     amqpGlobalEvents,
 		AmqpSpecificEvents:   amqpSpecificEvents,
 		NatsUrl:              natsUrl,

@@ -15,6 +15,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_INFO_MAX_WAIT, "")
 	t.Setenv(config_env.WA_INFO_COOLDOWN, "")
 	t.Setenv(config_env.WA_GROUP_RECONCILE_INTERVAL, "")
+	t.Setenv(config_env.WA_MSG_RETENTION, "")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
@@ -32,6 +33,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.GroupSyncInterval != 6*time.Hour {
 		t.Fatalf("GroupSyncInterval = %v, want 6h", config.GroupSyncInterval)
 	}
+	if config.MessageRetention != 90*24*time.Hour {
+		t.Fatalf("MessageRetention = %v, want 2160h", config.MessageRetention)
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -41,6 +45,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_INFO_MAX_WAIT, "250ms")
 	t.Setenv(config_env.WA_INFO_COOLDOWN, "2m")
 	t.Setenv(config_env.WA_GROUP_RECONCILE_INTERVAL, "45m")
+	t.Setenv(config_env.WA_MSG_RETENTION, "720h")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(12.0/3600.0)) > 1e-12 {
@@ -51,6 +56,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if config.GroupSyncInterval != 45*time.Minute {
 		t.Fatalf("GroupSyncInterval = %v, want 45m", config.GroupSyncInterval)
+	}
+	if config.MessageRetention != 30*24*time.Hour {
+		t.Fatalf("MessageRetention = %v, want 720h", config.MessageRetention)
 	}
 }
 

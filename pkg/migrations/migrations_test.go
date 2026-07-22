@@ -41,16 +41,25 @@ func TestContactsProjectionMigrationIsVersionedAndIncludesAliases(t *testing.T) 
 }
 
 func TestChatsMessagesProjectionMigrationIsVersionedAndIndexed(t *testing.T) {
-	last := registry[len(registry)-1]
-	if last.Version != 8 || last.Name != "create_chats_messages_projection" {
-		t.Fatalf("last migration = %#v", last)
+	migration := registry[7]
+	if migration.Version != 8 || migration.Name != "create_chats_messages_projection" {
+		t.Fatalf("chats/messages migration = %#v", migration)
 	}
 	for _, expected := range []string{
 		"CREATE TABLE projected_chats", "CREATE TABLE projected_messages", "CREATE TABLE projected_message_receipts",
 		"projected_messages_history_idx", "projected_messages_retention_idx",
 	} {
-		if !strings.Contains(last.SQL, expected) {
+		if !strings.Contains(migration.SQL, expected) {
 			t.Fatalf("chats/messages migration does not contain %q", expected)
 		}
+	}
+}
+
+func TestMessageRetentionCutoffIndexIsVersioned(t *testing.T) {
+	last := registry[len(registry)-1]
+	if last.Version != 9 || last.Name != "index_message_retention_cutoff" ||
+		!strings.Contains(last.SQL, "projected_messages_retention_cutoff_idx") ||
+		!strings.Contains(last.SQL, "projection_event_inbox_message_retention_idx") {
+		t.Fatalf("message retention migration = %#v", last)
 	}
 }

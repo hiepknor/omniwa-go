@@ -24,6 +24,8 @@ OmniWA GO HTTP API (a WhatsApp API built on [whatsmeow](https://github.com/tulir
    formatting rules.
 4. **[WebSocket Events](websocket-events.md)** — the realtime `/ws` stream: the
    handshake, the message frame, and the full catalog of event types.
+5. **[Message Retention](message-retention.md)** — projected message storage,
+   deletion timing, privacy responsibilities, and operational behavior.
 
 ## The API in one paragraph
 

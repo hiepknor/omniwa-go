@@ -373,6 +373,15 @@ CREATE TABLE projected_message_receipts (
 );
 CREATE INDEX projected_message_receipts_history_idx ON projected_message_receipts (instance_id, message_id, receipt_at ASC, recipient_jid ASC, receipt_type ASC);`,
 	},
+	{
+		Version: 9,
+		Name:    "index_message_retention_cutoff",
+		SQL: `CREATE INDEX projected_messages_retention_cutoff_idx
+ON projected_messages (provider_timestamp ASC, instance_id ASC, message_id ASC);
+CREATE INDEX projection_event_inbox_message_retention_idx
+ON projection_event_inbox (occurred_at ASC, ingested_at ASC, event_key ASC)
+WHERE resource = 'messages' AND event_type IN ('message', 'history_message', 'receipt');`,
+	},
 }
 
 func Run(db *gorm.DB) error {
