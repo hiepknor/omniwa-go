@@ -58,6 +58,7 @@ func (r *eventRepository) Enqueue(ctx context.Context, event *projection_model.E
 	event.RetryPolicyVersion = projection_model.EventRetryPolicyVersion
 	event.MaxAttempts = projection_model.DefaultEventMaxAttempts
 	event.DeadLetteredAt = nil
+	event.DiscardedAt = nil
 	result := r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(event)
 	return result.RowsAffected == 1, result.Error
 }
@@ -113,6 +114,7 @@ func (r *eventRepository) MarkProcessed(ctx context.Context, event *projection_m
 		"status": projection_model.EventStatusProcessed, "processed_at": now,
 		"claim_token": nil, "lease_until": nil, "last_error_code": nil,
 		"last_attempt_at": now, "failure_class": nil, "dead_lettered_at": nil,
+		"discarded_at": nil,
 	})
 	return claimResult(result)
 }
@@ -129,6 +131,7 @@ func (r *eventRepository) MarkRetry(ctx context.Context, event *projection_model
 		"retry_count": gorm.Expr("retry_count + 1"), "last_error_code": errorCode,
 		"last_attempt_at": attemptedAt.UTC(), "failure_class": failureClass,
 		"claim_token": nil, "lease_until": nil, "dead_lettered_at": nil,
+		"discarded_at": nil,
 	})
 	return claimResult(result)
 }
@@ -145,6 +148,7 @@ func (r *eventRepository) MarkDeadLetter(ctx context.Context, event *projection_
 		"retry_count": gorm.Expr("retry_count + 1"), "last_error_code": errorCode,
 		"last_attempt_at": attemptedAt.UTC(), "failure_class": failureClass,
 		"claim_token": nil, "lease_until": nil, "dead_lettered_at": attemptedAt.UTC(),
+		"discarded_at": nil,
 	})
 	return claimResult(result)
 }

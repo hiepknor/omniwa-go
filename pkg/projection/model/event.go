@@ -47,6 +47,28 @@ type Event struct {
 	RetryPolicyVersion int                `json:"-" gorm:"column:retry_policy_version;not null;default:1"`
 	MaxAttempts        int                `json:"-" gorm:"column:max_attempts;not null;default:8"`
 	DeadLetteredAt     *time.Time         `json:"-" gorm:"column:dead_lettered_at"`
+	DiscardedAt        *time.Time         `json:"-" gorm:"column:discarded_at"`
 }
 
 func (Event) TableName() string { return "projection_event_inbox" }
+
+type FailureAction string
+
+const (
+	FailureActionReplay  FailureAction = "replay"
+	FailureActionDiscard FailureAction = "discard"
+)
+
+type FailureAudit struct {
+	ID                 string        `json:"-" gorm:"column:id;type:uuid;primaryKey"`
+	InstanceID         string        `json:"-" gorm:"column:instance_id;type:uuid;not null"`
+	Resource           string        `json:"-" gorm:"column:resource;size:64;not null"`
+	EventKey           string        `json:"-" gorm:"column:event_key;size:255;not null"`
+	Action             FailureAction `json:"-" gorm:"column:action;size:32;not null"`
+	Reason             string        `json:"-" gorm:"column:reason;size:500;not null"`
+	ActorReferenceHash string        `json:"-" gorm:"column:actor_reference_hash;size:64;not null"`
+	RequestID          string        `json:"-" gorm:"column:request_id;size:64;not null"`
+	OccurredAt         time.Time     `json:"-" gorm:"column:occurred_at;not null"`
+}
+
+func (FailureAudit) TableName() string { return "projection_failure_audit" }

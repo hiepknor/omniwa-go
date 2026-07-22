@@ -94,3 +94,22 @@ not a WhatsApp service limit.
 Migration 16 adds a partial covering index for this aggregation. It contains
 only unprocessed work and keys by instance, resource, and ingestion time, so
 routine health checks do not scan the durable processed-event history.
+
+Migration 17 adds operator actions and their audit table. Listing returns only
+bounded failure metadata; normalized payloads and entity identifiers never
+cross the public boundary. Replay atomically changes a dead letter back to
+pending, clears failure metadata, resets its attempt budget, and appends an
+audit record. Discard atomically marks the inbox row as terminal `processed`
+with `discarded_at` while appending its audit record. Using the pre-existing
+terminal status is intentional rollback compatibility: older binaries ignore
+the row instead of mistaking a new status for permanent backlog. New binaries
+distinguish successful processing from discard through `processed_at`,
+`discarded_at`, and the audit action. Each audit record also retains the bounded
+request identity for correlation with structured server logs.
+
+Both actions compare against `dead_letter` inside the update transaction, so
+concurrent operators cannot apply the same failure twice. The audit reason is
+required and bounded, and the admin credential is never stored; only a
+domain-separated reference hash is persisted. The admin-only API advertises
+`projection_failure_operations` after the repository, routes, error contract,
+and Swagger schema are available together.

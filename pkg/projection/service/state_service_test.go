@@ -138,7 +138,7 @@ func TestStateLifecyclePreservesNewestEventAndControlsCapabilities(t *testing.T)
 func TestAdminCapabilitiesOnlyExposeServerFeatures(t *testing.T) {
 	service := NewStateService(newMemoryRepository())
 	capabilities, err := service.Capabilities("")
-	if err != nil || len(capabilities) != 4 || capabilities[0] != CapabilityCampaignOrchestration || capabilities[1] != CapabilityEventsProjection || capabilities[2] != CapabilityOutboundRateLimit || capabilities[3] != CapabilityRateLimitRetryAfter {
+	if err != nil || len(capabilities) != 5 || capabilities[0] != CapabilityCampaignOrchestration || capabilities[1] != CapabilityEventsProjection || capabilities[2] != CapabilityOutboundRateLimit || capabilities[3] != CapabilityFailureOperations || capabilities[4] != CapabilityRateLimitRetryAfter {
 		t.Fatalf("Capabilities() = %v, %v", capabilities, err)
 	}
 }

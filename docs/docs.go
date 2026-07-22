@@ -5388,6 +5388,247 @@ const docTemplate = `{
                 }
             }
         },
+        "/server/projection-failures": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "List projection dead letters",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID filter",
+                        "name": "instanceId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Projection resource filter",
+                        "name": "resource",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailurePage"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/server/projection-failures/discard": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Discard projection dead letter",
+                "parameters": [
+                    {
+                        "description": "Failure identity and audit reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pkg_server_handler.ProjectionFailureOperationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureOperationResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/server/projection-failures/replay": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Replay projection dead letter",
+                "parameters": [
+                    {
+                        "description": "Failure identity and audit reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pkg_server_handler.ProjectionFailureOperationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureOperationResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/server/projection-health": {
             "get": {
                 "security": [
@@ -7759,6 +8000,28 @@ const docTemplate = `{
                 "ChatTypeUnknown"
             ]
         },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_model.EventFailureClass": {
+            "type": "string",
+            "enum": [
+                "retryable",
+                "permanent"
+            ],
+            "x-enum-varnames": [
+                "EventFailureRetryable",
+                "EventFailurePermanent"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_model.FailureAction": {
+            "type": "string",
+            "enum": [
+                "replay",
+                "discard"
+            ],
+            "x-enum-varnames": [
+                "FailureActionReplay",
+                "FailureActionDiscard"
+            ]
+        },
         "github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageDirection": {
             "type": "string",
             "enum": [
@@ -8115,6 +8378,81 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "recipientJid": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureItem": {
+            "type": "object",
+            "properties": {
+                "deadLetteredAt": {
+                    "type": "string"
+                },
+                "eventKey": {
+                    "type": "string"
+                },
+                "eventType": {
+                    "type": "string"
+                },
+                "failureClass": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.EventFailureClass"
+                },
+                "ingestedAt": {
+                    "type": "string"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "lastAttemptAt": {
+                    "type": "string"
+                },
+                "lastErrorCode": {
+                    "type": "string"
+                },
+                "maxAttempts": {
+                    "type": "integer"
+                },
+                "occurredAt": {
+                    "type": "string"
+                },
+                "resource": {
+                    "type": "string"
+                },
+                "retryCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureOperationResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.FailureAction"
+                },
+                "eventKey": {
+                    "type": "string"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "occurredAt": {
+                    "type": "string"
+                },
+                "resource": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailurePage": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureItem"
+                    }
+                },
+                "nextCursor": {
                     "type": "string"
                 }
             }
@@ -9185,6 +9523,29 @@ const docTemplate = `{
             ],
             "properties": {
                 "startsAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_server_handler.ProjectionFailureOperationRequest": {
+            "type": "object",
+            "required": [
+                "eventKey",
+                "instanceId",
+                "reason",
+                "resource"
+            ],
+            "properties": {
+                "eventKey": {
+                    "type": "string"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "resource": {
                     "type": "string"
                 }
             }

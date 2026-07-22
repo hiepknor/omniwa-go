@@ -20,6 +20,9 @@ type ServerHandler interface {
 	EventHistory(ctx *gin.Context)
 	Overview(ctx *gin.Context)
 	Health(ctx *gin.Context)
+	ProjectionFailures(ctx *gin.Context)
+	ReplayProjectionFailure(ctx *gin.Context)
+	DiscardProjectionFailure(ctx *gin.Context)
 }
 
 // ProjectionHealth returns persisted projection synchronization metrics.
@@ -53,6 +56,7 @@ type serverHandler struct {
 	eventReader     *projection_service.DurableEventReader
 	overview        *projection_service.OverviewService
 	health          *projection_service.ServerHealthService
+	failures        *projection_service.FailureService
 }
 
 // Health returns independent API, connection, projection, and throttling dimensions.
@@ -203,10 +207,22 @@ func (s *serverHandler) Capabilities(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{"version": s.version, "revision": s.revision, "capabilities": capabilities}})
 }
 
-func NewServerHandler(version, revision string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overview *projection_service.OverviewService, healthServices ...*projection_service.ServerHealthService) ServerHandler {
-	var health *projection_service.ServerHealthService
-	if len(healthServices) > 0 {
-		health = healthServices[0]
+type ServerOption func(*serverHandler)
+
+func WithHealthService(health *projection_service.ServerHealthService) ServerOption {
+	return func(handler *serverHandler) { handler.health = health }
+}
+
+func WithFailureService(failures *projection_service.FailureService) ServerOption {
+	return func(handler *serverHandler) { handler.failures = failures }
+}
+
+func NewServerHandler(version, revision string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overview *projection_service.OverviewService, options ...ServerOption) ServerHandler {
+	handler := &serverHandler{version: version, revision: revision, projectionState: projectionState, eventReader: eventReader, overview: overview}
+	for _, option := range options {
+		if option != nil {
+			option(handler)
+		}
 	}
-	return &serverHandler{version: version, revision: revision, projectionState: projectionState, eventReader: eventReader, overview: overview, health: health}
+	return handler
 }
