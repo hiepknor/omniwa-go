@@ -31,8 +31,10 @@ and diagnostics, but it must not be used to reject an update to an unrelated
 field group.
 
 The identity table is instance-scoped and distinguishes JID, phone JID, LID,
-and username aliases. Future ingestion must link or merge aliases inside a
-database transaction before exposing the resulting contact.
+and username aliases. The repository serializes alias resolution with sorted
+transaction-scoped advisory locks. When a later event proves that aliases from
+separate records belong together, it merges their independently versioned
+fields, moves every alias, and removes the duplicate inside one transaction.
 
 ## Consequences
 
@@ -40,5 +42,5 @@ database transaction before exposing the resulting contact.
 - Duplicate and out-of-order events can be reconciled per field group.
 - List and search endpoints can use normalized database columns without live
   WhatsApp queries.
-- Alias merging requires transactional repository logic and explicit conflict
-  tests before event ingestion is enabled.
+- Duplicate concurrent writes for the same alias resolve to one contact; the
+  PostgreSQL integration suite verifies this invariant.
