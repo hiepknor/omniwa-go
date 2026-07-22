@@ -84,6 +84,12 @@ upstream syncs stay low-conflict.
 
 `main` is protected — **never push to `main` directly**.
 
+Every task that changes repository files must be completed on a new branch and
+delivered through a pull request targeting `main`. Do not leave completed
+changes only in the local working tree. A task is not complete until the branch
+is pushed and the PR URL is reported. Read-only investigations do not require a
+PR.
+
 1. Branch from `main`: `git switch -c <type>/<short-description>`.
 2. Make a focused change; run build/vet/test.
 3. Open a PR against `main`; the `build / vet / test` check must be green.
