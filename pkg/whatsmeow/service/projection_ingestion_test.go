@@ -49,3 +49,13 @@ func TestMyClientIngestsRelevantGroupEvents(t *testing.T) {
 		t.Fatalf("unrelated event reached projection inbox: calls=%d", capture.calls)
 	}
 }
+
+func TestFullSyncAppStateEventsAreSuppressedFromLegacyFanout(t *testing.T) {
+	client := &MyClient{}
+	if !client.handleFullSyncAppStateEvent(&events.Pin{FromFullSync: true}) {
+		t.Fatal("full-sync app-state event was not suppressed")
+	}
+	if client.handleFullSyncAppStateEvent(&events.Pin{FromFullSync: false}) {
+		t.Fatal("live app-state event was suppressed")
+	}
+}

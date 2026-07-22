@@ -35,14 +35,22 @@ func (c *captureGroupSnapshots) ApplySnapshot(_ context.Context, group *projecti
 }
 
 type captureProjectionState struct {
-	instanceID string
-	resource   string
-	version    int64
-	occurredAt time.Time
+	instanceID    string
+	resource      string
+	version       int64
+	occurredAt    time.Time
+	readyResource string
+	readyVersion  int64
+	readyAt       time.Time
 }
 
 func (c *captureProjectionState) RecordEvent(instanceID, resource string, version int64, occurredAt time.Time) error {
 	c.instanceID, c.resource, c.version, c.occurredAt = instanceID, resource, version, occurredAt
+	return nil
+}
+
+func (c *captureProjectionState) MarkReady(_ string, resource string, version int64, reconciledAt time.Time) error {
+	c.readyResource, c.readyVersion, c.readyAt = resource, version, reconciledAt
 	return nil
 }
 

@@ -21,6 +21,11 @@ var resourceCapabilities = map[string]string{
 	"events":   "events_projection",
 }
 
+var resourceSchemaVersions = map[string]int64{
+	"groups": GroupsProjectionSchemaVersion,
+	"labels": LabelsProjectionSchemaVersion,
+}
+
 type StateService interface {
 	Get(instanceID, resource string) (*projection_model.State, error)
 	Ensure(instanceID, resource string, schemaVersion int64) (*projection_model.State, error)
@@ -137,7 +142,7 @@ func (s *stateService) Capabilities(instanceID string) ([]string, error) {
 	}
 	for _, state := range states {
 		if state.SyncStatus == projection_model.SyncStatusReady {
-			if state.Resource == groupResource && state.SchemaVersion < GroupsProjectionSchemaVersion {
+			if requiredVersion := resourceSchemaVersions[state.Resource]; requiredVersion > 0 && state.SchemaVersion < requiredVersion {
 				continue
 			}
 			if capability := resourceCapabilities[state.Resource]; capability != "" {

@@ -17,17 +17,29 @@ type labelProjectionWriter interface {
 	ApplyMessageAssociation(context.Context, *projection_model.LabelMessageAssociation) (bool, error)
 }
 
-type LabelProjector struct {
-	labels labelProjectionWriter
-	state  projectionEventState
+type labelProjectionState interface {
+	RecordEvent(instanceID, resource string, schemaVersion int64, occurredAt time.Time) error
+	MarkReady(instanceID, resource string, schemaVersion int64, reconciledAt time.Time) error
 }
 
-func NewLabelProjector(labels labelProjectionWriter, state projectionEventState) *LabelProjector {
-	return &LabelProjector{labels: labels, state: state}
+type labelReadinessBarrier interface {
+	HasUnprocessedEvents(context.Context, string, string, []string, string) (bool, error)
+}
+
+var labelMutationEventTypes = []string{"label_edit", "label_chat_association", "label_message_association"}
+
+type LabelProjector struct {
+	labels    labelProjectionWriter
+	state     labelProjectionState
+	readiness labelReadinessBarrier
+}
+
+func NewLabelProjector(labels labelProjectionWriter, state labelProjectionState, readiness labelReadinessBarrier) *LabelProjector {
+	return &LabelProjector{labels: labels, state: state, readiness: readiness}
 }
 
 func (p *LabelProjector) Handle(ctx context.Context, event *projection_model.Event) error {
-	if p == nil || p.labels == nil || p.state == nil {
+	if p == nil || p.labels == nil || p.state == nil || p.readiness == nil {
 		return errors.New("label projector dependencies are required")
 	}
 	if event == nil || event.Resource != labelResource || event.InstanceID == "" || event.EventKey == "" {
@@ -42,6 +54,18 @@ func (p *LabelProjector) Handle(ctx context.Context, event *projection_model.Eve
 	}
 	var err error
 	switch event.EventType {
+	case "label_sync_complete":
+		if payload.Collection != "regular" || payload.CompletedAt.IsZero() {
+			return errors.New("label sync completion payload is incomplete")
+		}
+		unprocessed, err := p.readiness.HasUnprocessedEvents(ctx, event.InstanceID, labelResource, labelMutationEventTypes, event.EventKey)
+		if err != nil {
+			return err
+		}
+		if unprocessed {
+			return errors.New("label sync completion is waiting for prior events")
+		}
+		return p.state.MarkReady(event.InstanceID, labelResource, LabelsProjectionSchemaVersion, payload.CompletedAt)
 	case "label_edit":
 		label := &projection_model.Label{
 			InstanceID: event.InstanceID, LabelID: payload.LabelID, Name: payload.Name, Color: payload.Color,

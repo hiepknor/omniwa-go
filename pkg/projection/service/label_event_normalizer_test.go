@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"go.mau.fi/whatsmeow/appstate"
 	waSyncAction "go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -31,6 +32,20 @@ func TestNormalizeLabelEventsPreservesExplicitValuesAndStableKeys(t *testing.T) 
 	}
 	if !bytes.Contains(first.Payload, []byte(`"color":0`)) || !bytes.Contains(first.Payload, []byte(`"active":false`)) || !bytes.Contains(first.Payload, []byte(`"kind":"custom"`)) {
 		t.Fatalf("normalized label payload lost explicit values: %s", first.Payload)
+	}
+}
+
+func TestNormalizeLabelSyncCompletionIsStableAndCollectionScoped(t *testing.T) {
+	first, relevant, err := NormalizeLabelEvent("instance-a", &events.AppStateSyncComplete{Name: appstate.WAPatchRegular, Version: 7})
+	if err != nil || !relevant {
+		t.Fatalf("label sync completion = %#v, %v, %v", first, relevant, err)
+	}
+	second, _, err := NormalizeLabelEvent("instance-a", &events.AppStateSyncComplete{Name: appstate.WAPatchRegular, Version: 7})
+	if err != nil || first.EventKey != second.EventKey || first.EventType != "label_sync_complete" || first.OccurredAt.Year() != 9999 {
+		t.Fatalf("unstable label sync completion: %#v / %#v / %v", first, second, err)
+	}
+	if event, relevant, err := NormalizeLabelEvent("instance-a", &events.AppStateSyncComplete{Name: appstate.WAPatchRegularHigh, Version: 7}); err != nil || relevant || event != nil {
+		t.Fatalf("unrelated collection was accepted: %#v, %v, %v", event, relevant, err)
 	}
 }
 

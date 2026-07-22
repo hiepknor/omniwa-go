@@ -103,6 +103,7 @@ type whatsmeowService struct {
 	queryGuard         waquery.Guard
 	projectionEvents   projection_service.EventService
 	groupReconciler    *projection_service.GroupReconciler
+	labelSyncer        *projection_service.LabelSyncer
 	appCtx             context.Context
 }
 
@@ -140,6 +141,7 @@ type MyClient struct {
 	queryGuard         waquery.Guard
 	projectionEvents   projection_service.EventService
 	groupReconciler    *projection_service.GroupReconciler
+	labelSyncer        *projection_service.LabelSyncer
 	appCtx             context.Context
 	reconcileMu        sync.Mutex
 	reconcileRunning   bool
@@ -216,6 +218,26 @@ func (mycli *MyClient) startGroupReconciliationLoop() {
 	}()
 }
 
+func (mycli *MyClient) startLabelProjectionSync() {
+	if mycli == nil || mycli.labelSyncer == nil || mycli.WAClient == nil {
+		return
+	}
+	parent := mycli.appCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	go func() {
+		err := mycli.labelSyncer.Sync(parent, mycli.userID, func(ctx context.Context) error {
+			return mycli.WAClient.FetchAppState(ctx, appstate.WAPatchRegular, true, false)
+		})
+		if err != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=reconcile instance_id=%s resource=labels result=failed error_code=full_sync_failed", mycli.userID)
+			return
+		}
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=reconcile instance_id=%s resource=labels result=queued", mycli.userID)
+	}()
+}
+
 func (mycli *MyClient) stopGroupReconciliationLoop() {
 	if mycli == nil {
 		return
@@ -282,6 +304,63 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
 		result = "inserted"
 	}
 	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=ingest instance_id=%s resource=%s event_type=%s result=%s", mycli.userID, event.Resource, event.EventType, result)
+}
+
+func (mycli *MyClient) handleFullSyncAppStateEvent(rawEvent any) bool {
+	fullSync := false
+	switch event := rawEvent.(type) {
+	case *events.Contact:
+		fullSync = event.FromFullSync
+	case *events.Pin:
+		fullSync = event.FromFullSync
+	case *events.Star:
+		fullSync = event.FromFullSync
+	case *events.DeleteForMe:
+		fullSync = event.FromFullSync
+	case *events.Mute:
+		fullSync = event.FromFullSync
+	case *events.Archive:
+		fullSync = event.FromFullSync
+	case *events.MarkChatAsRead:
+		fullSync = event.FromFullSync
+	case *events.ClearChat:
+		fullSync = event.FromFullSync
+	case *events.DeleteChat:
+		fullSync = event.FromFullSync
+	case *events.PushNameSetting:
+		fullSync = event.FromFullSync
+	case *events.UnarchiveChatsSetting:
+		fullSync = event.FromFullSync
+	case *events.UserStatusMute:
+		fullSync = event.FromFullSync
+	case *events.LabelEdit:
+		fullSync = event.FromFullSync
+		if fullSync {
+			mycli.upsertLegacyLabel(event)
+		}
+	case *events.LabelAssociationChat:
+		fullSync = event.FromFullSync
+	case *events.LabelAssociationMessage:
+		fullSync = event.FromFullSync
+	}
+	return fullSync
+}
+
+func (mycli *MyClient) upsertLegacyLabel(event *events.LabelEdit) {
+	if event == nil || event.Action == nil {
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=labels action=legacy_upsert instance_id=%s result=skipped error_code=missing_action", mycli.userID)
+		return
+	}
+	label := label_model.Label{
+		InstanceID:   mycli.userID,
+		LabelID:      event.LabelID,
+		LabelName:    utils.GetStringValue(event.Action.Name),
+		LabelColor:   fmt.Sprintf("%d", event.Action.Color),
+		PredefinedId: fmt.Sprintf("%d", event.Action.PredefinedID),
+	}
+	if err := mycli.labelRepository.UpsertLabel(label); err != nil {
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to upsert label: %v", mycli.userID, err)
+	}
 }
 
 func (mycli *MyClient) persistMessageAsync(message message_model.Message) {
@@ -563,6 +642,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 	}
 	clientLog := waLog.Stdout("Client", minLevel, true)
 	client := whatsmeow.NewClient(deviceStore, clientLog)
+	client.EmitAppStateEventsOnFullSync = true
 
 	w.clientPointer[cd.Instance.Id] = client
 
@@ -650,6 +730,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		queryGuard:         w.queryGuard,
 		projectionEvents:   w.projectionEvents,
 		groupReconciler:    w.groupReconciler,
+		labelSyncer:        w.labelSyncer,
 		appCtx:             w.appCtx,
 	}
 
@@ -1014,6 +1095,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	// Projection ingestion is synchronous and bounded so relevant changes reach
 	// the durable inbox before best-effort webhook/queue fan-out.
 	mycli.ingestProjectionEvent(rawEvt)
+	if mycli.handleFullSyncAppStateEvent(rawEvt) {
+		return
+	}
 
 	userID := mycli.userID
 	postMap := make(map[string]interface{})
@@ -1038,6 +1122,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.Connected, *events.PushNameSetting:
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] events.Connected to Whatsapp for user '%s'", mycli.userID, mycli.WAClient.Store.PushName)
 		mycli.startGroupReconciliationLoop()
+		mycli.startLabelProjectionSync()
 		if len(mycli.WAClient.Store.PushName) > 0 {
 			doWebhook = true
 			postMap["event"] = "Connected"
@@ -2160,23 +2245,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		doWebhook = true
 		postMap["event"] = "LabelEdit"
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Got label edit %+v", mycli.userID, evt.Action)
-		if evt.Action == nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=labels action=legacy_upsert instance_id=%s result=skipped error_code=missing_action", mycli.userID)
-			break
-		}
-
-		label := label_model.Label{
-			InstanceID:   mycli.userID,
-			LabelID:      evt.LabelID,
-			LabelName:    utils.GetStringValue(evt.Action.Name),
-			LabelColor:   fmt.Sprintf("%d", evt.Action.Color),
-			PredefinedId: fmt.Sprintf("%d", evt.Action.PredefinedID),
-		}
-
-		err := mycli.labelRepository.UpsertLabel(label)
-		if err != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to upsert label: %v", mycli.userID, err)
-		}
+		mycli.upsertLegacyLabel(evt)
 	case *events.LabelAssociationChat:
 		doWebhook = true
 		postMap["event"] = "LabelAssociationChat"
@@ -2980,6 +3049,7 @@ func NewWhatsmeowService(
 	queryGuard waquery.Guard,
 	projectionEvents projection_service.EventService,
 	groupReconciler *projection_service.GroupReconciler,
+	labelSyncer *projection_service.LabelSyncer,
 	appCtx context.Context,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) WhatsmeowService {
@@ -3008,6 +3078,7 @@ func NewWhatsmeowService(
 		queryGuard:         queryGuard,
 		projectionEvents:   projectionEvents,
 		groupReconciler:    groupReconciler,
+		labelSyncer:        labelSyncer,
 		appCtx:             appCtx,
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),
