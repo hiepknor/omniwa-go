@@ -335,6 +335,9 @@ func validateChatApply(chat *projection_model.Chat, aspects []ChatAspect) error 
 	if containsChatAspect(aspects, ChatAspectIdentity) && !validChatType(chat.Type) {
 		return errors.New("chat projection type is invalid")
 	}
+	if containsChatAspect(aspects, ChatAspectActivity) && pointerStringTooLong(chat.LastMessageID, 255) {
+		return errors.New("chat last message identity exceeds storage limits")
+	}
 	if chat.UnreadCount < 0 {
 		return errors.New("chat unread count cannot be negative")
 	}
@@ -351,8 +354,19 @@ func validateMessageApply(message *projection_model.ProjectedMessage, aspects []
 	}
 	if containsMessageAspect(aspects, MessageAspectEnvelope) &&
 		(message.ChatID == "" || len(message.ChatID) > 255 || !validMessageDirection(message.Direction) || message.MessageType == "" ||
-			len(message.MessageType) > 64 || message.ProviderTimestamp.IsZero() || !validMessageProvenance(message.Provenance)) {
+			len(message.MessageType) > 64 || pointerStringTooLong(message.SenderJID, 255) || pointerStringTooLong(message.RecipientJID, 255) ||
+			pointerStringTooLong(message.ParticipantJID, 255) || pointerStringTooLong(message.HistorySyncID, 255) ||
+			message.ProviderTimestamp.IsZero() || !validMessageProvenance(message.Provenance)) {
 		return errors.New("message projection envelope is invalid")
+	}
+	if containsMessageAspect(aspects, MessageAspectContent) && pointerStringTooLong(message.QuotedMessageID, 255) {
+		return errors.New("quoted message identity exceeds storage limits")
+	}
+	if containsMessageAspect(aspects, MessageAspectMedia) && (pointerStringTooLong(message.MediaType, 64) || pointerStringTooLong(message.MediaMIMEType, 255)) {
+		return errors.New("message media metadata exceeds storage limits")
+	}
+	if containsMessageAspect(aspects, MessageAspectLifecycle) && pointerStringTooLong(message.Status, 32) {
+		return errors.New("message lifecycle status exceeds storage limits")
 	}
 	if containsMessageAspect(aspects, MessageAspectMedia) && message.MediaSize != nil && *message.MediaSize < 0 {
 		return errors.New("message media size cannot be negative")
@@ -486,4 +500,8 @@ func validMessageProvenance(value projection_model.MessageProvenance) bool {
 
 func validReceiptType(value string) bool {
 	return value == "sent" || value == "delivered" || value == "read" || value == "played" || value == "error"
+}
+
+func pointerStringTooLong(value *string, limit int) bool {
+	return value != nil && len(*value) > limit
 }

@@ -187,6 +187,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	contactProjectionRepository := projection_repository.NewContactRepository(db)
 	projectionReadinessRepository := projection_repository.NewReadinessRepository(db)
 	contactProjector := projection_service.NewContactProjector(contactProjectionRepository, projectionStateService, projectionReadinessRepository)
+	chatMessageProjectionRepository := projection_repository.NewChatMessageRepository(db)
+	chatMessageProjector := projection_service.NewChatMessageProjector(chatMessageProjectionRepository, projectionStateService)
 	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
 	contactReader := projection_service.NewContactReader(contactProjectionRepository, projectionStateService)
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
@@ -244,6 +246,23 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		defer backgroundWorkers.Done()
 		if err := contactWorker.Run(appCtx); err != nil {
 			logger.LogError("component=projection action=worker resource=contacts result=stopped error_code=invalid_worker_configuration")
+		}
+	}()
+	chatMessageWorker := projection_service.NewWorker(
+		projectionEventService, "messages", []string{"message", "receipt"}, 50, time.Second, chatMessageProjector.Handle,
+		func(result projection_service.EventBatchResult, err error) {
+			if err != nil {
+				logger.LogError("component=projection action=process resource=messages result=failed error_code=batch_failed")
+			} else if result.Claimed > 0 {
+				logger.LogInfo("component=projection action=process resource=messages claimed=%d processed=%d failed=%d", result.Claimed, result.Processed, result.Failed)
+			}
+		},
+	)
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		if err := chatMessageWorker.Run(appCtx); err != nil {
+			logger.LogError("component=projection action=worker resource=messages result=stopped error_code=invalid_worker_configuration")
 		}
 	}()
 
