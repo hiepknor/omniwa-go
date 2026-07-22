@@ -476,6 +476,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 		c.Next()
 	})
+	r.Use(auth_middleware.BodyLimit())
 
 	// License gate is opt-out via LICENSE_GATE_ENABLED=false (default: enabled).
 	// When disabled, the API is served without the activation gate and the
@@ -708,8 +709,13 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:    ":" + os.Getenv("SERVER_PORT"),
-		Handler: r,
+		Addr:              ":" + os.Getenv("SERVER_PORT"),
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      2 * time.Minute,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	quit := make(chan os.Signal, 1)

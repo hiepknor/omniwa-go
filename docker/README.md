@@ -36,6 +36,10 @@ curl -s -H 'apikey: dev-global-api-key-change-me' \
 The expected commit, OCI revision label, and `data.revision` response must be
 identical before the deployment is accepted.
 
+Images run as the non-root user `10001:10001`. Before upgrading an existing
+installation that has root-owned application volumes, follow the
+[non-root container upgrade runbook](../docs/runbooks/non-root-container-upgrade.md).
+
 ## Production (base)
 
 ```bash
