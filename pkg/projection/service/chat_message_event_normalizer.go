@@ -46,6 +46,18 @@ type messageEventPayload struct {
 	SentAt               *time.Time                         `json:"sentAt,omitempty"`
 	ReceiptType          string                             `json:"receiptType,omitempty"`
 	ReceiptAt            *time.Time                         `json:"receiptAt,omitempty"`
+	DisplayName          *string                            `json:"displayName,omitempty"`
+	UnreadCount          *int                               `json:"unreadCount,omitempty"`
+	Archived             *bool                              `json:"archived,omitempty"`
+	Pinned               *bool                              `json:"pinned,omitempty"`
+	MutedUntil           *time.Time                         `json:"mutedUntil,omitempty"`
+	DisappearingTimer    *uint32                            `json:"disappearingTimer,omitempty"`
+	LastActivityAt       *time.Time                         `json:"lastActivityAt,omitempty"`
+	HistorySyncID        *string                            `json:"historySyncId,omitempty"`
+	HistorySyncType      *string                            `json:"historySyncType,omitempty"`
+	CompletedAt          *time.Time                         `json:"completedAt,omitempty"`
+	ChatsReady           bool                               `json:"chatsReady,omitempty"`
+	MessagesReady        bool                               `json:"messagesReady,omitempty"`
 }
 
 func NormalizeChatMessageEvent(instanceID string, rawEvent any) (*projection_model.Event, bool, error) {

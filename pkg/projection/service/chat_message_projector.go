@@ -44,7 +44,7 @@ func (p *ChatMessageProjector) Handle(ctx context.Context, event *projection_mod
 		return errors.New("invalid normalized message projection payload")
 	}
 	switch event.EventType {
-	case "message":
+	case "message", "history_message":
 		if err := p.applyMessage(ctx, event, &payload); err != nil {
 			return err
 		}
@@ -55,6 +55,11 @@ func (p *ChatMessageProjector) Handle(ctx context.Context, event *projection_mod
 		if err := p.applyReceipts(ctx, event, &payload); err != nil {
 			return err
 		}
+	case "history_chat":
+		if err := p.applyHistoryChat(ctx, event, &payload); err != nil {
+			return err
+		}
+		return p.state.RecordEvent(event.InstanceID, "chats", ChatsProjectionSchemaVersion, event.OccurredAt)
 	default:
 		return errors.New("unsupported chat and message projection event")
 	}
@@ -82,13 +87,35 @@ func (p *ChatMessageProjector) applyMessage(ctx context.Context, event *projecti
 		Caption: payload.Caption, ContentSummary: payload.ContentSummary, QuotedMessageID: payload.QuotedMessageID,
 		MediaType: payload.MediaType, MediaMIMEType: payload.MediaMIMEType, MediaFileName: payload.MediaFileName,
 		MediaSize: payload.MediaSize, MediaDuration: payload.MediaDurationSeconds, MediaWidth: payload.MediaWidth, MediaHeight: payload.MediaHeight,
-		Status: payload.Status, ProviderTimestamp: activityAt, SentAt: payload.SentAt, Provenance: payload.Provenance,
+		Status: payload.Status, ProviderTimestamp: activityAt, SentAt: payload.SentAt, Provenance: payload.Provenance, HistorySyncID: payload.HistorySyncID,
 		SourceOccurredAt: event.OccurredAt, SourceEventKey: event.EventKey,
 	}
 	_, err := p.repository.ApplyMessage(ctx, message,
 		projection_repository.MessageAspectEnvelope, projection_repository.MessageAspectContent,
 		projection_repository.MessageAspectMedia, projection_repository.MessageAspectLifecycle,
 	)
+	return err
+}
+
+func (p *ChatMessageProjector) applyHistoryChat(ctx context.Context, event *projection_model.Event, payload *messageEventPayload) error {
+	if payload.ChatID == "" || payload.ChatID != event.EntityKey || payload.ChatType == "" {
+		return errors.New("normalized history chat projection payload is incomplete")
+	}
+	chat := &projection_model.Chat{
+		InstanceID: event.InstanceID, ChatID: payload.ChatID, Type: payload.ChatType, DisplayName: payload.DisplayName,
+		Archived: payload.Archived, Pinned: payload.Pinned, MutedUntil: payload.MutedUntil, DisappearingTimer: payload.DisappearingTimer,
+		SourceOccurredAt: event.OccurredAt, SourceEventKey: event.EventKey,
+	}
+	if payload.UnreadCount != nil {
+		chat.UnreadCount = *payload.UnreadCount
+	}
+	aspects := []projection_repository.ChatAspect{projection_repository.ChatAspectIdentity, projection_repository.ChatAspectSettings}
+	if payload.LastActivityAt != nil {
+		activityAt := payload.LastActivityAt.UTC()
+		chat.LastActivityAt = &activityAt
+		aspects = append(aspects, projection_repository.ChatAspectActivity)
+	}
+	_, err := p.repository.ApplyChat(ctx, chat, aspects...)
 	return err
 }
 

@@ -8,8 +8,10 @@ import (
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
+	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	waE2E "go.mau.fi/whatsmeow/proto/waE2E"
+	waHistorySync "go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -122,5 +124,29 @@ func TestChatMessageProjectionPostgresReceiptBeforeMessageConverges(t *testing.T
 	storedWriteThrough, err := projectionRepository.GetMessage(context.Background(), instance.Id, string(writeThroughInfo.ID))
 	if err != nil || storedWriteThrough.ContentText == nil || *storedWriteThrough.ContentText != "confirmed outbound" || !storedWriteThrough.ProviderTimestamp.Equal(writeThroughAt) {
 		t.Fatalf("write-through/echo message = %#v, %v", storedWriteThrough, err)
+	}
+
+	historySyncer := NewHistorySyncer(eventsService, stateService)
+	if err := historySyncer.Sync(context.Background(), instance.Id, testHistorySync(waHistorySync.HistorySync_RECENT, 100), testHistoryMessageParser); err != nil {
+		t.Fatal(err)
+	}
+	result, err = eventsService.ProcessBatchFor(context.Background(), messageResource, historyProjectionEventTypes, 10, projector.Handle)
+	if err != nil || result.Processed != 2 || result.Failed != 0 {
+		t.Fatalf("history projection batch = %#v, %v", result, err)
+	}
+	readiness := NewHistoryReadinessProjector(stateService, projection_repository.NewReadinessRepository(db))
+	result, err = eventsService.ProcessBatchFor(context.Background(), messageResource, []string{"history_sync_complete"}, 10, readiness.Handle)
+	if err != nil || result.Processed != 1 || result.Failed != 0 {
+		t.Fatalf("history readiness batch = %#v, %v", result, err)
+	}
+	historical, err := projectionRepository.GetMessage(context.Background(), instance.Id, "history-message")
+	if err != nil || historical.Provenance != projection_model.MessageProvenanceHistorySync || historical.HistorySyncID == nil || *historical.HistorySyncID == "" {
+		t.Fatalf("historical projected message = %#v, %v", historical, err)
+	}
+	for _, resource := range []string{"chats", messageResource} {
+		state, stateErr := stateService.Get(instance.Id, resource)
+		if stateErr != nil || state.SyncStatus != projection_model.SyncStatusReady || state.LastReconciledAt == nil {
+			t.Fatalf("history readiness state for %s = %#v, %v", resource, state, stateErr)
+		}
 	}
 }
