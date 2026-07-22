@@ -1,9 +1,63 @@
 basePath: /
 definitions:
+  apidocs.CampaignAuditListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.AuditEvent'
+        type: array
+      message:
+        example: success
+        type: string
+      meta:
+        $ref: '#/definitions/apidocs.ProjectionMeta'
+    type: object
+  apidocs.CampaignDetailResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignDetail'
+      message:
+        example: success
+        type: string
+    type: object
+  apidocs.CampaignErrorResponse:
+    properties:
+      code:
+        example: campaign_state_conflict
+        type: string
+      error:
+        example: campaign state conflict
+        type: string
+    type: object
+  apidocs.CampaignListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign'
+        type: array
+      message:
+        example: success
+        type: string
+      meta:
+        $ref: '#/definitions/apidocs.ProjectionMeta'
+    type: object
+  apidocs.CampaignRecipientListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Recipient'
+        type: array
+      message:
+        example: success
+        type: string
+      meta:
+        $ref: '#/definitions/apidocs.ProjectionMeta'
+    type: object
   apidocs.CapabilitiesData:
     properties:
       capabilities:
         example:
+        - campaign_orchestration
         - rate_limit_retry_after
         - groups_projection
         items:
@@ -344,6 +398,140 @@ definitions:
         $ref: '#/definitions/types.JID'
       callId:
         type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_campaign_model.AuditEvent:
+    properties:
+      actorType:
+        type: string
+      campaignId:
+        type: string
+      eventType:
+        type: string
+      fromStatus:
+        type: string
+      id:
+        type: string
+      instanceId:
+        type: string
+      metadata:
+        items:
+          type: integer
+        type: array
+      occurredAt:
+        type: string
+      recipientId:
+        type: string
+      toStatus:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign:
+    properties:
+      contentType:
+        type: string
+      createdAt:
+        type: string
+      finishedAt:
+        type: string
+      id:
+        type: string
+      instanceId:
+        type: string
+      name:
+        type: string
+      startsAt:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignStatus'
+      textBody:
+        type: string
+      updatedAt:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignStatus:
+    enum:
+    - draft
+    - scheduled
+    - running
+    - paused
+    - completed
+    - aborted
+    - failed
+    type: string
+    x-enum-varnames:
+    - CampaignStatusDraft
+    - CampaignStatusScheduled
+    - CampaignStatusRunning
+    - CampaignStatusPaused
+    - CampaignStatusCompleted
+    - CampaignStatusAborted
+    - CampaignStatusFailed
+  github_com_evolution-foundation_evolution-go_pkg_campaign_model.Recipient:
+    properties:
+      attemptCount:
+        type: integer
+      campaignId:
+        type: string
+      createdAt:
+        type: string
+      deliveredAt:
+        type: string
+      id:
+        type: string
+      instanceId:
+        type: string
+      lastErrorCode:
+        type: string
+      nextAttemptAt:
+        type: string
+      optInSource:
+        type: string
+      optedInAt:
+        type: string
+      providerMessageId:
+        type: string
+      readAt:
+        type: string
+      recipientJid:
+        type: string
+      sentAt:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.RecipientStatus'
+      updatedAt:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_campaign_model.RecipientStatus:
+    enum:
+    - pending
+    - processing
+    - sent
+    - delivered
+    - read
+    - failed
+    - skipped
+    - aborted
+    type: string
+    x-enum-varnames:
+    - RecipientStatusPending
+    - RecipientStatusProcessing
+    - RecipientStatusSent
+    - RecipientStatusDelivered
+    - RecipientStatusRead
+    - RecipientStatusFailed
+    - RecipientStatusSkipped
+    - RecipientStatusAborted
+  github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignDetail:
+    properties:
+      byStatus:
+        additionalProperties:
+          type: integer
+        type: object
+      campaign:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign'
+      recipientCount:
+        type: integer
     type: object
   github_com_evolution-foundation_evolution-go_pkg_chat_service.BodyStruct:
     properties:
@@ -1648,6 +1836,44 @@ definitions:
       time.Time:
         type: string
     type: object
+  pkg_campaign_handler.CampaignRecipientConsent:
+    properties:
+      jid:
+        type: string
+      optInEvidenceReference:
+        type: string
+      optInSource:
+        type: string
+      optedInAt:
+        type: string
+    required:
+    - jid
+    - optInEvidenceReference
+    - optInSource
+    - optedInAt
+    type: object
+  pkg_campaign_handler.CreateCampaignRequest:
+    properties:
+      name:
+        type: string
+      recipients:
+        items:
+          $ref: '#/definitions/pkg_campaign_handler.CampaignRecipientConsent'
+        type: array
+      text:
+        type: string
+    required:
+    - name
+    - recipients
+    - text
+    type: object
+  pkg_campaign_handler.ScheduleCampaignRequest:
+    properties:
+      startsAt:
+        type: string
+    required:
+    - startsAt
+    type: object
   types.AddressingMode:
     enum:
     - pn
@@ -1703,13 +1929,6 @@ definitions:
     type: string
     x-enum-comments:
       EditAttributeAdminEdit: only used in newsletters
-    x-enum-descriptions:
-    - ""
-    - ""
-    - ""
-    - only used in newsletters
-    - ""
-    - ""
     x-enum-varnames:
     - EditAttributeEmpty
     - EditAttributeMessageEdit
@@ -1729,7 +1948,6 @@ definitions:
         description: request_required
         type: string
       disappearingTimer:
-        format: int32
         type: integer
       groupCreated:
         type: string
@@ -1835,13 +2053,10 @@ definitions:
   types.JID:
     properties:
       device:
-        format: int32
         type: integer
       integrator:
-        format: int32
         type: integer
       rawAgent:
-        format: int32
         type: integer
       server:
         type: string
@@ -2251,7 +2466,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - AISubscriptionRequestType_UNSPECIFIED
@@ -2283,7 +2497,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - AIThreadInfo_AIThreadClientInfo_UNKNOWN
@@ -2308,7 +2521,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - BotAgeCollectionMetadata_O18_BINARY
@@ -2398,7 +2610,6 @@ definitions:
     - 63
     - 64
     - 65
-    format: int32
     type: integer
     x-enum-varnames:
     - BotCapabilityMetadata_UNKNOWN
@@ -2485,7 +2696,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - BotDocumentMessageMetadata_TEXT_EXTRACTION
@@ -2524,7 +2734,6 @@ definitions:
     - 12
     - 13
     - 14
-    format: int32
     type: integer
     x-enum-varnames:
     - BotFeedbackMessage_BOT_FEEDBACK_POSITIVE
@@ -2546,7 +2755,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - BotFeedbackMessage_NONE
@@ -2654,7 +2862,6 @@ definitions:
     - 2
     - 3
     - 4
-    format: int32
     type: integer
     x-enum-varnames:
     - BotImagineMetadata_UNKNOWN
@@ -2677,7 +2884,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - BotInfrastructureDiagnostics_AAPI
@@ -2690,7 +2896,6 @@ definitions:
   waAICommon.BotLinkedAccount_BotLinkedAccountType:
     enum:
     - 0
-    format: int32
     type: integer
     x-enum-varnames:
     - BotLinkedAccount_BOT_LINKED_ACCOUNT_TYPE_1P
@@ -2729,7 +2934,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - BotMediaMetadata_CENTER
@@ -2770,7 +2974,6 @@ definitions:
   waAICommon.BotMessageOrigin_BotMessageOriginType:
     enum:
     - 0
-    format: int32
     type: integer
     x-enum-varnames:
     - BotMessageOrigin_BOT_MESSAGE_ORIGIN_TYPE_AI_INITIATED
@@ -2929,7 +3132,6 @@ definitions:
     - 54
     - 55
     - 56
-    format: int32
     type: integer
     x-enum-varnames:
     - BotMetricsEntryPoint_UNDEFINED_ENTRY_POINT
@@ -2996,7 +3198,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - BotMetricsThreadEntryPoint_AI_TAB_THREAD
@@ -3019,7 +3220,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - BotModeSelectionMetadata_DEFAULT_MODE
@@ -3038,7 +3238,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - BotModelMetadata_UNKNOWN_TYPE
@@ -3049,7 +3248,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - BotModelMetadata_UNKNOWN_STATUS
@@ -3087,7 +3285,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - BotPluginMetadata_UNKNOWN_PLUGIN
@@ -3099,7 +3296,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - BotPluginMetadata_UNKNOWN
@@ -3164,7 +3360,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - BotProgressIndicatorMetadata_BotPlanningStepMetadata_BotPlanningSearchSourcesMetadata_UNKNOWN
@@ -3188,7 +3383,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - BotProgressIndicatorMetadata_BotPlanningStepMetadata_UNKNOWN_PROVIDER
@@ -3201,7 +3395,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - BotProgressIndicatorMetadata_BotPlanningStepMetadata_UNKNOWN
@@ -3220,7 +3413,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - BotPromotionMessageMetadata_UNKNOWN_TYPE
@@ -3265,7 +3457,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - BotQuotaMetadata_BotFeatureQuotaMetadata_UNKNOWN_FEATURE
@@ -3289,7 +3480,6 @@ definitions:
     - 2
     - 3
     - 4
-    format: int32
     type: integer
     x-enum-varnames:
     - BotReminderMetadata_NOTIFY
@@ -3303,7 +3493,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - BotReminderMetadata_ONCE
@@ -3358,7 +3547,6 @@ definitions:
     - 5
     - 6
     - 7
-    format: int32
     type: integer
     x-enum-varnames:
     - BotSessionSource_NONE
@@ -3381,7 +3569,6 @@ definitions:
       certificateChain:
         items:
           items:
-            format: int32
             type: integer
           type: array
         type: array
@@ -3400,7 +3587,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - BotSignatureVerificationUseCaseProof_UNSPECIFIED
@@ -3438,7 +3624,6 @@ definitions:
     - 2
     - 3
     - 4
-    format: int32
     type: integer
     x-enum-varnames:
     - BotSourcesMetadata_BotSourceItem_UNKNOWN
@@ -3587,7 +3772,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - SessionTransparencyType_UNKNOWN_TYPE
@@ -3616,7 +3800,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseCodeMetadata_AI_RICH_RESPONSE_CODE_HIGHLIGHT_DEFAULT
@@ -3643,7 +3826,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseContentItemsMetadata_DEFAULT
@@ -3664,7 +3846,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseDynamicMetadata_AI_RICH_RESPONSE_DYNAMIC_METADATA_TYPE_UNKNOWN
@@ -3704,7 +3885,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseInlineImageMetadata_AI_RICH_RESPONSE_IMAGE_LAYOUT_LEADING_ALIGNED
@@ -3774,7 +3954,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseMessageType_AI_RICH_RESPONSE_TYPE_UNKNOWN
@@ -3814,7 +3993,6 @@ definitions:
     - 7
     - 8
     - 9
-    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseSubMessageType_AI_RICH_RESPONSE_UNKNOWN
@@ -3849,7 +4027,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - ADVEncryptionType_E2EE
@@ -3871,7 +4048,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - LimitSharing_UNKNOWN
@@ -4102,7 +4278,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - BCallMessage_UNKNOWN
@@ -4153,7 +4328,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - ButtonsMessage_Button_UNKNOWN
@@ -4168,7 +4342,6 @@ definitions:
     - 4
     - 5
     - 6
-    format: int32
     type: integer
     x-enum-varnames:
     - ButtonsMessage_UNKNOWN
@@ -4193,7 +4366,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - ButtonsResponseMessage_UNKNOWN
@@ -4254,7 +4426,6 @@ definitions:
     - 5
     - 6
     - 7
-    format: int32
     type: integer
     x-enum-varnames:
     - CallLogMessage_CONNECTED
@@ -4277,7 +4448,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - CallLogMessage_REGULAR
@@ -4327,7 +4497,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - CloudAPIThreadControlNotification_UNKNOWN
@@ -4367,7 +4536,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - ConditionalRevealMessage_UNKNOWN
@@ -4551,7 +4719,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_AdReplyInfo_NONE
@@ -4582,7 +4749,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_BusinessInteractionPills_ENTRY_POINT_UNKNOWN
@@ -4613,7 +4779,6 @@ definitions:
     - 10
     - 11
     - 12
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_BusinessInteractionPills_UNKNOWN
@@ -4639,7 +4804,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_CROSS_APP_SOURCE_UNKNOWN
@@ -4744,7 +4908,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_ExternalAdReplyInfo_CTWA
@@ -4754,7 +4917,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_ExternalAdReplyInfo_NONE
@@ -4781,7 +4943,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_UNKNOWN
@@ -4810,7 +4971,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_ForwardedNewsletterMessageInfo_UPDATE
@@ -4827,7 +4987,6 @@ definitions:
     - 6
     - 7
     - 8
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_NOT_PAIRED_MEDIA
@@ -4857,7 +5016,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_EXPLICIT
@@ -4869,7 +5027,6 @@ definitions:
     - 2
     - 3
     - 4
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_NONE
@@ -4890,7 +5047,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_StatusAudienceMetadata_UNKNOWN
@@ -4903,7 +5059,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_IMAGE
@@ -4977,7 +5132,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - DisappearingMode_CHANGED_IN_CHAT
@@ -4992,7 +5146,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - DisappearingMode_UNKNOWN
@@ -5280,7 +5433,6 @@ definitions:
     - 8
     - 9
     - 10
-    format: int32
     type: integer
     x-enum-varnames:
     - ExtendedTextMessage_SYSTEM
@@ -5297,7 +5449,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - ExtendedTextMessage_DEFAULT
@@ -5312,7 +5463,6 @@ definitions:
     - 5
     - 6
     - 7
-    format: int32
     type: integer
     x-enum-varnames:
     - ExtendedTextMessage_NONE
@@ -5369,7 +5519,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - GroupInviteMessage_DEFAULT
@@ -5490,7 +5639,6 @@ definitions:
     - 6
     - 7
     - 8
-    format: int32
     type: integer
     x-enum-varnames:
     - HistorySyncType_INITIAL_BOOTSTRAP
@@ -5604,7 +5752,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - ImageMessage_USER_IMAGE
@@ -5623,7 +5770,6 @@ definitions:
     - 2
     - 3
     - 4
-    format: int32
     type: integer
     x-enum-varnames:
     - InsightDeliveryState_SENT
@@ -5651,7 +5797,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - InteractiveAnnotation_RASTERIZED_LINK_PREVIEW
@@ -5732,7 +5877,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - InteractiveResponseMessage_Body_DEFAULT
@@ -5772,7 +5916,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - InvoiceMessage_IMAGE
@@ -5791,7 +5934,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - KeepType_UNKNOWN_KEEP_TYPE
@@ -5833,7 +5975,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - LinkPreviewMetadata_NONE
@@ -5868,7 +6009,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - ListMessage_UNKNOWN
@@ -5943,7 +6083,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - ListResponseMessage_UNKNOWN
@@ -6044,7 +6183,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - MediaKeyDomain_MEDIA_KEY_DOMAIN_UNKNOWN
@@ -6317,7 +6455,6 @@ definitions:
     - 18
     - 19
     - 20
-    format: int32
     type: integer
     x-enum-varnames:
     - MessageAssociation_UNKNOWN
@@ -6392,7 +6529,6 @@ definitions:
     enum:
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - MessageContextInfo_STATIC
@@ -6527,7 +6663,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - OrderMessage_INQUIRY
@@ -6536,7 +6671,6 @@ definitions:
   waE2E.OrderMessage_OrderSurface:
     enum:
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - OrderMessage_CATALOG
@@ -6586,7 +6720,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - PaymentBackground_UNKNOWN
@@ -6615,7 +6748,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - PaymentInviteMessage_DEFAULT
@@ -6626,7 +6758,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - PaymentInviteMessage_UNKNOWN
@@ -6656,7 +6787,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - PaymentLinkMetadata_PaymentLinkHeader_LINK_PREVIEW
@@ -6694,7 +6824,6 @@ definitions:
     - 2
     - 3
     - 4
-    format: int32
     type: integer
     x-enum-varnames:
     - PaymentReminderMessage_REMINDER_FREQUENCY_UNKNOWN
@@ -6710,7 +6839,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - PaymentReminderMessage_REMINDER_STATUS_UNKNOWN
@@ -6793,7 +6921,6 @@ definitions:
     enum:
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - PeerDataOperationRequestMessage_GalaxyFlowAction_NOTIFY_LAUNCH
@@ -6966,7 +7093,6 @@ definitions:
     - 5
     - 6
     - 7
-    format: int32
     type: integer
     x-enum-varnames:
     - PeerDataOperationRequestResponseMessage_PeerDataOperationResult_REQUEST_SUCCESS
@@ -6998,7 +7124,6 @@ definitions:
     - 4
     - 5
     - 6
-    format: int32
     type: integer
     x-enum-varnames:
     - PeerDataOperationRequestResponseMessage_PeerDataOperationResult_GENERATION_ERROR
@@ -7099,7 +7224,6 @@ definitions:
     - 11
     - 12
     - 13
-    format: int32
     type: integer
     x-enum-varnames:
     - PeerDataOperationRequestType_UPLOAD_STICKER
@@ -7130,7 +7254,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - PinInChatMessage_UNKNOWN_TYPE
@@ -7144,7 +7267,6 @@ definitions:
   waE2E.PlaceholderMessage_PlaceholderType:
     enum:
     - 0
-    format: int32
     type: integer
     x-enum-varnames:
     - PlaceholderMessage_MASK_LINKED_DEVICES
@@ -7173,7 +7295,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - PollContentType_UNKNOWN_POLL_CONTENT_TYPE
@@ -7250,7 +7371,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - PollType_POLL
@@ -7304,7 +7424,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - ProcessedVideo_UNDEFINED
@@ -7455,7 +7574,6 @@ definitions:
     - 32
     - 34
     - 35
-    format: int32
     type: integer
     x-enum-varnames:
     - ProtocolMessage_REVOKE
@@ -7541,7 +7659,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - RequestWelcomeMessageMetadata_EMPTY
@@ -7550,7 +7667,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - RequestWelcomeMessageMetadata_CHAT_OPEN
@@ -7574,7 +7690,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - ScheduledCallCreationMessage_UNKNOWN
@@ -7591,7 +7706,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - ScheduledCallEditMessage_UNKNOWN
@@ -7621,7 +7735,6 @@ definitions:
     - 3
     - 4
     - 5
-    format: int32
     type: integer
     x-enum-varnames:
     - SecretEncryptedMessage_UNKNOWN
@@ -7682,7 +7795,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - SplitPaymentParticipant_PENDING
@@ -7702,7 +7814,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - StatusNotificationMessage_UNKNOWN
@@ -7732,7 +7843,6 @@ definitions:
   waE2E.StatusQuotedMessage_StatusQuotedMessageType:
     enum:
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - StatusQuotedMessage_QUESTION_ANSWER
@@ -7749,7 +7859,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - StatusStickerInteractionMessage_UNKNOWN
@@ -7894,7 +8003,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - StickerPackMessage_FIRST_PARTY
@@ -7964,7 +8072,6 @@ definitions:
     - 0
     - 1
     - 2
-    format: int32
     type: integer
     x-enum-varnames:
     - ThreadID_UNKNOWN
@@ -8093,7 +8200,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - VideoMessage_NONE
@@ -8104,7 +8210,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - VideoMessage_USER_VIDEO
@@ -8113,7 +8218,6 @@ definitions:
     enum:
     - 0
     - 1
-    format: int32
     type: integer
     x-enum-varnames:
     - WebLinkRenderConfig_WEBVIEW
@@ -8124,7 +8228,6 @@ definitions:
     - 1
     - 2
     - 3
-    format: int32
     type: integer
     x-enum-varnames:
     - MediaRetryNotification_GENERAL_ERROR
@@ -8153,7 +8256,6 @@ definitions:
     - 8
     - 9
     - 10
-    format: int32
     type: integer
     x-enum-varnames:
     - StatusAttribution_UNKNOWN
@@ -8260,6 +8362,312 @@ paths:
       summary: Reject call
       tags:
       - Call
+  /campaigns:
+    get:
+      parameters:
+      - description: Campaign status
+        in: query
+        name: status
+        type: string
+      - default: 50
+        description: Page size (1-100)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.CampaignListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List campaigns
+      tags:
+      - Campaigns
+    post:
+      consumes:
+      - application/json
+      description: Creates a text campaign draft. Every recipient requires instance-scoped
+        opt-in evidence; raw evidence references are hashed before persistence.
+      parameters:
+      - description: Campaign draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pkg_campaign_handler.CreateCampaignRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/apidocs.CampaignDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create campaign draft
+      tags:
+      - Campaigns
+  /campaigns/{campaignId}:
+    get:
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: campaignId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.CampaignDetailResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get campaign
+      tags:
+      - Campaigns
+  /campaigns/{campaignId}/abort:
+    post:
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: campaignId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.CampaignDetailResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Abort campaign
+      tags:
+      - Campaigns
+  /campaigns/{campaignId}/audit:
+    get:
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: campaignId
+        required: true
+        type: string
+      - default: 50
+        description: Page size (1-100)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.CampaignAuditListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List campaign audit history
+      tags:
+      - Campaigns
+  /campaigns/{campaignId}/pause:
+    post:
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: campaignId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.CampaignDetailResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Pause campaign
+      tags:
+      - Campaigns
+  /campaigns/{campaignId}/recipients:
+    get:
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: campaignId
+        required: true
+        type: string
+      - default: 50
+        description: Page size (1-100)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.CampaignRecipientListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List campaign recipients
+      tags:
+      - Campaigns
+  /campaigns/{campaignId}/resume:
+    post:
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: campaignId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.CampaignDetailResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Resume campaign
+      tags:
+      - Campaigns
+  /campaigns/{campaignId}/schedule:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: campaignId
+        required: true
+        type: string
+      - description: Schedule
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pkg_campaign_handler.ScheduleCampaignRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.CampaignDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Schedule campaign
+      tags:
+      - Campaigns
+  /campaigns/{campaignId}/start:
+    post:
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: campaignId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.CampaignDetailResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.CampaignErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Start campaign
+      tags:
+      - Campaigns
   /chat/{chatId}/messages:
     get:
       parameters:

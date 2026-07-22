@@ -66,6 +66,492 @@ const docTemplate = `{
                 }
             }
         },
+        "/campaigns": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "List campaigns",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Creates a text campaign draft. Every recipient requires instance-scoped opt-in evidence; raw evidence references are hashed before persistence.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Create campaign draft",
+                "parameters": [
+                    {
+                        "description": "Campaign draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pkg_campaign_handler.CreateCampaignRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/campaigns/{campaignId}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Get campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "campaignId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignDetailResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/campaigns/{campaignId}/abort": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Abort campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "campaignId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignDetailResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/campaigns/{campaignId}/audit": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "List campaign audit history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "campaignId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignAuditListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/campaigns/{campaignId}/pause": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Pause campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "campaignId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignDetailResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/campaigns/{campaignId}/recipients": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "List campaign recipients",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "campaignId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignRecipientListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/campaigns/{campaignId}/resume": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Resume campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "campaignId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignDetailResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/campaigns/{campaignId}/schedule": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Schedule campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "campaignId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Schedule",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pkg_campaign_handler.ScheduleCampaignRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/campaigns/{campaignId}/start": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaigns"
+                ],
+                "summary": "Start campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "campaignId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignDetailResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/chat/archive": {
             "post": {
                 "security": [
@@ -5730,6 +6216,85 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "apidocs.CampaignAuditListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.AuditEvent"
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                },
+                "meta": {
+                    "$ref": "#/definitions/apidocs.ProjectionMeta"
+                }
+            }
+        },
+        "apidocs.CampaignDetailResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignDetail"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
+        "apidocs.CampaignErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "campaign_state_conflict"
+                },
+                "error": {
+                    "type": "string",
+                    "example": "campaign state conflict"
+                }
+            }
+        },
+        "apidocs.CampaignListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign"
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                },
+                "meta": {
+                    "$ref": "#/definitions/apidocs.ProjectionMeta"
+                }
+            }
+        },
+        "apidocs.CampaignRecipientListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Recipient"
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                },
+                "meta": {
+                    "$ref": "#/definitions/apidocs.ProjectionMeta"
+                }
+            }
+        },
         "apidocs.CapabilitiesData": {
             "type": "object",
             "properties": {
@@ -5739,6 +6304,7 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": [
+                        "campaign_orchestration",
                         "rate_limit_retry_after",
                         "groups_projection"
                     ]
@@ -6234,6 +6800,196 @@ const docTemplate = `{
                 },
                 "callId": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.AuditEvent": {
+            "type": "object",
+            "properties": {
+                "actorType": {
+                    "type": "string"
+                },
+                "campaignId": {
+                    "type": "string"
+                },
+                "eventType": {
+                    "type": "string"
+                },
+                "fromStatus": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "occurredAt": {
+                    "type": "string"
+                },
+                "recipientId": {
+                    "type": "string"
+                },
+                "toStatus": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign": {
+            "type": "object",
+            "properties": {
+                "contentType": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "finishedAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "startsAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignStatus"
+                },
+                "textBody": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignStatus": {
+            "type": "string",
+            "enum": [
+                "draft",
+                "scheduled",
+                "running",
+                "paused",
+                "completed",
+                "aborted",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "CampaignStatusDraft",
+                "CampaignStatusScheduled",
+                "CampaignStatusRunning",
+                "CampaignStatusPaused",
+                "CampaignStatusCompleted",
+                "CampaignStatusAborted",
+                "CampaignStatusFailed"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.Recipient": {
+            "type": "object",
+            "properties": {
+                "attemptCount": {
+                    "type": "integer"
+                },
+                "campaignId": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "deliveredAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "lastErrorCode": {
+                    "type": "string"
+                },
+                "nextAttemptAt": {
+                    "type": "string"
+                },
+                "optInSource": {
+                    "type": "string"
+                },
+                "optedInAt": {
+                    "type": "string"
+                },
+                "providerMessageId": {
+                    "type": "string"
+                },
+                "readAt": {
+                    "type": "string"
+                },
+                "recipientJid": {
+                    "type": "string"
+                },
+                "sentAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.RecipientStatus"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.RecipientStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "processing",
+                "sent",
+                "delivered",
+                "read",
+                "failed",
+                "skipped",
+                "aborted"
+            ],
+            "x-enum-varnames": [
+                "RecipientStatusPending",
+                "RecipientStatusProcessing",
+                "RecipientStatusSent",
+                "RecipientStatusDelivered",
+                "RecipientStatusRead",
+                "RecipientStatusFailed",
+                "RecipientStatusSkipped",
+                "RecipientStatusAborted"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignDetail": {
+            "type": "object",
+            "properties": {
+                "byStatus": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "campaign": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign"
+                },
+                "recipientCount": {
+                    "type": "integer"
                 }
             }
         },
@@ -8156,6 +8912,62 @@ const docTemplate = `{
                 }
             }
         },
+        "pkg_campaign_handler.CampaignRecipientConsent": {
+            "type": "object",
+            "required": [
+                "jid",
+                "optInEvidenceReference",
+                "optInSource",
+                "optedInAt"
+            ],
+            "properties": {
+                "jid": {
+                    "type": "string"
+                },
+                "optInEvidenceReference": {
+                    "type": "string"
+                },
+                "optInSource": {
+                    "type": "string"
+                },
+                "optedInAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_campaign_handler.CreateCampaignRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "recipients",
+                "text"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "recipients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pkg_campaign_handler.CampaignRecipientConsent"
+                    }
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_campaign_handler.ScheduleCampaignRequest": {
+            "type": "object",
+            "required": [
+                "startsAt"
+            ],
+            "properties": {
+                "startsAt": {
+                    "type": "string"
+                }
+            }
+        },
         "types.AddressingMode": {
             "type": "string",
             "enum": [
@@ -8231,14 +9043,6 @@ const docTemplate = `{
             "x-enum-comments": {
                 "EditAttributeAdminEdit": "only used in newsletters"
             },
-            "x-enum-descriptions": [
-                "",
-                "",
-                "",
-                "only used in newsletters",
-                "",
-                ""
-            ],
             "x-enum-varnames": [
                 "EditAttributeEmpty",
                 "EditAttributeMessageEdit",
@@ -8265,8 +9069,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "disappearingTimer": {
-                    "type": "integer",
-                    "format": "int32"
+                    "type": "integer"
                 },
                 "groupCreated": {
                     "type": "string"
@@ -8417,16 +9220,13 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "device": {
-                    "type": "integer",
-                    "format": "int32"
+                    "type": "integer"
                 },
                 "integrator": {
-                    "type": "integer",
-                    "format": "int32"
+                    "type": "integer"
                 },
                 "rawAgent": {
-                    "type": "integer",
-                    "format": "int32"
+                    "type": "integer"
                 },
                 "server": {
                     "type": "string"
@@ -9040,7 +9840,6 @@ const docTemplate = `{
         },
         "waAICommon.AISubscriptionRequestType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -9086,7 +9885,6 @@ const docTemplate = `{
         },
         "waAICommon.AIThreadInfo_AIThreadClientInfo_AIThreadType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -9124,7 +9922,6 @@ const docTemplate = `{
         },
         "waAICommon.BotAgeCollectionMetadata_AgeCollectionType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -9163,7 +9960,6 @@ const docTemplate = `{
         },
         "waAICommon.BotCapabilityMetadata_BotCapabilityType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -9325,7 +10121,6 @@ const docTemplate = `{
         },
         "waAICommon.BotDocumentMessageMetadata_DocumentPluginType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -9363,7 +10158,6 @@ const docTemplate = `{
         },
         "waAICommon.BotFeedbackMessage_BotFeedbackKind": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -9401,7 +10195,6 @@ const docTemplate = `{
         },
         "waAICommon.BotFeedbackMessage_ReportKind": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -9562,7 +10355,6 @@ const docTemplate = `{
         },
         "waAICommon.BotImagineMetadata_ImagineType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -9597,7 +10389,6 @@ const docTemplate = `{
         },
         "waAICommon.BotInfrastructureDiagnostics_BotBackend": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -9617,7 +10408,6 @@ const docTemplate = `{
         },
         "waAICommon.BotLinkedAccount_BotLinkedAccountType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0
             ],
@@ -9673,7 +10463,6 @@ const docTemplate = `{
         },
         "waAICommon.BotMediaMetadata_OrientationType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2,
@@ -9748,7 +10537,6 @@ const docTemplate = `{
         },
         "waAICommon.BotMessageOrigin_BotMessageOriginType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0
             ],
@@ -9906,7 +10694,6 @@ const docTemplate = `{
         },
         "waAICommon.BotMetricsEntryPoint": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10024,7 +10811,6 @@ const docTemplate = `{
         },
         "waAICommon.BotMetricsThreadEntryPoint": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2,
@@ -10059,7 +10845,6 @@ const docTemplate = `{
         },
         "waAICommon.BotModeSelectionMetadata_BotUserSelectionMode": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -10085,7 +10870,6 @@ const docTemplate = `{
         },
         "waAICommon.BotModelMetadata_ModelType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10099,7 +10883,6 @@ const docTemplate = `{
         },
         "waAICommon.BotModelMetadata_PremiumModelStatus": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10154,7 +10937,6 @@ const docTemplate = `{
         },
         "waAICommon.BotPluginMetadata_PluginType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10168,7 +10950,6 @@ const docTemplate = `{
         },
         "waAICommon.BotPluginMetadata_SearchProvider": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10264,7 +11045,6 @@ const docTemplate = `{
         },
         "waAICommon.BotProgressIndicatorMetadata_BotPlanningStepMetadata_BotPlanningSearchSourcesMetadata_BotPlanningSearchSourceProvider": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10297,7 +11077,6 @@ const docTemplate = `{
         },
         "waAICommon.BotProgressIndicatorMetadata_BotPlanningStepMetadata_BotSearchSourceProvider": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10313,7 +11092,6 @@ const docTemplate = `{
         },
         "waAICommon.BotProgressIndicatorMetadata_BotPlanningStepMetadata_PlanningStepStatus": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10340,7 +11118,6 @@ const docTemplate = `{
         },
         "waAICommon.BotPromotionMessageMetadata_BotPromotionType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10409,7 +11186,6 @@ const docTemplate = `{
         },
         "waAICommon.BotQuotaMetadata_BotFeatureQuotaMetadata_BotFeatureType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -10441,7 +11217,6 @@ const docTemplate = `{
         },
         "waAICommon.BotReminderMetadata_ReminderAction": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2,
@@ -10457,7 +11232,6 @@ const docTemplate = `{
         },
         "waAICommon.BotReminderMetadata_ReminderFrequency": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2,
@@ -10533,7 +11307,6 @@ const docTemplate = `{
         },
         "waAICommon.BotSessionSource": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10574,8 +11347,7 @@ const docTemplate = `{
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "integer",
-                            "format": "int32"
+                            "type": "integer"
                         }
                     }
                 },
@@ -10595,7 +11367,6 @@ const docTemplate = `{
         },
         "waAICommon.BotSignatureVerificationUseCaseProof_BotSignatureUseCase": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10648,7 +11419,6 @@ const docTemplate = `{
         },
         "waAICommon.BotSourcesMetadata_BotSourceItem_SourceProvider": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10877,7 +11647,6 @@ const docTemplate = `{
         },
         "waAICommon.SessionTransparencyType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -10914,7 +11683,6 @@ const docTemplate = `{
         },
         "waAICommonDeprecated.AIRichResponseCodeMetadata_AIRichResponseCodeHighlightType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -10956,7 +11724,6 @@ const docTemplate = `{
         },
         "waAICommonDeprecated.AIRichResponseContentItemsMetadata_ContentType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -10985,7 +11752,6 @@ const docTemplate = `{
         },
         "waAICommonDeprecated.AIRichResponseDynamicMetadata_AIRichResponseDynamicMetadataType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -11044,7 +11810,6 @@ const docTemplate = `{
         },
         "waAICommonDeprecated.AIRichResponseInlineImageMetadata_AIRichResponseImageAlignment": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -11150,7 +11915,6 @@ const docTemplate = `{
         },
         "waAICommonDeprecated.AIRichResponseMessageType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -11197,7 +11961,6 @@ const docTemplate = `{
         },
         "waAICommonDeprecated.AIRichResponseSubMessageType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -11253,7 +12016,6 @@ const docTemplate = `{
         },
         "waAdv.ADVEncryptionType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -11282,7 +12044,6 @@ const docTemplate = `{
         },
         "waCommon.LimitSharing_Trigger": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -11634,7 +12395,6 @@ const docTemplate = `{
         },
         "waE2E.BCallMessage_MediaType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -11710,7 +12470,6 @@ const docTemplate = `{
         },
         "waE2E.ButtonsMessage_Button_Type": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -11724,7 +12483,6 @@ const docTemplate = `{
         },
         "waE2E.ButtonsMessage_HeaderType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -11763,7 +12521,6 @@ const docTemplate = `{
         },
         "waE2E.ButtonsResponseMessage_Type": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -11845,7 +12602,6 @@ const docTemplate = `{
         },
         "waE2E.CallLogMessage_CallOutcome": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -11880,7 +12636,6 @@ const docTemplate = `{
         },
         "waE2E.CallLogMessage_CallType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -11953,7 +12708,6 @@ const docTemplate = `{
         },
         "waE2E.CloudAPIThreadControlNotification_CloudAPIThreadControl": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12014,7 +12768,6 @@ const docTemplate = `{
         },
         "waE2E.ConditionalRevealMessage_ConditionalRevealMessageType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -12289,7 +13042,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_AdReplyInfo_MediaType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12329,7 +13081,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_BusinessInteractionPills_EntryPoint": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12360,7 +13111,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_BusinessInteractionPills_PillType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12402,7 +13152,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_CrossAppSource": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12560,7 +13309,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_ExternalAdReplyInfo_AdType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -12572,7 +13320,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_ExternalAdReplyInfo_MediaType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12606,7 +13353,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_ForwardOrigin": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12649,7 +13395,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_ForwardedNewsletterMessageInfo_ContentType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2,
@@ -12663,7 +13408,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_PairedMediaType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12711,7 +13455,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_QuotedType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -12723,7 +13466,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_StatusAttributionType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12755,7 +13497,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_StatusAudienceMetadata_AudienceType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -12767,7 +13508,6 @@ const docTemplate = `{
         },
         "waE2E.ContextInfo_StatusSourceType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12878,7 +13618,6 @@ const docTemplate = `{
         },
         "waE2E.DisappearingMode_Initiator": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -12894,7 +13633,6 @@ const docTemplate = `{
         },
         "waE2E.DisappearingMode_Trigger": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -13322,7 +14060,6 @@ const docTemplate = `{
         },
         "waE2E.ExtendedTextMessage_FontType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -13346,7 +14083,6 @@ const docTemplate = `{
         },
         "waE2E.ExtendedTextMessage_InviteLinkGroupType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -13362,7 +14098,6 @@ const docTemplate = `{
         },
         "waE2E.ExtendedTextMessage_PreviewType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -13450,7 +14185,6 @@ const docTemplate = `{
         },
         "waE2E.GroupInviteMessage_GroupType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -13623,7 +14357,6 @@ const docTemplate = `{
         },
         "waE2E.HistorySyncType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -13794,7 +14527,6 @@ const docTemplate = `{
         },
         "waE2E.ImageMessage_ImageSourceType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -13818,7 +14550,6 @@ const docTemplate = `{
         },
         "waE2E.InsightDeliveryState": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -13859,7 +14590,6 @@ const docTemplate = `{
         },
         "waE2E.InteractiveAnnotation_StatusLinkType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2,
@@ -13983,7 +14713,6 @@ const docTemplate = `{
         },
         "waE2E.InteractiveResponseMessage_Body_Format": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -14042,7 +14771,6 @@ const docTemplate = `{
         },
         "waE2E.InvoiceMessage_AttachmentType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -14068,7 +14796,6 @@ const docTemplate = `{
         },
         "waE2E.KeepType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -14125,7 +14852,6 @@ const docTemplate = `{
         },
         "waE2E.LinkPreviewMetadata_SocialMediaPostType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -14177,7 +14903,6 @@ const docTemplate = `{
         },
         "waE2E.ListMessage_ListType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -14292,7 +15017,6 @@ const docTemplate = `{
         },
         "waE2E.ListResponseMessage_ListType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -14443,7 +15167,6 @@ const docTemplate = `{
         },
         "waE2E.MediaKeyDomain": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -14825,7 +15548,6 @@ const docTemplate = `{
         },
         "waE2E.MessageAssociation_AssociationType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -14946,7 +15668,6 @@ const docTemplate = `{
         },
         "waE2E.MessageContextInfo_MessageAddonExpiryType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2
@@ -15149,7 +15870,6 @@ const docTemplate = `{
         },
         "waE2E.OrderMessage_OrderStatus": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2,
@@ -15163,7 +15883,6 @@ const docTemplate = `{
         },
         "waE2E.OrderMessage_OrderSurface": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1
             ],
@@ -15237,7 +15956,6 @@ const docTemplate = `{
         },
         "waE2E.PaymentBackground_Type": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -15280,7 +15998,6 @@ const docTemplate = `{
         },
         "waE2E.PaymentInviteMessage_InviteType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -15292,7 +16009,6 @@ const docTemplate = `{
         },
         "waE2E.PaymentInviteMessage_ServiceType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -15338,7 +16054,6 @@ const docTemplate = `{
         },
         "waE2E.PaymentLinkMetadata_PaymentLinkHeader_PaymentLinkHeaderType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -15390,7 +16105,6 @@ const docTemplate = `{
         },
         "waE2E.PaymentReminderMessage_ReminderFrequency": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -15408,7 +16122,6 @@ const docTemplate = `{
         },
         "waE2E.PaymentReminderMessage_ReminderStatus": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -15536,7 +16249,6 @@ const docTemplate = `{
         },
         "waE2E.PeerDataOperationRequestMessage_GalaxyFlowAction_GalaxyFlowActionType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2
@@ -15792,7 +16504,6 @@ const docTemplate = `{
         },
         "waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_FullHistorySyncOnDemandResponseCode": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -15836,7 +16547,6 @@ const docTemplate = `{
         },
         "waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_HistorySyncChunkRetryResponseCode": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1,
                 2,
@@ -15973,7 +16683,6 @@ const docTemplate = `{
         },
         "waE2E.PeerDataOperationRequestType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -16023,7 +16732,6 @@ const docTemplate = `{
         },
         "waE2E.PinInChatMessage_Type": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -16045,7 +16753,6 @@ const docTemplate = `{
         },
         "waE2E.PlaceholderMessage_PlaceholderType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0
             ],
@@ -16086,7 +16793,6 @@ const docTemplate = `{
         },
         "waE2E.PollContentType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -16203,7 +16909,6 @@ const docTemplate = `{
         },
         "waE2E.PollType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -16281,7 +16986,6 @@ const docTemplate = `{
         },
         "waE2E.ProcessedVideo_VideoQuality": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -16467,7 +17171,6 @@ const docTemplate = `{
         },
         "waE2E.ProtocolMessage_Type": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 3,
@@ -16611,7 +17314,6 @@ const docTemplate = `{
         },
         "waE2E.RequestWelcomeMessageMetadata_LocalChatState": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -16623,7 +17325,6 @@ const docTemplate = `{
         },
         "waE2E.RequestWelcomeMessageMetadata_WelcomeTrigger": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -16657,7 +17358,6 @@ const docTemplate = `{
         },
         "waE2E.ScheduledCallCreationMessage_CallType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -16682,7 +17382,6 @@ const docTemplate = `{
         },
         "waE2E.ScheduledCallEditMessage_EditType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -16720,7 +17419,6 @@ const docTemplate = `{
         },
         "waE2E.SecretEncryptedMessage_SecretEncType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -16814,7 +17512,6 @@ const docTemplate = `{
         },
         "waE2E.SplitPaymentParticipant_SplitPaymentStatus": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -16840,7 +17537,6 @@ const docTemplate = `{
         },
         "waE2E.StatusNotificationMessage_StatusNotificationType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -16887,7 +17583,6 @@ const docTemplate = `{
         },
         "waE2E.StatusQuotedMessage_StatusQuotedMessageType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 1
             ],
@@ -16911,7 +17606,6 @@ const docTemplate = `{
         },
         "waE2E.StatusStickerInteractionMessage_StatusStickerType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -17127,7 +17821,6 @@ const docTemplate = `{
         },
         "waE2E.StickerPackMessage_StickerPackOrigin": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -17232,7 +17925,6 @@ const docTemplate = `{
         },
         "waE2E.ThreadID_ThreadType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -17424,7 +18116,6 @@ const docTemplate = `{
         },
         "waE2E.VideoMessage_Attribution": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -17440,7 +18131,6 @@ const docTemplate = `{
         },
         "waE2E.VideoMessage_VideoSourceType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -17452,7 +18142,6 @@ const docTemplate = `{
         },
         "waE2E.WebLinkRenderConfig": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1
@@ -17464,7 +18153,6 @@ const docTemplate = `{
         },
         "waMmsRetry.MediaRetryNotification_ResultType": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -17494,7 +18182,6 @@ const docTemplate = `{
         },
         "waStatusAttributions.StatusAttribution_Type": {
             "type": "integer",
-            "format": "int32",
             "enum": [
                 0,
                 1,
