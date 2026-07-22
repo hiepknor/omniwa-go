@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"image/png"
 	"io"
 	"math/rand"
@@ -142,12 +143,14 @@ type MyClient struct {
 	appCtx             context.Context
 	reconcileMu        sync.Mutex
 	reconcileRunning   bool
+	loopCancel         context.CancelFunc
+	loopDone           chan struct{}
 }
 
 const projectionIngestTimeout = 2 * time.Second
 const groupReconcileTimeout = 2 * time.Minute
 
-func (mycli *MyClient) triggerGroupReconciliation() {
+func (mycli *MyClient) triggerGroupReconciliation(parent context.Context) {
 	if mycli == nil || mycli.groupReconciler == nil || mycli.WAClient == nil || !mycli.WAClient.IsConnected() {
 		return
 	}
@@ -164,7 +167,6 @@ func (mycli *MyClient) triggerGroupReconciliation() {
 			mycli.reconcileRunning = false
 			mycli.reconcileMu.Unlock()
 		}()
-		parent := mycli.appCtx
 		if parent == nil {
 			parent = context.Background()
 		}
@@ -176,6 +178,84 @@ func (mycli *MyClient) triggerGroupReconciliation() {
 		}
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=reconcile instance_id=%s resource=groups result=ready", mycli.userID)
 	}()
+}
+
+func (mycli *MyClient) startGroupReconciliationLoop() {
+	if mycli == nil || mycli.groupReconciler == nil {
+		return
+	}
+	parent := mycli.appCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	mycli.reconcileMu.Lock()
+	if mycli.loopCancel != nil {
+		mycli.reconcileMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+	mycli.loopCancel = cancel
+	mycli.loopDone = done
+	interval := time.Duration(0)
+	if mycli.config != nil {
+		interval = stableGroupReconciliationInterval(mycli.userID, mycli.config.GroupSyncInterval)
+	}
+	mycli.reconcileMu.Unlock()
+
+	go func() {
+		defer func() {
+			mycli.reconcileMu.Lock()
+			if mycli.loopDone == done {
+				mycli.loopCancel = nil
+				mycli.loopDone = nil
+			}
+			mycli.reconcileMu.Unlock()
+		}()
+		runPeriodicGroupReconciliation(ctx, interval, mycli.triggerGroupReconciliation)
+	}()
+}
+
+func (mycli *MyClient) stopGroupReconciliationLoop() {
+	if mycli == nil {
+		return
+	}
+	mycli.reconcileMu.Lock()
+	cancel := mycli.loopCancel
+	mycli.loopCancel = nil
+	mycli.loopDone = nil
+	mycli.reconcileMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func runPeriodicGroupReconciliation(ctx context.Context, interval time.Duration, reconcile func(context.Context)) {
+	reconcile(ctx)
+	if interval <= 0 {
+		<-ctx.Done()
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile(ctx)
+		}
+	}
+}
+
+func stableGroupReconciliationInterval(instanceID string, base time.Duration) time.Duration {
+	if base <= 0 {
+		return base
+	}
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(instanceID))
+	basisPoints := int64(hash.Sum32()%2001) - 1000
+	return base + (base/10000)*time.Duration(basisPoints)
 }
 
 func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
@@ -258,6 +338,7 @@ func (w whatsmeowService) ReconnectClient(instanceId string) error {
 
 		// Remover event handler se existir
 		if mycli, ok := w.myClientPointer[instanceId]; ok {
+			mycli.stopGroupReconciliationLoop()
 			if mycli.eventHandlerID != 0 {
 				client.RemoveEventHandler(mycli.eventHandlerID)
 				w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Event handler removed", instanceId)
@@ -651,6 +732,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		select {
 		case <-w.killChannel[cd.Instance.Id]:
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Received kill signal for user '%s'", cd.Instance.Id)
+			mycli.stopGroupReconciliationLoop()
 			client.Disconnect()
 
 			delete(w.clientPointer, cd.Instance.Id)
@@ -955,7 +1037,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 	case *events.Connected, *events.PushNameSetting:
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] events.Connected to Whatsapp for user '%s'", mycli.userID, mycli.WAClient.Store.PushName)
-		mycli.triggerGroupReconciliation()
+		mycli.startGroupReconciliationLoop()
 		if len(mycli.WAClient.Store.PushName) > 0 {
 			doWebhook = true
 			postMap["event"] = "Connected"
@@ -1180,6 +1262,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			"stage": "error",
 		}
 	case *events.StreamReplaced:
+		mycli.stopGroupReconciliationLoop()
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Received StreamReplaced event", mycli.userID)
 		return
 	case *events.TemporaryBan:
@@ -1915,6 +1998,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.AppState:
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] App state event received %+v", mycli.userID, evt)
 	case *events.LoggedOut:
+		mycli.stopGroupReconciliationLoop()
 		doWebhook = true
 		postMap["event"] = "LoggedOut"
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Logged out for reason %s", mycli.userID, evt.Reason.String())
@@ -2034,6 +2118,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		doWebhook = true
 		postMap["event"] = "OfflineSyncCompleted"
 	case *events.ConnectFailure:
+		mycli.stopGroupReconciliationLoop()
 		doWebhook = true
 		postMap["event"] = "ConnectFailure"
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Connection failed with reason %s", mycli.userID, evt.Reason.String())
@@ -2049,6 +2134,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
 		}
 	case *events.Disconnected:
+		mycli.stopGroupReconciliationLoop()
 		doWebhook = true
 		postMap["event"] = "Disconnected"
 
