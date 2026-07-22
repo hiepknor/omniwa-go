@@ -99,7 +99,10 @@ must remain deployable.
     checks mandatory in CI. Completed: the existing required
     `build / vet / test` check now enforces all five gates with pinned Go tools
     and an isolated PostgreSQL service.
-22. Add a container migration/liveness/revision smoke test.
+22. Add a container migration/liveness/revision smoke test. Completed: CI
+    builds the production Dockerfile and verifies artifact identity, non-root
+    execution, liveness, migration completeness, restart survival, and
+    migration idempotency against isolated PostgreSQL.
 23. Replace mutable build-and-push behavior with digest promotion.
 24. Bound webhook delivery workers without claiming a public durable-history
     contract.

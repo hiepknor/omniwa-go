@@ -1,4 +1,4 @@
-FROM golang:1.25.0-alpine AS build
+FROM golang:1.25.12-alpine AS build
 
 RUN apk update && apk add --no-cache git build-base libjpeg-turbo-dev libwebp-dev
 
@@ -18,7 +18,7 @@ ARG VERSION=dev
 ARG REVISION=unknown
 RUN CGO_ENABLED=1 go build -ldflags "-X main.version=${VERSION} -X main.revision=${REVISION}" -o server ./cmd/evolution-go
 
-FROM alpine:3.19.1 AS final
+FROM alpine:3.24.1 AS final
 
 ARG VERSION=dev
 ARG REVISION=unknown

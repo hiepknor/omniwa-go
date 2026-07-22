@@ -17,7 +17,7 @@ jobs:
   build-test:
     name: build / vet / test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:15-alpine
@@ -79,3 +79,10 @@ jobs:
           --redact
           --exit-code 1
           .
+
+      - name: Smoke test container startup
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          SMOKE_VERSION: ci-smoke
+          SMOKE_API_KEY: omniwa-container-smoke-key
+        run: bash scripts/ci/container-smoke.sh
