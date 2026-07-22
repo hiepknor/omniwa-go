@@ -24,6 +24,8 @@ import (
 
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
+	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
+	campaign_service "github.com/evolution-foundation/evolution-go/pkg/campaign/service"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
 	chat_service "github.com/evolution-foundation/evolution-go/pkg/chat/service"
 	community_handler "github.com/evolution-foundation/evolution-go/pkg/community/handler"
@@ -371,6 +373,28 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		loggerWrapper,
 	)
 	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), loggerWrapper)
+	campaignWorker := campaign_service.NewWorker(
+		campaign_repository.NewCampaignRepository(db),
+		campaign_service.NewTextSender(instanceRepository, sendMessageService),
+		campaign_service.WorkerSettings{
+			BatchSize: config.CampaignBatchSize, Lease: config.CampaignLease, PollInterval: config.CampaignPollInterval,
+			MaxAttempts: config.CampaignMaxAttempts, RetryBase: config.CampaignRetryBase,
+		},
+		func(result campaign_service.BatchResult, err error) {
+			if err != nil {
+				logger.LogError("component=campaign action=process_batch result=failed error_code=batch_processing_failed claimed=%d sent=%d retried=%d deferred=%d failed=%d", result.Claimed, result.Sent, result.Retried, result.Deferred, result.Failed)
+			} else if result.Claimed > 0 {
+				logger.LogInfo("component=campaign action=process_batch result=success claimed=%d sent=%d retried=%d deferred=%d failed=%d", result.Claimed, result.Sent, result.Retried, result.Deferred, result.Failed)
+			}
+		},
+	)
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		if err := campaignWorker.Run(appCtx); err != nil {
+			logger.LogError("component=campaign action=worker result=stopped error_code=invalid_worker_configuration")
+		}
+	}()
 	userService := user_service.NewUserService(clientPointer, whatsmeowService, queryGuard, identityResolver, contactReader, loggerWrapper)
 	messageService := message_service.NewMessageService(clientPointer, messageRepository, whatsmeowService, loggerWrapper)
 	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)

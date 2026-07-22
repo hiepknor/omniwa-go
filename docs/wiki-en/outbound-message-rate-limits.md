@@ -45,5 +45,19 @@ Campaign workers use this same guard, but the limiter alone does not make a
 campaign safe. Durable scheduling, per-recipient opt-in evidence, lifecycle
 controls, and audit records are separate requirements.
 
+The durable worker can be tuned independently:
+
+```env
+WA_CAMPAIGN_BATCH=10
+WA_CAMPAIGN_LEASE=2m
+WA_CAMPAIGN_POLL_INTERVAL=1s
+WA_CAMPAIGN_MAX_ATTEMPTS=3
+WA_CAMPAIGN_RETRY_BASE=30s
+```
+
+Rate-limit and pre-send dependency deferrals do not consume the delivery
+attempt budget. Provider send failures use capped exponential backoff. These
+settings coordinate worker execution and are not WhatsApp platform limits.
+
 Clients can detect this contract through the additive `outbound_rate_limit`
 value returned by `GET /server/capabilities`.

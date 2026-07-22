@@ -74,6 +74,11 @@ type Config struct {
 	WAOutboundRatePerSecond float64
 	WAOutboundBurst         int
 	WAOutboundMaxWait       time.Duration
+	CampaignBatchSize       int
+	CampaignLease           time.Duration
+	CampaignPollInterval    time.Duration
+	CampaignMaxAttempts     int
+	CampaignRetryBase       time.Duration
 
 	// Logger configurations
 	LogMaxSize    int
@@ -359,6 +364,47 @@ func Load() *Config {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_OUTBOUND_MAX_WAIT, err)
 	}
 
+	campaignBatchValue := os.Getenv(config_env.WA_CAMPAIGN_BATCH)
+	if campaignBatchValue == "" {
+		campaignBatchValue = "10"
+	}
+	campaignBatchSize, err := parsePositiveInt(campaignBatchValue)
+	if err != nil || campaignBatchSize > 100 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 100", config_env.WA_CAMPAIGN_BATCH)
+	}
+	campaignLeaseValue := os.Getenv(config_env.WA_CAMPAIGN_LEASE)
+	if campaignLeaseValue == "" {
+		campaignLeaseValue = "2m"
+	}
+	campaignLease, err := parsePositiveDuration(campaignLeaseValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_LEASE, err)
+	}
+	campaignPollValue := os.Getenv(config_env.WA_CAMPAIGN_POLL_INTERVAL)
+	if campaignPollValue == "" {
+		campaignPollValue = "1s"
+	}
+	campaignPollInterval, err := parsePositiveDuration(campaignPollValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_POLL_INTERVAL, err)
+	}
+	campaignMaxAttemptsValue := os.Getenv(config_env.WA_CAMPAIGN_MAX_ATTEMPTS)
+	if campaignMaxAttemptsValue == "" {
+		campaignMaxAttemptsValue = "3"
+	}
+	campaignMaxAttempts, err := parsePositiveInt(campaignMaxAttemptsValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_MAX_ATTEMPTS, err)
+	}
+	campaignRetryBaseValue := os.Getenv(config_env.WA_CAMPAIGN_RETRY_BASE)
+	if campaignRetryBaseValue == "" {
+		campaignRetryBaseValue = "30s"
+	}
+	campaignRetryBase, err := parsePositiveDuration(campaignRetryBaseValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_RETRY_BASE, err)
+	}
+
 	waGroupReconcileIntervalValue := os.Getenv(config_env.WA_GROUP_RECONCILE_INTERVAL)
 	if waGroupReconcileIntervalValue == "" {
 		waGroupReconcileIntervalValue = "6h"
@@ -503,6 +549,11 @@ func Load() *Config {
 		WAOutboundRatePerSecond: waOutboundRatePerSecond,
 		WAOutboundBurst:         waOutboundBurst,
 		WAOutboundMaxWait:       waOutboundMaxWait,
+		CampaignBatchSize:       campaignBatchSize,
+		CampaignLease:           campaignLease,
+		CampaignPollInterval:    campaignPollInterval,
+		CampaignMaxAttempts:     campaignMaxAttempts,
+		CampaignRetryBase:       campaignRetryBase,
 	}
 
 	minioEnabled := os.Getenv(config_env.MINIO_ENABLED) == "true"
