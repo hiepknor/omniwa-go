@@ -78,6 +78,64 @@ CREATE INDEX projection_event_inbox_work_idx ON projection_event_inbox (availabl
 CREATE INDEX projection_event_inbox_expired_lease_idx ON projection_event_inbox (lease_until)
     WHERE status = 'processing';`,
 	},
+	{
+		Version: 3,
+		Name:    "create_groups_projection",
+		SQL: `CREATE TABLE projected_groups (
+    instance_id UUID NOT NULL,
+    group_id VARCHAR(255) NOT NULL,
+    name TEXT NULL,
+    topic TEXT NULL,
+    owner_jid VARCHAR(255) NULL,
+    owner_phone_jid VARCHAR(255) NULL,
+    locked BOOLEAN NULL,
+    announce BOOLEAN NULL,
+    ephemeral_enabled BOOLEAN NULL,
+    ephemeral_timer BIGINT NULL,
+    join_approval_required BOOLEAN NULL,
+    suspended BOOLEAN NULL,
+    participant_version VARCHAR(255) NULL,
+    addressing_mode VARCHAR(32) NULL,
+    member_add_mode VARCHAR(32) NULL,
+    parent_group_id VARCHAR(255) NULL,
+    is_parent BOOLEAN NULL,
+    is_default_subgroup BOOLEAN NULL,
+    invite_link TEXT NULL,
+    invite_link_updated_at TIMESTAMPTZ NULL,
+    provider_created_at TIMESTAMPTZ NULL,
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    tombstoned_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, group_id),
+    CONSTRAINT projected_groups_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT projected_groups_ephemeral_timer_check CHECK (ephemeral_timer IS NULL OR ephemeral_timer >= 0)
+);
+CREATE INDEX projected_groups_list_idx ON projected_groups (instance_id, name, group_id) WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_groups_freshness_idx ON projected_groups (instance_id, last_synced_at);
+
+CREATE TABLE projected_group_participants (
+    instance_id UUID NOT NULL,
+    group_id VARCHAR(255) NOT NULL,
+    participant_id VARCHAR(255) NOT NULL,
+    phone_number_jid VARCHAR(255) NULL,
+    lid VARCHAR(255) NULL,
+    display_name TEXT NULL,
+    role VARCHAR(32) NOT NULL DEFAULT 'member',
+    source_occurred_at TIMESTAMPTZ NOT NULL,
+    source_event_key VARCHAR(255) NOT NULL,
+    last_synced_at TIMESTAMPTZ NOT NULL,
+    tombstoned_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, group_id, participant_id),
+    CONSTRAINT projected_group_participants_group_fk FOREIGN KEY (instance_id, group_id) REFERENCES projected_groups(instance_id, group_id) ON DELETE CASCADE,
+    CONSTRAINT projected_group_participants_role_check CHECK (role IN ('member', 'admin', 'super_admin'))
+);
+CREATE INDEX projected_group_participants_list_idx ON projected_group_participants (instance_id, group_id, role, participant_id) WHERE tombstoned_at IS NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {
