@@ -1,7 +1,7 @@
 # WebSocket Events (realtime)
 
 Incoming messages, connection changes, QR refreshes, receipts, presence and more
-are delivered in realtime over a single WebSocket. This is the channel a WebUI
+are delivered in realtime over WebSocket connections. This is the channel a WebUI
 uses to stay live — REST is only for actions you initiate.
 
 > OpenAPI 2.0 cannot describe WebSockets, so `/ws` does **not** appear in Swagger.
@@ -113,6 +113,13 @@ its BFF) should:
 1. Reconnect with backoff when the socket closes.
 2. On reconnect, re-sync current state via REST (`GET /instance/status`, and your
    own message store) rather than assuming continuity.
+
+Each connection is an independent session, so multiple tabs or BFF workers may
+subscribe to the same instance without replacing each other. Every session has
+a bounded outbound queue and a single writer. If a consumer cannot keep up and
+fills that queue, the server disconnects only that slow session; the client must
+reconnect and re-sync as described above. Delivery is realtime and best-effort,
+not a durable event-history contract.
 
 ## Other transports
 

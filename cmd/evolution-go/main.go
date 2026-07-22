@@ -186,6 +186,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	webhookProducer := webhook_producer.NewWebhookProducer(config.WebhookUrl, webhookRequester, loggerWrapper)
 	websocketProducer := websocket_producer.NewWebsocketProducer(loggerWrapper)
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		<-appCtx.Done()
+		websocketProducer.Close()
+	}()
 
 	// Cria filas globais se o RabbitMQ global estiver habilitado
 	if config.AmqpGlobalEnabled && conn != nil {

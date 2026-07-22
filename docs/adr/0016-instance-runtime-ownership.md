@@ -61,5 +61,10 @@ retire only their own generation, and explicit disconnect never recursively
 starts a replacement. An architecture test prevents raw client-map ownership
 from returning.
 
+WebSocket sessions have also moved from one replaceable connection per instance
+to independent session identities. Each session owns a bounded queue and one
+write pump; producers only enqueue immutable frames after releasing the hub
+lock. A full queue disconnects that session without delaying other consumers.
+
 Before distributed leases exist, rollback is application-image rollback and
 the single-replica invariant remains mandatory.
