@@ -38,6 +38,7 @@ type contactEventPayload struct {
 	PictureUpdatedAt         *time.Time             `json:"pictureUpdatedAt,omitempty"`
 	About                    *string                `json:"about,omitempty"`
 	AboutUpdatedAt           *time.Time             `json:"aboutUpdatedAt,omitempty"`
+	CompletedAt              *time.Time             `json:"completedAt,omitempty"`
 }
 
 func NormalizeContactEvent(instanceID string, rawEvent any) (*projection_model.Event, bool, error) {

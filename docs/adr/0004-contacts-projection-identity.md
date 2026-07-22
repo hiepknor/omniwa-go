@@ -40,8 +40,17 @@ Contact, push-name, business-name, picture, and user-about events are normalized
 into the durable projection inbox before best-effort webhook and queue fan-out.
 A resource-specific worker applies them to the repository and records projection
 state only after the database write succeeds. Group picture events are excluded.
-The worker does not mark the projection ready or advertise the capability;
-initial synchronization must establish that boundary separately.
+Mutation ingestion alone does not mark the projection ready or advertise the
+capability; initial synchronization establishes that boundary separately.
+
+Initial synchronization reads the local whatsmeow contact store after the
+regular app-state sync is confirmed. On reconnect, an already populated local
+store may seed the projection immediately; an empty unconfirmed store is
+deferred so it cannot be mistaken for a valid empty address book. The snapshot
+uses the same repository field groups, then enqueues a durable completion
+barrier. The worker marks Contacts ready only when no normalized contact
+mutation remains unprocessed. Only that ready state at the current schema
+version enables `contacts_projection`.
 
 ## Consequences
 

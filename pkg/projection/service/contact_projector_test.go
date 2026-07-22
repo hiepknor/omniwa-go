@@ -31,7 +31,7 @@ func TestContactProjectorMapsNormalizedEventAndRecordsState(t *testing.T) {
 	}
 	contacts := &captureContactProjection{}
 	state := &captureProjectionState{}
-	if err := NewContactProjector(contacts, state).Handle(context.Background(), event); err != nil {
+	if err := NewContactProjector(contacts, state, &captureLabelReadiness{}).Handle(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}
 	if contacts.patch.Aspect != projection_repository.ContactAspectAbout || contacts.patch.About == nil || *contacts.patch.About != "Available" || len(contacts.patch.Identities) != 2 {
@@ -49,7 +49,7 @@ func TestContactProjectorDoesNotRecordFailedWrite(t *testing.T) {
 	}
 	contacts := &captureContactProjection{err: errors.New("database unavailable")}
 	state := &captureProjectionState{}
-	if err := NewContactProjector(contacts, state).Handle(context.Background(), event); err == nil {
+	if err := NewContactProjector(contacts, state, &captureLabelReadiness{}).Handle(context.Background(), event); err == nil {
 		t.Fatal("failed contact write was accepted")
 	}
 	if state.resource != "" {

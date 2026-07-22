@@ -18,19 +18,23 @@ type contactProjectionWriter interface {
 
 type contactProjectionState interface {
 	RecordEvent(instanceID, resource string, schemaVersion int64, occurredAt time.Time) error
+	MarkReady(instanceID, resource string, schemaVersion int64, reconciledAt time.Time) error
 }
+
+var contactMutationEventTypes = []string{"contact", "push_name", "business_name", "picture", "user_about"}
 
 type ContactProjector struct {
-	contacts contactProjectionWriter
-	state    contactProjectionState
+	contacts  contactProjectionWriter
+	state     contactProjectionState
+	readiness projectionReadinessBarrier
 }
 
-func NewContactProjector(contacts contactProjectionWriter, state contactProjectionState) *ContactProjector {
-	return &ContactProjector{contacts: contacts, state: state}
+func NewContactProjector(contacts contactProjectionWriter, state contactProjectionState, readiness projectionReadinessBarrier) *ContactProjector {
+	return &ContactProjector{contacts: contacts, state: state, readiness: readiness}
 }
 
 func (p *ContactProjector) Handle(ctx context.Context, event *projection_model.Event) error {
-	if p == nil || p.contacts == nil || p.state == nil {
+	if p == nil || p.contacts == nil || p.state == nil || p.readiness == nil {
 		return errors.New("contact projector dependencies are required")
 	}
 	if event == nil || event.Resource != contactResource || event.InstanceID == "" || event.EventKey == "" {
@@ -39,6 +43,19 @@ func (p *ContactProjector) Handle(ctx context.Context, event *projection_model.E
 	var payload contactEventPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return errors.New("invalid normalized contact projection payload")
+	}
+	if event.EventType == "contact_sync_complete" {
+		if payload.PreferredJID != event.EntityKey || payload.CompletedAt == nil || payload.CompletedAt.IsZero() {
+			return errors.New("contact sync completion payload is incomplete")
+		}
+		unprocessed, err := p.readiness.HasUnprocessedEvents(ctx, event.InstanceID, contactResource, contactMutationEventTypes, event.EventKey)
+		if err != nil {
+			return err
+		}
+		if unprocessed {
+			return errors.New("contact sync completion is waiting for prior events")
+		}
+		return p.state.MarkReady(event.InstanceID, contactResource, ContactsProjectionSchemaVersion, payload.CompletedAt.UTC())
 	}
 	if payload.PreferredJID == "" || payload.PreferredJID != event.EntityKey || len(payload.Identities) == 0 {
 		return errors.New("contact projection payload identity mismatch")

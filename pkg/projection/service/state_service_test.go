@@ -112,6 +112,33 @@ func TestAdminCapabilitiesOnlyExposeServerFeatures(t *testing.T) {
 	}
 }
 
+func TestContactsCapabilityRequiresReadyCurrentSchema(t *testing.T) {
+	service := NewStateService(newMemoryRepository())
+	if err := service.MarkReady("instance-a", "contacts", ContactsProjectionSchemaVersion-1, time.Unix(100, 0)); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, "contacts_projection") {
+		t.Fatalf("premature contacts capability = %v, %v", capabilities, err)
+	}
+	if err := service.MarkReady("instance-a", "contacts", ContactsProjectionSchemaVersion, time.Unix(200, 0)); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, "contacts_projection") {
+		t.Fatalf("ready contacts capability = %v, %v", capabilities, err)
+	}
+}
+
+func containsCapability(capabilities []string, expected string) bool {
+	for _, capability := range capabilities {
+		if capability == expected {
+			return true
+		}
+	}
+	return false
+}
+
 func TestProjectionHealthMetricsAreScopedAndTimestamped(t *testing.T) {
 	repository := newMemoryRepository()
 	now := time.Unix(1000, 0).UTC()

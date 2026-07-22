@@ -22,8 +22,9 @@ var resourceCapabilities = map[string]string{
 }
 
 var resourceSchemaVersions = map[string]int64{
-	"groups": GroupsProjectionSchemaVersion,
-	"labels": LabelsProjectionSchemaVersion,
+	"groups":   GroupsProjectionSchemaVersion,
+	"labels":   LabelsProjectionSchemaVersion,
+	"contacts": ContactsProjectionSchemaVersion,
 }
 
 type StateService interface {
