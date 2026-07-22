@@ -26,10 +26,12 @@ func TestRunAppliesPendingMigrationInOneLockedTransaction(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "schema_migrations" ORDER BY version ASC`)).WillReturnRows(
 		sqlmock.NewRows([]string{"version", "name", "checksum", "applied_at"}),
 	)
-	mock.ExpectExec("CREATE TABLE projection_states").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery("INSERT INTO \"schema_migrations\"").
-		WithArgs(registry[0].Name, migrationChecksum(registry[0]), sqlmock.AnyArg(), registry[0].Version).
-		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(registry[0].Version))
+	for _, migration := range registry {
+		mock.ExpectExec(regexp.QuoteMeta(migration.SQL)).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery("INSERT INTO \"schema_migrations\"").
+			WithArgs(migration.Name, migrationChecksum(migration), sqlmock.AnyArg(), migration.Version).
+			WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(migration.Version))
+	}
 	mock.ExpectCommit()
 
 	if err := Run(db); err != nil {
