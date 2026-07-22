@@ -250,7 +250,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	instanceRepository := instance_repository.NewInstanceRepositoryWithTokenDigester(db, tokenDigester)
 	var tokenRotator instance_repository.TokenRotator
 	var credentialHealthService *instance_credential.HealthService
-	var credentialCapabilities []string
+	credentialCapabilities := []string{"instance_metadata_views"}
 	if tokenDigester != nil {
 		backfiller, ok := instanceRepository.(instance_repository.TokenBackfiller)
 		if !ok {

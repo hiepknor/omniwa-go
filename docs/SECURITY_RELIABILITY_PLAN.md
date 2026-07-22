@@ -89,8 +89,10 @@ must remain deployable.
 18. Stop exposing and later remove plaintext tokens only after console migration
     and a measured rollback window. In progress: durable, secret-free fallback
     telemetry, transactional digest self-healing, and the admin-only credential
-    health capability are implemented. Plaintext response/storage removal
-    remains gated on Console deployment and an observed rollback window.
+    health capability are implemented. Additive credential-free metadata
+    list/detail contracts allow Console to stop transporting the secret before
+    legacy paths change. Plaintext response/storage removal remains gated on
+    Console deployment and an observed rollback window.
 
 ### 6. Maintainability, CI, and release integrity
 

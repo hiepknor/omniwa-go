@@ -54,6 +54,7 @@ are returned only to an admin-authenticated request.
 | `outbound_rate_limit` | Parse outbound pacing errors independently from information-query limits | Existing `/send/*` mutations |
 | `campaign_orchestration` | Use server-owned campaign state and recipient jobs | `/campaigns` and its control/history endpoints |
 | `projection_failure_operations` | Show admin projection-failure operations | `/server/projection-failures*` |
+| `instance_metadata_views` | Use credential-free instance list/detail contracts | `GET /instance/metadata`, `GET /instance/metadata/{instanceId}` |
 | `instance_token_rotation` | Offer compare-and-swap token rotation | `POST /instance/rotate-token/{instanceId}` |
 | `instance_credential_health` | Show secret-free migration facts to admins | `GET /instance/credential-health` |
 
@@ -103,9 +104,11 @@ backend removes it.
 
 ### Console implementation
 
-1. Remove `token` from instance list/detail view models, UI rendering, stores,
-   query caches, logs, analytics, crash reports, and persistence. Ignoring a
-   server field is sufficient for mixed-version operation.
+1. When `instance_metadata_views` is present, use `GET /instance/metadata` and
+   `GET /instance/metadata/{instanceId}` for ordinary list/detail screens. On a
+   supported old backend, retain the legacy paths but discard `token` at the
+   transport boundary. Remove it from view models, UI rendering, stores, query
+   caches, logs, analytics, crash reports, and persistence.
 2. Continue accepting `credentialVersion` as optional while old backends exist.
 3. Treat the token returned by instance creation as a one-time secret: display
    it only in a dedicated confirmation step, require the operator to copy or
@@ -180,6 +183,8 @@ WhatsApp information-query counts for projection-backed reads.
 ### C2: Credential-safe Console
 
 - Stop consuming the legacy token field on list/info paths.
+- Prefer the credential-free metadata endpoints whenever their capability is
+  present; test the old-backend discard-at-boundary fallback separately.
 - Implement one-time create/rotate secret UX and conflict handling.
 - Verify browser storage, state snapshots, logs, analytics, and error reporting
   contain no token.
@@ -232,6 +237,7 @@ The Console PRs must cover at least:
 - rotation conflict and network ambiguity without automatic resubmission;
 - list/info fixtures with `token`, without `token`, and with unknown additive
   fields;
+- metadata list/detail fixtures proving credential fields are absent;
 - log, analytics, browser-storage, and state-snapshot secret scans.
 
 ## Rollback

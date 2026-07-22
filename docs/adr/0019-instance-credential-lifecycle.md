@@ -101,3 +101,11 @@ and it deliberately does not calculate a `safeToRemove` decision. Operators
 must correlate Console rollout time, last fallback observation, full current-key
 coverage, the agreed rollback window, and backup/restore evidence before the
 later destructive contract migration is approved.
+
+The Console transition does not need to keep transporting the legacy secret.
+The always-available admin capability `instance_metadata_views` advertises
+`GET /instance/metadata` and `GET /instance/metadata/{instanceId}`. These
+explicit public DTOs contain the ordinary list/detail fields and credential
+generation, but have no token, lookup digest, proxy credential, or QR ceremony
+field. Legacy list/info paths remain unchanged for older consumers until the
+measured contract phase completes.
