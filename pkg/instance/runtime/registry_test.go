@@ -91,6 +91,47 @@ func TestConcurrentReconnectsAreSingleFlightPerInstance(t *testing.T) {
 	}
 }
 
+func TestConcurrentStartsAreSingleFlightPerInstance(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registry := NewRegistry[struct{}](ctx)
+	var calls atomic.Int32
+	start := make(chan struct{})
+	release := make(chan struct{})
+	const callers = 100
+	var wait sync.WaitGroup
+	var ready sync.WaitGroup
+	wait.Add(callers)
+	ready.Add(callers)
+
+	for range callers {
+		go func() {
+			defer wait.Done()
+			ready.Done()
+			<-start
+			if err := registry.Start("instance-a", func() {
+				calls.Add(1)
+				<-release
+			}); err != nil {
+				t.Errorf("Start() error=%v", err)
+			}
+		}()
+	}
+	ready.Wait()
+	close(start)
+	deadline := time.Now().Add(time.Second)
+	for calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+	wait.Wait()
+
+	if calls.Load() != 1 {
+		t.Fatalf("start callback calls=%d, want 1", calls.Load())
+	}
+}
+
 func TestParentCancellationStopsAllRuntimesOnce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	registry := NewRegistry[struct{}](ctx)
@@ -115,6 +156,10 @@ func TestParentCancellationStopsAllRuntimesOnce(t *testing.T) {
 	}
 	if _, err := registry.Install("instance-c", &whatsmeow.Client{}, struct{}{}, nil); err == nil {
 		t.Fatal("closed registry accepted a runtime")
+	}
+	called := false
+	if err := registry.Start("instance-c", func() { called = true }); err == nil || called {
+		t.Fatal("closed registry accepted a start callback")
 	}
 }
 

@@ -18,6 +18,14 @@ type ClientProvider interface {
 	Get(instanceID string) *whatsmeow.Client
 }
 
+// Controller is the lifecycle surface exposed outside the owning WhatsApp
+// adapter. It intentionally cannot install runtimes or bypass generation
+// fencing.
+type Controller interface {
+	ClientProvider
+	RemoveCurrent(instanceID string) bool
+}
+
 // Snapshot is an immutable view of an installed runtime. State is owned by the
 // registry lifecycle even when T itself is a pointer.
 type Snapshot[T any] struct {
@@ -55,8 +63,29 @@ type Registry[T any] struct {
 	next       uint64
 	entries    map[string]*entry[T]
 	closed     bool
+	starts     singleflight.Group
 	reconnects singleflight.Group
 	closeOnce  sync.Once
+}
+
+// Start coalesces concurrent construction attempts for one instance. The
+// callback must return after installation; runtime lifetime is owned by the
+// registry, not by the constructing goroutine.
+func (registry *Registry[T]) Start(instanceID string, start func()) error {
+	if registry == nil || instanceID == "" || start == nil {
+		return errors.New("runtime registry, instance identity, and start callback are required")
+	}
+	_, err, _ := registry.starts.Do(instanceID, func() (any, error) {
+		registry.mu.RLock()
+		closed := registry.closed
+		registry.mu.RUnlock()
+		if closed {
+			return nil, errors.New("runtime registry is closed")
+		}
+		start()
+		return nil, nil
+	})
+	return err
 }
 
 func NewRegistry[T any](parent context.Context) *Registry[T] {

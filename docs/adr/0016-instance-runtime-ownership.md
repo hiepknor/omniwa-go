@@ -6,8 +6,8 @@ Accepted
 
 ## Context
 
-WhatsApp clients, kill channels, event handlers, and reconciliation loops are
-currently kept in shared maps passed through multiple services. HTTP handlers,
+WhatsApp clients, kill channels, event handlers, and reconciliation loops were
+kept in shared maps passed through multiple services. HTTP handlers,
 event callbacks, reconnect goroutines, and shutdown paths can read and mutate
 those maps concurrently. A mutex around each map would prevent a Go runtime
 panic but would not prevent an old reconnect or disconnect operation from
@@ -22,7 +22,7 @@ claim campaign work on a process that does not own the socket.
 Introduce an instance runtime registry as the sole owner of in-process runtime
 state. A runtime has an immutable generation/fencing value and owns its client,
 cancellation context, event handlers, and background loops. Registry operations
-must support atomic install, lookup, reconnect single-flight, and
+must support atomic install, lookup, start/reconnect single-flight, and
 remove-if-current semantics.
 
 Domain services receive a narrow client provider interface. They never access
@@ -54,7 +54,12 @@ consumers are disconnected instead of blocking unrelated instances.
 
 ## Rollout and rollback
 
-Characterization and race tests land before callers move. Callers migrate in
-deployable slices, with the old maps removed only after no caller remains.
+Characterization and race tests landed before callers moved. All raw client,
+state, and kill-channel maps have now been removed. Runtime construction is
+single-flight per instance, publication precedes event delivery, failed starts
+retire only their own generation, and explicit disconnect never recursively
+starts a replacement. An architecture test prevents raw client-map ownership
+from returning.
+
 Before distributed leases exist, rollback is application-image rollback and
 the single-replica invariant remains mandatory.

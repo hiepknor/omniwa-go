@@ -12,26 +12,21 @@ import (
 	"testing"
 )
 
-// TestDomainServicesDoNotOwnClientMaps locks the first migration boundary.
-// The instance and whatsmeow lifecycle packages are a temporary allowlist until
-// the follow-up slice removes the mirrored legacy maps.
+// TestDomainServicesDoNotOwnClientMaps keeps all runtime ownership behind the
+// registry, including lifecycle packages.
 func TestDomainServicesDoNotOwnClientMaps(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve test path")
 	}
 	pkgRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	allowed := map[string]bool{
-		filepath.Join(pkgRoot, "instance", "service"):  true,
-		filepath.Join(pkgRoot, "whatsmeow", "service"): true,
-	}
 	fset := token.NewFileSet()
 
 	err := filepath.WalkDir(pkgRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") || allowed[filepath.Dir(path)] {
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 		parsed, parseErr := parser.ParseFile(fset, path, nil, 0)
