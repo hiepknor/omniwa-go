@@ -743,6 +743,33 @@ definitions:
     - SyncStatusReady
     - SyncStatusStale
     - SyncStatusFailed
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.DurableEventHistoryItem:
+    properties:
+      id:
+        type: string
+      ingestedAt:
+        type: string
+      occurredAt:
+        type: string
+      summary:
+        additionalProperties: {}
+        type: object
+      type:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.DurableEventHistoryMeta:
+    properties:
+      backfill:
+        type: boolean
+      generatedAt:
+        type: string
+      nextCursor:
+        type: string
+      retentionSeconds:
+        type: integer
+      source:
+        type: string
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat:
     properties:
       archived:
@@ -1555,6 +1582,13 @@ definitions:
     type: string
     x-enum-comments:
       EditAttributeAdminEdit: only used in newsletters
+    x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - only used in newsletters
+    - ""
+    - ""
     x-enum-varnames:
     - EditAttributeEmpty
     - EditAttributeMessageEdit
@@ -1574,6 +1608,7 @@ definitions:
         description: request_required
         type: string
       disappearingTimer:
+        format: int32
         type: integer
       groupCreated:
         type: string
@@ -1679,10 +1714,13 @@ definitions:
   types.JID:
     properties:
       device:
+        format: int32
         type: integer
       integrator:
+        format: int32
         type: integer
       rawAgent:
+        format: int32
         type: integer
       server:
         type: string
@@ -2092,6 +2130,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - AISubscriptionRequestType_UNSPECIFIED
@@ -2123,6 +2162,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - AIThreadInfo_AIThreadClientInfo_UNKNOWN
@@ -2147,6 +2187,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - BotAgeCollectionMetadata_O18_BINARY
@@ -2236,6 +2277,7 @@ definitions:
     - 63
     - 64
     - 65
+    format: int32
     type: integer
     x-enum-varnames:
     - BotCapabilityMetadata_UNKNOWN
@@ -2322,6 +2364,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - BotDocumentMessageMetadata_TEXT_EXTRACTION
@@ -2360,6 +2403,7 @@ definitions:
     - 12
     - 13
     - 14
+    format: int32
     type: integer
     x-enum-varnames:
     - BotFeedbackMessage_BOT_FEEDBACK_POSITIVE
@@ -2381,6 +2425,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - BotFeedbackMessage_NONE
@@ -2488,6 +2533,7 @@ definitions:
     - 2
     - 3
     - 4
+    format: int32
     type: integer
     x-enum-varnames:
     - BotImagineMetadata_UNKNOWN
@@ -2510,6 +2556,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - BotInfrastructureDiagnostics_AAPI
@@ -2522,6 +2569,7 @@ definitions:
   waAICommon.BotLinkedAccount_BotLinkedAccountType:
     enum:
     - 0
+    format: int32
     type: integer
     x-enum-varnames:
     - BotLinkedAccount_BOT_LINKED_ACCOUNT_TYPE_1P
@@ -2560,6 +2608,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - BotMediaMetadata_CENTER
@@ -2600,6 +2649,7 @@ definitions:
   waAICommon.BotMessageOrigin_BotMessageOriginType:
     enum:
     - 0
+    format: int32
     type: integer
     x-enum-varnames:
     - BotMessageOrigin_BOT_MESSAGE_ORIGIN_TYPE_AI_INITIATED
@@ -2758,6 +2808,7 @@ definitions:
     - 54
     - 55
     - 56
+    format: int32
     type: integer
     x-enum-varnames:
     - BotMetricsEntryPoint_UNDEFINED_ENTRY_POINT
@@ -2824,6 +2875,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - BotMetricsThreadEntryPoint_AI_TAB_THREAD
@@ -2846,6 +2898,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - BotModeSelectionMetadata_DEFAULT_MODE
@@ -2864,6 +2917,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - BotModelMetadata_UNKNOWN_TYPE
@@ -2874,6 +2928,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - BotModelMetadata_UNKNOWN_STATUS
@@ -2911,6 +2966,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - BotPluginMetadata_UNKNOWN_PLUGIN
@@ -2922,6 +2978,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - BotPluginMetadata_UNKNOWN
@@ -2986,6 +3043,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - BotProgressIndicatorMetadata_BotPlanningStepMetadata_BotPlanningSearchSourcesMetadata_UNKNOWN
@@ -3009,6 +3067,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - BotProgressIndicatorMetadata_BotPlanningStepMetadata_UNKNOWN_PROVIDER
@@ -3021,6 +3080,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - BotProgressIndicatorMetadata_BotPlanningStepMetadata_UNKNOWN
@@ -3039,6 +3099,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - BotPromotionMessageMetadata_UNKNOWN_TYPE
@@ -3083,6 +3144,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - BotQuotaMetadata_BotFeatureQuotaMetadata_UNKNOWN_FEATURE
@@ -3106,6 +3168,7 @@ definitions:
     - 2
     - 3
     - 4
+    format: int32
     type: integer
     x-enum-varnames:
     - BotReminderMetadata_NOTIFY
@@ -3119,6 +3182,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - BotReminderMetadata_ONCE
@@ -3173,6 +3237,7 @@ definitions:
     - 5
     - 6
     - 7
+    format: int32
     type: integer
     x-enum-varnames:
     - BotSessionSource_NONE
@@ -3195,6 +3260,7 @@ definitions:
       certificateChain:
         items:
           items:
+            format: int32
             type: integer
           type: array
         type: array
@@ -3213,6 +3279,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - BotSignatureVerificationUseCaseProof_UNSPECIFIED
@@ -3250,6 +3317,7 @@ definitions:
     - 2
     - 3
     - 4
+    format: int32
     type: integer
     x-enum-varnames:
     - BotSourcesMetadata_BotSourceItem_UNKNOWN
@@ -3398,6 +3466,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - SessionTransparencyType_UNKNOWN_TYPE
@@ -3426,6 +3495,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseCodeMetadata_AI_RICH_RESPONSE_CODE_HIGHLIGHT_DEFAULT
@@ -3452,6 +3522,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseContentItemsMetadata_DEFAULT
@@ -3472,6 +3543,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseDynamicMetadata_AI_RICH_RESPONSE_DYNAMIC_METADATA_TYPE_UNKNOWN
@@ -3511,6 +3583,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseInlineImageMetadata_AI_RICH_RESPONSE_IMAGE_LAYOUT_LEADING_ALIGNED
@@ -3580,6 +3653,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseMessageType_AI_RICH_RESPONSE_TYPE_UNKNOWN
@@ -3619,6 +3693,7 @@ definitions:
     - 7
     - 8
     - 9
+    format: int32
     type: integer
     x-enum-varnames:
     - AIRichResponseSubMessageType_AI_RICH_RESPONSE_UNKNOWN
@@ -3653,6 +3728,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - ADVEncryptionType_E2EE
@@ -3674,6 +3750,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - LimitSharing_UNKNOWN
@@ -3904,6 +3981,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - BCallMessage_UNKNOWN
@@ -3954,6 +4032,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - ButtonsMessage_Button_UNKNOWN
@@ -3968,6 +4047,7 @@ definitions:
     - 4
     - 5
     - 6
+    format: int32
     type: integer
     x-enum-varnames:
     - ButtonsMessage_UNKNOWN
@@ -3992,6 +4072,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - ButtonsResponseMessage_UNKNOWN
@@ -4052,6 +4133,7 @@ definitions:
     - 5
     - 6
     - 7
+    format: int32
     type: integer
     x-enum-varnames:
     - CallLogMessage_CONNECTED
@@ -4074,6 +4156,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - CallLogMessage_REGULAR
@@ -4123,6 +4206,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - CloudAPIThreadControlNotification_UNKNOWN
@@ -4162,6 +4246,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - ConditionalRevealMessage_UNKNOWN
@@ -4345,6 +4430,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_AdReplyInfo_NONE
@@ -4375,6 +4461,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_BusinessInteractionPills_ENTRY_POINT_UNKNOWN
@@ -4405,6 +4492,7 @@ definitions:
     - 10
     - 11
     - 12
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_BusinessInteractionPills_UNKNOWN
@@ -4430,6 +4518,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_CROSS_APP_SOURCE_UNKNOWN
@@ -4534,6 +4623,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_ExternalAdReplyInfo_CTWA
@@ -4543,6 +4633,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_ExternalAdReplyInfo_NONE
@@ -4569,6 +4660,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_UNKNOWN
@@ -4597,6 +4689,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_ForwardedNewsletterMessageInfo_UPDATE
@@ -4613,6 +4706,7 @@ definitions:
     - 6
     - 7
     - 8
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_NOT_PAIRED_MEDIA
@@ -4642,6 +4736,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_EXPLICIT
@@ -4653,6 +4748,7 @@ definitions:
     - 2
     - 3
     - 4
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_NONE
@@ -4673,6 +4769,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_StatusAudienceMetadata_UNKNOWN
@@ -4685,6 +4782,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - ContextInfo_IMAGE
@@ -4758,6 +4856,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - DisappearingMode_CHANGED_IN_CHAT
@@ -4772,6 +4871,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - DisappearingMode_UNKNOWN
@@ -5059,6 +5159,7 @@ definitions:
     - 8
     - 9
     - 10
+    format: int32
     type: integer
     x-enum-varnames:
     - ExtendedTextMessage_SYSTEM
@@ -5075,6 +5176,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - ExtendedTextMessage_DEFAULT
@@ -5089,6 +5191,7 @@ definitions:
     - 5
     - 6
     - 7
+    format: int32
     type: integer
     x-enum-varnames:
     - ExtendedTextMessage_NONE
@@ -5145,6 +5248,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - GroupInviteMessage_DEFAULT
@@ -5265,6 +5369,7 @@ definitions:
     - 6
     - 7
     - 8
+    format: int32
     type: integer
     x-enum-varnames:
     - HistorySyncType_INITIAL_BOOTSTRAP
@@ -5378,6 +5483,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - ImageMessage_USER_IMAGE
@@ -5396,6 +5502,7 @@ definitions:
     - 2
     - 3
     - 4
+    format: int32
     type: integer
     x-enum-varnames:
     - InsightDeliveryState_SENT
@@ -5423,6 +5530,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - InteractiveAnnotation_RASTERIZED_LINK_PREVIEW
@@ -5503,6 +5611,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - InteractiveResponseMessage_Body_DEFAULT
@@ -5542,6 +5651,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - InvoiceMessage_IMAGE
@@ -5560,6 +5670,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - KeepType_UNKNOWN_KEEP_TYPE
@@ -5601,6 +5712,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - LinkPreviewMetadata_NONE
@@ -5635,6 +5747,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - ListMessage_UNKNOWN
@@ -5709,6 +5822,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - ListResponseMessage_UNKNOWN
@@ -5809,6 +5923,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - MediaKeyDomain_MEDIA_KEY_DOMAIN_UNKNOWN
@@ -6081,6 +6196,7 @@ definitions:
     - 18
     - 19
     - 20
+    format: int32
     type: integer
     x-enum-varnames:
     - MessageAssociation_UNKNOWN
@@ -6155,6 +6271,7 @@ definitions:
     enum:
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - MessageContextInfo_STATIC
@@ -6289,6 +6406,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - OrderMessage_INQUIRY
@@ -6297,6 +6415,7 @@ definitions:
   waE2E.OrderMessage_OrderSurface:
     enum:
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - OrderMessage_CATALOG
@@ -6346,6 +6465,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - PaymentBackground_UNKNOWN
@@ -6374,6 +6494,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - PaymentInviteMessage_DEFAULT
@@ -6384,6 +6505,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - PaymentInviteMessage_UNKNOWN
@@ -6413,6 +6535,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - PaymentLinkMetadata_PaymentLinkHeader_LINK_PREVIEW
@@ -6450,6 +6573,7 @@ definitions:
     - 2
     - 3
     - 4
+    format: int32
     type: integer
     x-enum-varnames:
     - PaymentReminderMessage_REMINDER_FREQUENCY_UNKNOWN
@@ -6465,6 +6589,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - PaymentReminderMessage_REMINDER_STATUS_UNKNOWN
@@ -6547,6 +6672,7 @@ definitions:
     enum:
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - PeerDataOperationRequestMessage_GalaxyFlowAction_NOTIFY_LAUNCH
@@ -6719,6 +6845,7 @@ definitions:
     - 5
     - 6
     - 7
+    format: int32
     type: integer
     x-enum-varnames:
     - PeerDataOperationRequestResponseMessage_PeerDataOperationResult_REQUEST_SUCCESS
@@ -6750,6 +6877,7 @@ definitions:
     - 4
     - 5
     - 6
+    format: int32
     type: integer
     x-enum-varnames:
     - PeerDataOperationRequestResponseMessage_PeerDataOperationResult_GENERATION_ERROR
@@ -6850,6 +6978,7 @@ definitions:
     - 11
     - 12
     - 13
+    format: int32
     type: integer
     x-enum-varnames:
     - PeerDataOperationRequestType_UPLOAD_STICKER
@@ -6880,6 +7009,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - PinInChatMessage_UNKNOWN_TYPE
@@ -6893,6 +7023,7 @@ definitions:
   waE2E.PlaceholderMessage_PlaceholderType:
     enum:
     - 0
+    format: int32
     type: integer
     x-enum-varnames:
     - PlaceholderMessage_MASK_LINKED_DEVICES
@@ -6921,6 +7052,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - PollContentType_UNKNOWN_POLL_CONTENT_TYPE
@@ -6997,6 +7129,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - PollType_POLL
@@ -7050,6 +7183,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - ProcessedVideo_UNDEFINED
@@ -7200,6 +7334,7 @@ definitions:
     - 32
     - 34
     - 35
+    format: int32
     type: integer
     x-enum-varnames:
     - ProtocolMessage_REVOKE
@@ -7285,6 +7420,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - RequestWelcomeMessageMetadata_EMPTY
@@ -7293,6 +7429,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - RequestWelcomeMessageMetadata_CHAT_OPEN
@@ -7316,6 +7453,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - ScheduledCallCreationMessage_UNKNOWN
@@ -7332,6 +7470,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - ScheduledCallEditMessage_UNKNOWN
@@ -7361,6 +7500,7 @@ definitions:
     - 3
     - 4
     - 5
+    format: int32
     type: integer
     x-enum-varnames:
     - SecretEncryptedMessage_UNKNOWN
@@ -7421,6 +7561,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - SplitPaymentParticipant_PENDING
@@ -7440,6 +7581,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - StatusNotificationMessage_UNKNOWN
@@ -7469,6 +7611,7 @@ definitions:
   waE2E.StatusQuotedMessage_StatusQuotedMessageType:
     enum:
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - StatusQuotedMessage_QUESTION_ANSWER
@@ -7485,6 +7628,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - StatusStickerInteractionMessage_UNKNOWN
@@ -7629,6 +7773,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - StickerPackMessage_FIRST_PARTY
@@ -7698,6 +7843,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - ThreadID_UNKNOWN
@@ -7826,6 +7972,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - VideoMessage_NONE
@@ -7836,6 +7983,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - VideoMessage_USER_VIDEO
@@ -7844,6 +7992,7 @@ definitions:
     enum:
     - 0
     - 1
+    format: int32
     type: integer
     x-enum-varnames:
     - WebLinkRenderConfig_WEBVIEW
@@ -7854,6 +8003,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - MediaRetryNotification_GENERAL_ERROR
@@ -7882,6 +8032,7 @@ definitions:
     - 8
     - 9
     - 10
+    format: int32
     type: integer
     x-enum-varnames:
     - StatusAttribution_UNKNOWN
@@ -8469,6 +8620,55 @@ paths:
       summary: Remove participant from community
       tags:
       - Community
+  /events:
+    get:
+      parameters:
+      - default: 50
+        description: Page size (1-200)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Exact event type
+        in: query
+        name: type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.DurableEventHistoryItem'
+                  type: array
+                meta:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.DurableEventHistoryMeta'
+              type: object
+        "400":
+          description: Invalid pagination
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List durable event history
+      tags:
+      - Events
   /group/create:
     post:
       consumes:

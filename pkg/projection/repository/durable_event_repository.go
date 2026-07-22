@@ -3,6 +3,7 @@ package projection_repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
@@ -11,7 +12,20 @@ import (
 
 type DurableEventRepository interface {
 	Append(context.Context, *projection_model.DurableEvent) error
+	List(context.Context, string, string, int, *DurableEventCursor) (*DurableEventPage, error)
 	DeleteExpired(context.Context, time.Time, int) (int64, error)
+}
+
+const maxDurableEventPageSize = 200
+
+type DurableEventCursor struct {
+	OccurredAt time.Time
+	ID         string
+}
+
+type DurableEventPage struct {
+	Items      []projection_model.DurableEvent
+	NextCursor *DurableEventCursor
 }
 
 // DeleteExpired hard-deletes a bounded batch ordered by expiry and durable ID.
@@ -47,4 +61,31 @@ func (r *durableEventRepository) Append(ctx context.Context, event *projection_m
 		return errors.New("durable event is incomplete")
 	}
 	return r.db.WithContext(ctx).Create(event).Error
+}
+
+func (r *durableEventRepository) List(ctx context.Context, instanceID, eventType string, limit int, cursor *DurableEventCursor) (*DurableEventPage, error) {
+	eventType = strings.TrimSpace(eventType)
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" || limit < 1 || limit > maxDurableEventPageSize || len(eventType) > 64 ||
+		(cursor != nil && (cursor.ID == "" || cursor.OccurredAt.IsZero())) {
+		return nil, errors.New("valid durable event list parameters are required")
+	}
+	query := r.db.WithContext(ctx).Where("instance_id = ?", instanceID)
+	if eventType != "" {
+		query = query.Where("event_type = ?", eventType)
+	}
+	if cursor != nil {
+		at := cursor.OccurredAt.UTC()
+		query = query.Where("occurred_at < ? OR (occurred_at = ? AND id < ?)", at, at, cursor.ID)
+	}
+	var events []projection_model.DurableEvent
+	if err := query.Order("occurred_at DESC, id DESC").Limit(limit + 1).Find(&events).Error; err != nil {
+		return nil, err
+	}
+	page := &DurableEventPage{Items: events}
+	if len(events) > limit {
+		page.Items = events[:limit]
+		last := page.Items[len(page.Items)-1]
+		page.NextCursor = &DurableEventCursor{OccurredAt: last.OccurredAt, ID: last.ID}
+	}
+	return page, nil
 }

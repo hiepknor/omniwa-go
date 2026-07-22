@@ -194,6 +194,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	historyReadinessProjector := projection_service.NewHistoryReadinessProjector(projectionStateService, projectionReadinessRepository)
 	durableEventRepository := projection_repository.NewDurableEventRepository(db)
 	durableEventService := projection_service.NewDurableEventService(durableEventRepository, config.EventRetention)
+	durableEventReader := projection_service.NewDurableEventReader(durableEventRepository, config.EventRetention)
 	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
 	contactReader := projection_service.NewContactReader(contactProjectionRepository, projectionStateService)
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
@@ -413,7 +414,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),
 		pollHandler,
-		server_handler.NewServerHandler(version, projectionStateService),
+		server_handler.NewServerHandler(version, projectionStateService, durableEventReader),
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {
