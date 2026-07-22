@@ -46,6 +46,8 @@ func TestWorkHealthRepositoryAggregatesOnlyUnprocessedInstanceWork(t *testing.T)
 	})
 
 	base := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Microsecond)
+	discarded := workHealthEvent(instances[0].Id, "groups", "discarded", projection_model.EventStatusProcessed, base.Add(-2*time.Minute))
+	discarded.DiscardedAt = &base
 	events := []projection_model.Event{
 		workHealthEvent(instances[0].Id, "groups", "pending", projection_model.EventStatusPending, base),
 		workHealthEvent(instances[0].Id, "groups", "processing", projection_model.EventStatusProcessing, base.Add(time.Minute)),
@@ -54,6 +56,7 @@ func TestWorkHealthRepositoryAggregatesOnlyUnprocessedInstanceWork(t *testing.T)
 		workHealthEvent(instances[0].Id, "groups", "processed", projection_model.EventStatusProcessed, base.Add(-time.Minute)),
 		workHealthEvent(instances[0].Id, "contacts", "contact-pending", projection_model.EventStatusPending, base.Add(4*time.Minute)),
 		workHealthEvent(instances[1].Id, "groups", "other-pending", projection_model.EventStatusPending, base.Add(-2*time.Minute)),
+		discarded,
 	}
 	if err := db.Create(&events).Error; err != nil {
 		t.Fatal(err)

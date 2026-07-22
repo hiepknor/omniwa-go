@@ -918,6 +918,22 @@ definitions:
     - ChatTypeNewsletter
     - ChatTypeBroadcast
     - ChatTypeUnknown
+  github_com_evolution-foundation_evolution-go_pkg_projection_model.EventFailureClass:
+    enum:
+    - retryable
+    - permanent
+    type: string
+    x-enum-varnames:
+    - EventFailureRetryable
+    - EventFailurePermanent
+  github_com_evolution-foundation_evolution-go_pkg_projection_model.FailureAction:
+    enum:
+    - replay
+    - discard
+    type: string
+    x-enum-varnames:
+    - FailureActionReplay
+    - FailureActionDiscard
   github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageDirection:
     enum:
     - incoming
@@ -1157,6 +1173,55 @@ definitions:
       receiptType:
         type: string
       recipientJid:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureItem:
+    properties:
+      deadLetteredAt:
+        type: string
+      eventKey:
+        type: string
+      eventType:
+        type: string
+      failureClass:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.EventFailureClass'
+      ingestedAt:
+        type: string
+      instanceId:
+        type: string
+      lastAttemptAt:
+        type: string
+      lastErrorCode:
+        type: string
+      maxAttempts:
+        type: integer
+      occurredAt:
+        type: string
+      resource:
+        type: string
+      retryCount:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureOperationResult:
+    properties:
+      action:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.FailureAction'
+      eventKey:
+        type: string
+      instanceId:
+        type: string
+      occurredAt:
+        type: string
+      resource:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailurePage:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureItem'
+        type: array
+      nextCursor:
         type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionHealth:
@@ -1900,6 +1965,22 @@ definitions:
         type: string
     required:
     - startsAt
+    type: object
+  pkg_server_handler.ProjectionFailureOperationRequest:
+    properties:
+      eventKey:
+        type: string
+      instanceId:
+        type: string
+      reason:
+        type: string
+      resource:
+        type: string
+    required:
+    - eventKey
+    - instanceId
+    - reason
+    - resource
     type: object
   types.AddressingMode:
     enum:
@@ -11708,6 +11789,151 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get persisted overview metrics
+      tags:
+      - Server
+  /server/projection-failures:
+    get:
+      parameters:
+      - description: Instance ID filter
+        in: query
+        name: instanceId
+        type: string
+      - description: Projection resource filter
+        in: query
+        name: resource
+        type: string
+      - default: 50
+        description: Page size (1-200)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque pagination cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailurePage'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List projection dead letters
+      tags:
+      - Server
+  /server/projection-failures/discard:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Failure identity and audit reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pkg_server_handler.ProjectionFailureOperationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureOperationResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Discard projection dead letter
+      tags:
+      - Server
+  /server/projection-failures/replay:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Failure identity and audit reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pkg_server_handler.ProjectionFailureOperationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureOperationResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Replay projection dead letter
       tags:
       - Server
   /server/projection-health:

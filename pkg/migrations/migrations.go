@@ -577,6 +577,42 @@ ON projection_event_inbox (instance_id, resource, ingested_at)
 INCLUDE (status)
 WHERE status <> 'processed';`,
 	},
+	{
+		Version: 17,
+		Name:    "create_projection_failure_operations",
+		SQL: `ALTER TABLE projection_event_inbox
+    ADD COLUMN discarded_at TIMESTAMPTZ NULL;
+
+ALTER TABLE projection_event_inbox
+    ADD CONSTRAINT projection_event_inbox_discarded_state_check
+    CHECK (discarded_at IS NULL OR (status = 'processed' AND processed_at IS NULL));
+
+CREATE TABLE projection_failure_audit (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    resource VARCHAR(64) NOT NULL,
+    event_key VARCHAR(255) NOT NULL,
+    action VARCHAR(32) NOT NULL,
+    reason VARCHAR(500) NOT NULL,
+    actor_reference_hash VARCHAR(64) NOT NULL,
+    request_id VARCHAR(64) NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT projection_failure_audit_event_fk FOREIGN KEY (instance_id, resource, event_key)
+        REFERENCES projection_event_inbox(instance_id, resource, event_key) ON DELETE CASCADE,
+    CONSTRAINT projection_failure_audit_action_check CHECK (action IN ('replay', 'discard')),
+    CONSTRAINT projection_failure_audit_reason_check CHECK (char_length(reason) BETWEEN 1 AND 500),
+    CONSTRAINT projection_failure_audit_actor_hash_check CHECK (actor_reference_hash ~ '^[0-9a-f]{64}$')
+);
+CREATE INDEX projection_failure_audit_history_idx
+ON projection_failure_audit (occurred_at DESC, id DESC);
+
+CREATE INDEX projection_event_inbox_dead_letter_admin_idx
+ON projection_event_inbox (dead_lettered_at DESC, instance_id DESC, resource DESC, event_key DESC)
+WHERE status = 'dead_letter';
+CREATE INDEX projection_event_inbox_instance_dead_letter_admin_idx
+ON projection_event_inbox (instance_id, dead_lettered_at DESC, resource DESC, event_key DESC)
+WHERE status = 'dead_letter';`,
+	},
 }
 
 func Run(db *gorm.DB) error {

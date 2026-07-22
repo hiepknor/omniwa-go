@@ -247,6 +247,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	durableEventRepository := projection_repository.NewDurableEventRepository(db)
 	durableEventService := projection_service.NewDurableEventService(durableEventRepository, config.EventRetention)
 	durableEventReader := projection_service.NewDurableEventReader(durableEventRepository, config.EventRetention)
+	projectionFailureService := projection_service.NewFailureService(projection_repository.NewFailureRepository(db))
 	overviewService := projection_service.NewOverviewService(projection_repository.NewOverviewRepository(db))
 	healthService := projection_service.NewServerHealthService(projection_repository.NewHealthRepository(db), projectionStateService, queryGuard)
 	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
@@ -520,7 +521,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),
 		pollHandler,
-		server_handler.NewServerHandler(version, revision, projectionStateService, durableEventReader, overviewService, healthService),
+		server_handler.NewServerHandler(
+			version, revision, projectionStateService, durableEventReader, overviewService,
+			server_handler.WithHealthService(healthService),
+			server_handler.WithFailureService(projectionFailureService),
+		),
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {

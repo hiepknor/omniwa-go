@@ -15,6 +15,7 @@ const (
 	CapabilityEventsProjection      = "events_projection"
 	CapabilityOutboundRateLimit     = "outbound_rate_limit"
 	CapabilityCampaignOrchestration = "campaign_orchestration"
+	CapabilityFailureOperations     = "projection_failure_operations"
 )
 
 var resourceCapabilities = map[string]string{
@@ -182,6 +183,8 @@ func (s *stateService) Capabilities(instanceID string) ([]string, error) {
 	// instance and explicitly does not claim pre-deployment backfill.
 	capabilities := []string{CapabilityCampaignOrchestration, CapabilityEventsProjection, CapabilityOutboundRateLimit, CapabilityRateLimitRetryAfter}
 	if instanceID == "" {
+		capabilities = append(capabilities, CapabilityFailureOperations)
+		sort.Strings(capabilities)
 		return capabilities, nil
 	}
 	states, err := s.repository.ListByInstance(instanceID)

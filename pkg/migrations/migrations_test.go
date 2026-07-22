@@ -81,7 +81,7 @@ func TestProjectionOverviewWindowIndexesAreVersioned(t *testing.T) {
 }
 
 func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
-	migration := registry[len(registry)-5]
+	migration := registry[len(registry)-6]
 	if migration.Version != 12 || migration.Name != "create_campaign_persistence" {
 		t.Fatalf("campaign migration = %#v", migration)
 	}
@@ -96,7 +96,7 @@ func TestCampaignPersistenceMigrationIsVersionedAndConsentBound(t *testing.T) {
 }
 
 func TestContactsSearchIndexesAreVersioned(t *testing.T) {
-	migration := registry[len(registry)-4]
+	migration := registry[len(registry)-5]
 	if migration.Version != 13 || migration.Name != "index_contacts_projection_search" {
 		t.Fatalf("contacts search migration = %#v", migration)
 	}
@@ -111,7 +111,7 @@ func TestContactsSearchIndexesAreVersioned(t *testing.T) {
 }
 
 func TestGroupsSearchIndexesAreVersioned(t *testing.T) {
-	migration := registry[len(registry)-3]
+	migration := registry[len(registry)-4]
 	if migration.Version != 14 || migration.Name != "index_groups_projection_search" {
 		t.Fatalf("groups search migration = %#v", migration)
 	}
@@ -123,7 +123,7 @@ func TestGroupsSearchIndexesAreVersioned(t *testing.T) {
 }
 
 func TestProjectionFailureMetadataMigrationIsAdditiveAndIndexed(t *testing.T) {
-	migration := registry[len(registry)-2]
+	migration := registry[len(registry)-3]
 	if migration.Version != 15 || migration.Name != "add_projection_event_failure_metadata" {
 		t.Fatalf("projection failure migration = %#v", migration)
 	}
@@ -139,7 +139,7 @@ func TestProjectionFailureMetadataMigrationIsAdditiveAndIndexed(t *testing.T) {
 }
 
 func TestProjectionWorkHealthIndexIsVersionedAndPartial(t *testing.T) {
-	migration := registry[len(registry)-1]
+	migration := registry[len(registry)-2]
 	if migration.Version != 16 || migration.Name != "index_projection_work_health" {
 		t.Fatalf("projection work health migration = %#v", migration)
 	}
@@ -148,6 +148,23 @@ func TestProjectionWorkHealthIndexIsVersionedAndPartial(t *testing.T) {
 	} {
 		if !strings.Contains(migration.SQL, expected) {
 			t.Fatalf("projection work health migration does not contain %q", expected)
+		}
+	}
+}
+
+func TestProjectionFailureOperationsMigrationIsAuditedAndTerminal(t *testing.T) {
+	migration := registry[len(registry)-1]
+	if migration.Version != 17 || migration.Name != "create_projection_failure_operations" {
+		t.Fatalf("projection failure operations migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"ADD COLUMN discarded_at", "status = 'processed'", "CREATE TABLE projection_failure_audit",
+		"projection_failure_audit_event_fk", "projection_failure_audit_actor_hash_check",
+		"request_id VARCHAR(64) NOT NULL", "projection_event_inbox_dead_letter_admin_idx",
+		"projection_event_inbox_instance_dead_letter_admin_idx", "projection_failure_audit_history_idx",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("projection failure operations migration does not contain %q", expected)
 		}
 	}
 }

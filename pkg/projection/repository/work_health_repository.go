@@ -33,7 +33,7 @@ const projectionWorkHealthSelect = `SELECT instance_id, resource,
     COUNT(*) FILTER (WHERE status = 'processing') AS processing_events,
     COUNT(*) FILTER (WHERE status = 'failed') AS failed_events,
     COUNT(*) FILTER (WHERE status = 'dead_letter') AS dead_letter_events,
-    MIN(ingested_at) FILTER (WHERE status <> 'processed') AS oldest_unprocessed_at
+    MIN(ingested_at) FILTER (WHERE status IN ('pending', 'processing', 'failed', 'dead_letter')) AS oldest_unprocessed_at
 FROM projection_event_inbox`
 
 func (r *workHealthRepository) Get(instanceID, resource string) (*ProjectionWorkHealth, error) {
@@ -42,7 +42,7 @@ func (r *workHealthRepository) Get(instanceID, resource string) (*ProjectionWork
 	}
 	var result ProjectionWorkHealth
 	err := r.db.Raw(projectionWorkHealthSelect+`
-WHERE instance_id = ? AND resource = ? AND status <> 'processed'
+WHERE instance_id = ? AND resource = ? AND status IN ('pending', 'processing', 'failed', 'dead_letter')
 GROUP BY instance_id, resource`, instanceID, resource).Scan(&result).Error
 	return &result, err
 }
@@ -54,10 +54,10 @@ func (r *workHealthRepository) List(instanceID string) ([]ProjectionWorkHealth, 
 	query := projectionWorkHealthSelect
 	arguments := []any{}
 	if instanceID != "" {
-		query += ` WHERE instance_id = ? AND status <> 'processed'`
+		query += ` WHERE instance_id = ? AND status IN ('pending', 'processing', 'failed', 'dead_letter')`
 		arguments = append(arguments, instanceID)
 	} else {
-		query += ` WHERE status <> 'processed'`
+		query += ` WHERE status IN ('pending', 'processing', 'failed', 'dead_letter')`
 	}
 	query += ` GROUP BY instance_id, resource ORDER BY instance_id, resource`
 	var results []ProjectionWorkHealth
