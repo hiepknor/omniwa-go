@@ -70,6 +70,7 @@ type Config struct {
 	GroupSyncInterval    time.Duration
 	MessageRetention     time.Duration
 	EventRetention       time.Duration
+	RemoteMedia          RemoteMediaConfig
 
 	WAOutboundRatePerSecond float64
 	WAOutboundBurst         int
@@ -86,6 +87,13 @@ type Config struct {
 	LogMaxAge     int
 	LogDirectory  string
 	LogCompress   bool
+}
+
+type RemoteMediaConfig struct {
+	Policy       string
+	AllowedHosts []string
+	Timeout      time.Duration
+	MaxBytes     int64
 }
 
 // EnsureDBExists connects to postgres (without the target database) and creates it if it doesn't exist.
@@ -432,6 +440,34 @@ func Load() *Config {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_EVENT_RETENTION, err)
 	}
 
+	remoteMediaFetchPolicy := os.Getenv(config_env.REMOTE_MEDIA_FETCH_POLICY)
+	if remoteMediaFetchPolicy == "" {
+		remoteMediaFetchPolicy = "public_only"
+	}
+	if remoteMediaFetchPolicy != "disabled" && remoteMediaFetchPolicy != "public_only" && remoteMediaFetchPolicy != "allowlist" {
+		logger.LogFatal("[CONFIG] invalid %s: must be disabled, public_only, or allowlist", config_env.REMOTE_MEDIA_FETCH_POLICY)
+	}
+	remoteMediaAllowedHosts := splitNonEmptyCSV(os.Getenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS))
+	if remoteMediaFetchPolicy == "allowlist" && len(remoteMediaAllowedHosts) == 0 {
+		logger.LogFatal("[CONFIG] %s is required when %s=allowlist", config_env.REMOTE_MEDIA_ALLOWED_HOSTS, config_env.REMOTE_MEDIA_FETCH_POLICY)
+	}
+	remoteMediaFetchTimeoutValue := os.Getenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT)
+	if remoteMediaFetchTimeoutValue == "" {
+		remoteMediaFetchTimeoutValue = "15s"
+	}
+	remoteMediaFetchTimeout, err := parsePositiveDuration(remoteMediaFetchTimeoutValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.REMOTE_MEDIA_FETCH_TIMEOUT, err)
+	}
+	remoteMediaMaxBytesValue := os.Getenv(config_env.REMOTE_MEDIA_MAX_BYTES)
+	if remoteMediaMaxBytesValue == "" {
+		remoteMediaMaxBytesValue = "33554432"
+	}
+	remoteMediaMaxBytes, err := strconv.ParseInt(remoteMediaMaxBytesValue, 10, 64)
+	if err != nil || remoteMediaMaxBytes <= 0 {
+		logger.LogFatal("[CONFIG] invalid %s: must be a positive integer", config_env.REMOTE_MEDIA_MAX_BYTES)
+	}
+
 	// Convertendo para int com valores padrão caso estejam vazios
 	major := 0
 	if whatsappVersionMajor != "" {
@@ -535,16 +571,20 @@ func Load() *Config {
 		GroupSyncInterval:    waGroupReconcileInterval,
 		MessageRetention:     messageRetention,
 		EventRetention:       eventRetention,
-		AmqpGlobalEvents:     amqpGlobalEvents,
-		AmqpSpecificEvents:   amqpSpecificEvents,
-		NatsUrl:              natsUrl,
-		NatsGlobalEnabled:    natsGlobalEnabled == "true",
-		NatsGlobalEvents:     natsGlobalEvents,
-		LogMaxSize:           logMaxSize,
-		LogMaxBackups:        logMaxBackups,
-		LogMaxAge:            logMaxAge,
-		LogDirectory:         logDirectory,
-		LogCompress:          logCompress,
+		RemoteMedia: RemoteMediaConfig{
+			Policy: remoteMediaFetchPolicy, AllowedHosts: remoteMediaAllowedHosts,
+			Timeout: remoteMediaFetchTimeout, MaxBytes: remoteMediaMaxBytes,
+		},
+		AmqpGlobalEvents:   amqpGlobalEvents,
+		AmqpSpecificEvents: amqpSpecificEvents,
+		NatsUrl:            natsUrl,
+		NatsGlobalEnabled:  natsGlobalEnabled == "true",
+		NatsGlobalEvents:   natsGlobalEvents,
+		LogMaxSize:         logMaxSize,
+		LogMaxBackups:      logMaxBackups,
+		LogMaxAge:          logMaxAge,
+		LogDirectory:       logDirectory,
+		LogCompress:        logCompress,
 
 		WAOutboundRatePerSecond: waOutboundRatePerSecond,
 		WAOutboundBurst:         waOutboundBurst,
@@ -597,6 +637,17 @@ func parsePositiveInt(value string) (int, error) {
 		return 0, fmt.Errorf("value must be a positive integer")
 	}
 	return parsed, nil
+}
+
+func splitNonEmptyCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 func parseNonNegativeDuration(value string) (time.Duration, error) {

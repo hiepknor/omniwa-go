@@ -35,6 +35,7 @@ services:
 
       # Run without the license activation gate / remote heartbeat.
       LICENSE_GATE_ENABLED: "false"
+      REMOTE_MEDIA_FETCH_POLICY: "public_only"
 
       # Security — change this for anything beyond local dev.
       GLOBAL_API_KEY: "dev-global-api-key-change-me"

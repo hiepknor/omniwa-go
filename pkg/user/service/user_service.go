@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
@@ -44,6 +43,7 @@ type userService struct {
 	queryGuard       waquery.Guard
 	identityResolver waquery.IdentityResolver
 	contactReader    *projection_service.ContactReader
+	mediaFetcher     netguard.Fetcher
 }
 
 type ContactInfo struct {
@@ -615,15 +615,9 @@ func (u *userService) SetProfilePicture(data *SetProfilePictureStruct, instance 
 
 	var filedata []byte
 
-	resp, err := http.Get(data.Image)
+	filedata, err = u.mediaFetcher.Fetch(context.Background(), data.Image)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch image from URL: %v", err)
-	}
-	defer resp.Body.Close()
-
-	filedata, err = io.ReadAll(resp.Body)
-	if err != nil {
-		return false, fmt.Errorf("failed to read image data: %v", err)
 	}
 
 	_, err = client.SetGroupPhoto(context.Background(), types.EmptyJID, filedata)
@@ -668,6 +662,7 @@ func NewUserService(
 	queryGuard waquery.Guard,
 	identityResolver waquery.IdentityResolver,
 	contactReader *projection_service.ContactReader,
+	mediaFetcher netguard.Fetcher,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) UserService {
 	return &userService{
@@ -676,6 +671,7 @@ func NewUserService(
 		queryGuard:       queryGuard,
 		identityResolver: identityResolver,
 		contactReader:    contactReader,
+		mediaFetcher:     mediaFetcher,
 		loggerWrapper:    loggerWrapper,
 	}
 }

@@ -25,6 +25,10 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_POLL_INTERVAL, "")
 	t.Setenv(config_env.WA_CAMPAIGN_MAX_ATTEMPTS, "")
 	t.Setenv(config_env.WA_CAMPAIGN_RETRY_BASE, "")
+	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "")
+	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "")
+	t.Setenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT, "")
+	t.Setenv(config_env.REMOTE_MEDIA_MAX_BYTES, "")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
@@ -54,6 +58,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.CampaignBatchSize != 10 || config.CampaignLease != 2*time.Minute || config.CampaignPollInterval != time.Second || config.CampaignMaxAttempts != 3 || config.CampaignRetryBase != 30*time.Second {
 		t.Fatalf("campaign defaults = %d/%v/%v/%d/%v", config.CampaignBatchSize, config.CampaignLease, config.CampaignPollInterval, config.CampaignMaxAttempts, config.CampaignRetryBase)
 	}
+	if config.RemoteMedia.Policy != "public_only" || config.RemoteMedia.Timeout != 15*time.Second || config.RemoteMedia.MaxBytes != 32*1024*1024 || len(config.RemoteMedia.AllowedHosts) != 0 {
+		t.Fatalf("remote media defaults = %+v", config.RemoteMedia)
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -73,8 +80,15 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_POLL_INTERVAL, "2s")
 	t.Setenv(config_env.WA_CAMPAIGN_MAX_ATTEMPTS, "5")
 	t.Setenv(config_env.WA_CAMPAIGN_RETRY_BASE, "45s")
+	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "allowlist")
+	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "cdn.example.com, media.example.com")
+	t.Setenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT, "3s")
+	t.Setenv(config_env.REMOTE_MEDIA_MAX_BYTES, "4096")
 
 	config := Load()
+	if config.RemoteMedia.Policy != "allowlist" || config.RemoteMedia.Timeout != 3*time.Second || config.RemoteMedia.MaxBytes != 4096 || len(config.RemoteMedia.AllowedHosts) != 2 {
+		t.Fatalf("remote media overrides = %+v", config.RemoteMedia)
+	}
 	if math.Abs(config.WAInfoRatePerSecond-(12.0/3600.0)) > 1e-12 {
 		t.Fatalf("WAInfoRatePerSecond = %v", config.WAInfoRatePerSecond)
 	}
