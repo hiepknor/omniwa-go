@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/gin-gonic/gin"
@@ -39,7 +40,7 @@ func (s *serverHandler) ProjectionHealth(ctx *gin.Context) {
 	}
 	health, err := s.projectionState.Health(instanceID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": health})
@@ -71,12 +72,12 @@ func (s *serverHandler) Health(ctx *gin.Context) {
 		}
 	}
 	if s.health == nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 	health, err := s.health.Snapshot(ctx.Request.Context(), instanceID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": health})
@@ -110,12 +111,12 @@ func (s *serverHandler) Overview(ctx *gin.Context) {
 		}
 	}
 	if s.overview == nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 	overview, err := s.overview.Snapshot(ctx.Request.Context(), instanceID, window)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": overview})
@@ -138,7 +139,7 @@ func (s *serverHandler) EventHistory(ctx *gin.Context) {
 	value, exists := ctx.Get("instance")
 	instance, ok := value.(*instance_model.Instance)
 	if !exists || !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 	limit := 50
@@ -156,16 +157,16 @@ func (s *serverHandler) EventHistory(ctx *gin.Context) {
 		return
 	}
 	if s.eventReader == nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 	items, meta, err := s.eventReader.List(ctx.Request.Context(), instance.Id, eventType, limit, ctx.Query("cursor"))
 	if errors.Is(err, projection_service.ErrInvalidDurableEventCursor) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "code": "invalid_cursor"})
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_cursor", "invalid event cursor")
 		return
 	}
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
@@ -196,7 +197,7 @@ func (s *serverHandler) Capabilities(ctx *gin.Context) {
 	}
 	capabilities, err := s.projectionState.Capabilities(instanceID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{"version": s.version, "revision": s.revision, "capabilities": capabilities}})

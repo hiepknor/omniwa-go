@@ -55,7 +55,7 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -101,7 +101,7 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -122,7 +122,7 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -151,7 +151,7 @@ func (u *userHandler) GetAvatar(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -177,7 +177,7 @@ func (u *userHandler) GetAvatar(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -200,7 +200,7 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -230,7 +230,7 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 func (u *userHandler) SearchContacts(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 	limit := defaultContactSearchLimit
@@ -266,7 +266,7 @@ func (u *userHandler) SearchContacts(ctx *gin.Context) {
 func (u *userHandler) GetContact(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 	contactID := ctx.Param("contactId")
@@ -295,15 +295,15 @@ func isContactJID(jid types.JID) bool {
 func writeContactReadError(ctx *gin.Context, err error) {
 	switch {
 	case errors.Is(err, projection_service.ErrInvalidContactCursor):
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid contact search cursor", "code": "invalid_cursor"})
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_cursor", "invalid contact search cursor")
 	case errors.Is(err, projection_service.ErrInvalidContactSearch):
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid contact search query", "code": "invalid_search"})
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_search", "invalid contact search query")
 	case errors.Is(err, projection_service.ErrContactsProjectionNotReady):
-		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "contacts projection is not ready", "code": "projection_not_ready"})
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "projection_not_ready", "contacts projection is not ready")
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "contact not found", "code": "not_found"})
+		httpapi.WriteError(ctx, http.StatusNotFound, "not_found", "contact not found")
 	default:
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, err)
 	}
 }
 
@@ -323,7 +323,7 @@ func (u *userHandler) GetPrivacy(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -332,7 +332,7 @@ func (u *userHandler) GetPrivacy(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -356,7 +356,7 @@ func (u *userHandler) SetPrivacy(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -407,7 +407,7 @@ func (u *userHandler) SetPrivacy(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -431,7 +431,7 @@ func (u *userHandler) BlockContact(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -454,7 +454,7 @@ func (u *userHandler) BlockContact(ctx *gin.Context) {
 
 	resp, err := u.userService.BlockContact(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -478,7 +478,7 @@ func (u *userHandler) UnblockContact(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -501,7 +501,7 @@ func (u *userHandler) UnblockContact(ctx *gin.Context) {
 
 	resp, err := u.userService.UnlockContact(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -524,7 +524,7 @@ func (u *userHandler) GetBlockList(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -533,7 +533,7 @@ func (u *userHandler) GetBlockList(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -557,7 +557,7 @@ func (u *userHandler) SetProfilePicture(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -575,12 +575,12 @@ func (u *userHandler) SetProfilePicture(ctx *gin.Context) {
 
 	resp, err := u.userService.SetProfilePicture(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
 	if !resp {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set profile picture"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -606,7 +606,7 @@ func (u *userHandler) SetProfileName(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -624,12 +624,12 @@ func (u *userHandler) SetProfileName(ctx *gin.Context) {
 
 	resp, err := u.userService.SetProfileName(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
 	if !resp {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set profile picture"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -655,7 +655,7 @@ func (u *userHandler) SetProfileStatus(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -673,12 +673,12 @@ func (u *userHandler) SetProfileStatus(ctx *gin.Context) {
 
 	resp, err := u.userService.SetProfileStatus(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
 	if !resp {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set profile picture"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 

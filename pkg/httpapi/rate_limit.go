@@ -34,10 +34,10 @@ func WriteRateLimit(ctx *gin.Context, err error) bool {
 
 func writeRateLimit(ctx *gin.Context, code string, retryAfter int) bool {
 	ctx.Header("Retry-After", strconv.Itoa(retryAfter))
-	ctx.JSON(http.StatusTooManyRequests, gin.H{
-		"error":      code,
-		"code":       code,
-		"retryAfter": retryAfter,
-	})
+	body := gin.H{"error": code, "code": code, "retryAfter": retryAfter}
+	if requestID := RequestID(ctx); requestID != "" {
+		body["requestId"] = requestID
+	}
+	ctx.JSON(http.StatusTooManyRequests, body)
 	return true
 }

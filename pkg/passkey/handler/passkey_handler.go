@@ -13,6 +13,7 @@ package handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"github.com/gin-gonic/gin"
 	"go.mau.fi/whatsmeow/types"
@@ -123,7 +124,7 @@ func (h *PasskeyHandler) SubmitResponse(c *gin.Context) {
 	}
 
 	if err := h.whatsmeowService.SubmitPasskeyResponse(instanceID, &resp); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(c, err)
 		return
 	}
 
@@ -162,7 +163,7 @@ func (h *PasskeyHandler) Confirm(c *gin.Context) {
 	}
 
 	if err := h.whatsmeowService.ConfirmPasskey(instanceID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(c, err)
 		return
 	}
 

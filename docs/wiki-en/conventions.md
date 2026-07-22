@@ -28,22 +28,38 @@ labels), `GET /polls/{pollMessageId}/results` (results object), and the
 advanced-settings routes (the settings object). The Swagger schema for each
 endpoint is authoritative.
 
-## Errors
+## Errors and request identities
 
-Failures return an HTTP 4xx/5xx status with a single-field body:
+Every HTTP response includes an `X-Request-ID` header. A caller may provide an
+identity containing 16–64 ASCII letters, digits, dots, underscores, or hyphens;
+the server replaces missing or unsafe values. Include this identity in support
+and operational reports.
+
+Failures preserve the legacy string `error` field and may add stable `code` and
+`requestId` fields:
 
 ```json
-{ "error": "phone number is required" }
+{
+  "error": "internal server error",
+  "code": "internal_error",
+  "requestId": "01234567-89ab-cdef-0123-456789abcdef"
+}
 ```
+
+The additive fields are optional while older validation paths are migrated.
+Clients must not parse or branch on human-readable error text. Prefer the HTTP
+status and then `code` when present. Internal error details are logged against
+the request identity and are never returned in an HTTP 500 body.
 
 | Status | Meaning |
 |---|---|
 | `400 Bad Request` | Validation failed — missing/invalid field, or a malformed phone/JID. The `error` string says which. |
 | `401 Unauthorized` | Missing or wrong `apikey` (or, on `/ws`, a bad token). |
 | `404 Not Found` | The instance or resource does not exist. |
-| `500 Internal Server Error` | Unexpected server/WhatsApp error; `error` carries the detail. |
+| `500 Internal Server Error` | Unexpected server/provider error; the public message is generic and `code` is `internal_error`. Use `requestId` for investigation. |
 
-Always branch on the HTTP status first, then surface `error` to the user.
+Always branch on the HTTP status first, then on `code` when present, and surface
+`error` to the user only as display text.
 
 ## Phone numbers and JIDs
 

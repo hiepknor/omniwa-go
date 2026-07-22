@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	label_service "github.com/evolution-foundation/evolution-go/pkg/label/service"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
@@ -42,7 +43,7 @@ func (l *labelHandler) ChatLabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -65,7 +66,7 @@ func (l *labelHandler) ChatLabel(ctx *gin.Context) {
 
 	err = l.labelService.ChatLabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -89,7 +90,7 @@ func (l *labelHandler) MessageLabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -117,7 +118,7 @@ func (l *labelHandler) MessageLabel(ctx *gin.Context) {
 
 	err = l.labelService.MessageLabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -141,7 +142,7 @@ func (l *labelHandler) EditLabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -164,7 +165,7 @@ func (l *labelHandler) EditLabel(ctx *gin.Context) {
 
 	err = l.labelService.EditLabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -188,7 +189,7 @@ func (l *labelHandler) ChatUnlabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -211,7 +212,7 @@ func (l *labelHandler) ChatUnlabel(ctx *gin.Context) {
 
 	err = l.labelService.ChatUnlabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -235,7 +236,7 @@ func (l *labelHandler) MessageUnlabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -263,7 +264,7 @@ func (l *labelHandler) MessageUnlabel(ctx *gin.Context) {
 
 	err = l.labelService.MessageUnlabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -286,7 +287,7 @@ func (l *labelHandler) GetLabels(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -314,7 +315,7 @@ func (l *labelHandler) GetLabels(ctx *gin.Context) {
 func (l *labelHandler) GetLabel(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 	labelID := ctx.Param("labelId")
@@ -333,11 +334,11 @@ func (l *labelHandler) GetLabel(ctx *gin.Context) {
 func writeLabelReadError(ctx *gin.Context, err error) {
 	switch {
 	case errors.Is(err, projection_service.ErrLabelsProjectionNotReady):
-		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "projection_not_ready", "labels projection is not ready")
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "label not found"})
+		httpapi.WriteError(ctx, http.StatusNotFound, "not_found", "label not found")
 	default:
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 	}
 }
 

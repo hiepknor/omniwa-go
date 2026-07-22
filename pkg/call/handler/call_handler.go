@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
 )
@@ -32,7 +33,7 @@ func (g *callHandler) RejectCall(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -45,7 +46,7 @@ func (g *callHandler) RejectCall(ctx *gin.Context) {
 
 	err = g.callService.RejectCall(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 

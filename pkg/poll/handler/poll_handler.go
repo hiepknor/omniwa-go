@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	poll_model "github.com/evolution-foundation/evolution-go/pkg/poll/model"
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
@@ -61,9 +62,7 @@ func (h *PollHandler) GetPollResults(c *gin.Context) {
 	var instance Instance
 	if err := json.Unmarshal(instanceBytes, &instance); err != nil {
 		h.loggerWrapper.GetLogger("poll-handler").LogError("[POLL] Failed to parse instance: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get instance information",
-		})
+		httpapi.WriteError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 
@@ -84,9 +83,7 @@ func (h *PollHandler) GetPollResults(c *gin.Context) {
 	results, err := h.pollService.GetPollResults(c.Request.Context(), pollMessageID, instanceID)
 	if err != nil {
 		h.loggerWrapper.GetLogger("poll-handler").LogError("[POLL] Error fetching results: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch poll results",
-		})
+		httpapi.WriteError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 

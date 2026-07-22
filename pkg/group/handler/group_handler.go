@@ -46,7 +46,7 @@ type GroupHandler interface {
 func (g *groupHandler) SearchGroups(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 	limit := 50
@@ -86,7 +86,7 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -122,7 +122,7 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -171,7 +171,7 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -202,15 +202,15 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 func writeGroupProjectionReadError(ctx *gin.Context, err error) {
 	switch {
 	case errors.Is(err, projection_service.ErrInvalidGroupCursor):
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid group search cursor", "code": "invalid_cursor"})
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_cursor", "invalid group search cursor")
 	case errors.Is(err, projection_service.ErrInvalidGroupSearch):
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid group search query", "code": "invalid_search"})
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_search", "invalid group search query")
 	case errors.Is(err, projection_service.ErrGroupsProjectionNotReady):
-		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "groups projection is not ready", "code": "projection_not_ready"})
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "projection_not_ready", "groups projection is not ready")
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "group projection record not found", "code": "not_found"})
+		httpapi.WriteError(ctx, http.StatusNotFound, "not_found", "group projection record not found")
 	default:
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		httpapi.WriteInternal(ctx, err)
 	}
 }
 
@@ -231,7 +231,7 @@ func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -254,7 +254,7 @@ func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 
 	resp, err := g.groupService.SetGroupPhoto(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -278,7 +278,7 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -301,7 +301,7 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 
 	err = g.groupService.SetGroupName(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -325,7 +325,7 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -346,7 +346,7 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 
 	err = g.groupService.SetGroupDescription(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -371,7 +371,7 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -397,7 +397,7 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -421,7 +421,7 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -449,7 +449,7 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 
 	err = g.groupService.UpdateParticipant(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -472,7 +472,7 @@ func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -481,7 +481,7 @@ func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -505,7 +505,7 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -523,7 +523,7 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 
 	err = g.groupService.JoinGroupLink(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -547,7 +547,7 @@ func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -565,7 +565,7 @@ func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 
 	err = g.groupService.LeaveGroup(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -589,7 +589,7 @@ func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -612,7 +612,7 @@ func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 
 	err = g.groupService.UpdateGroupSettings(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 

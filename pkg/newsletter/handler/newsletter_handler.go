@@ -39,7 +39,7 @@ func (n *newsletterHandler) CreateNewsletter(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -57,7 +57,7 @@ func (n *newsletterHandler) CreateNewsletter(ctx *gin.Context) {
 
 	newsletter, err := n.newsletterService.CreateNewsletter(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -80,7 +80,7 @@ func (n *newsletterHandler) ListNewsletter(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -89,7 +89,7 @@ func (n *newsletterHandler) ListNewsletter(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -114,7 +114,7 @@ func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -135,7 +135,7 @@ func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -160,7 +160,7 @@ func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -181,7 +181,7 @@ func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -205,7 +205,7 @@ func (n *newsletterHandler) SubscribeNewsletter(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -223,7 +223,7 @@ func (n *newsletterHandler) SubscribeNewsletter(ctx *gin.Context) {
 
 	err = n.newsletterService.SubscribeNewsletter(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 
@@ -248,7 +248,7 @@ func (n *newsletterHandler) GetNewsletterMessages(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		httpapi.WriteInternal(ctx, nil)
 		return
 	}
 
@@ -269,7 +269,7 @@ func (n *newsletterHandler) GetNewsletterMessages(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httpapi.WriteInternal(ctx, err)
 		return
 	}
 

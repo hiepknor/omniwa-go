@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,7 +22,8 @@ func BodyLimit() gin.HandlerFunc {
 		}
 		limit := requestBodyLimit(ctx.Request)
 		if ctx.Request.ContentLength > limit {
-			ctx.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large", "code": "request_too_large"})
+			httpapi.WriteError(ctx, http.StatusRequestEntityTooLarge, "request_too_large", "request body too large")
+			ctx.Abort()
 			return
 		}
 		ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, limit)
