@@ -173,6 +173,13 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || !inserted {
 		t.Fatalf("first enqueue = %v, %v", inserted, err)
 	}
+	var storedEvent projection_model.Event
+	if err := db.Where("instance_id = ? AND resource = ? AND event_key = ?", instance.Id, "groups", "event-1").First(&storedEvent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if storedEvent.MaxAttempts != projection_model.DefaultEventMaxAttempts || storedEvent.RetryPolicyVersion != projection_model.EventRetryPolicyVersion || storedEvent.DeadLetteredAt != nil || storedEvent.FailureClass != nil {
+		t.Fatalf("unexpected event failure metadata: %#v", storedEvent)
+	}
 	duplicate := *event
 	inserted, err = eventRepository.Enqueue(context.Background(), &duplicate)
 	if err != nil || inserted {
