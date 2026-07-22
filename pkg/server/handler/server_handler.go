@@ -11,6 +11,31 @@ import (
 type ServerHandler interface {
 	ServerOk(ctx *gin.Context)
 	Capabilities(ctx *gin.Context)
+	ProjectionHealth(ctx *gin.Context)
+}
+
+// ProjectionHealth returns persisted projection synchronization metrics.
+// @Summary Get projection health metrics
+// @Tags Server
+// @Produce json
+// @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ProjectionHealth} "success"
+// @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /server/projection-health [get]
+func (s *serverHandler) ProjectionHealth(ctx *gin.Context) {
+	instanceID := ""
+	if value, exists := ctx.Get("instance"); exists {
+		if instance, ok := value.(*instance_model.Instance); ok {
+			instanceID = instance.Id
+		}
+	}
+	health, err := s.projectionState.Health(instanceID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": health})
 }
 
 type serverHandler struct {

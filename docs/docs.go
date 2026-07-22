@@ -4163,6 +4163,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/server/projection-health": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Get projection health metrics",
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionHealth"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/unlabel/chat": {
             "post": {
                 "security": [
@@ -6006,6 +6054,81 @@ const docTemplate = `{
             "properties": {
                 "jid": {
                     "$ref": "#/definitions/types.JID"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus": {
+            "type": "string",
+            "enum": [
+                "not_started",
+                "syncing",
+                "ready",
+                "stale",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "SyncStatusNotStarted",
+                "SyncStatusSyncing",
+                "SyncStatusReady",
+                "SyncStatusStale",
+                "SyncStatusFailed"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionHealth": {
+            "type": "object",
+            "properties": {
+                "byStatus": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "generatedAt": {
+                    "type": "string"
+                },
+                "resources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionResourceHealth"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionResourceHealth": {
+            "type": "object",
+            "properties": {
+                "eventLagSeconds": {
+                    "type": "integer"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "lastEventAt": {
+                    "type": "string"
+                },
+                "lastReconciledAt": {
+                    "type": "string"
+                },
+                "reconcileAgeSeconds": {
+                    "type": "integer"
+                },
+                "resource": {
+                    "type": "string"
+                },
+                "schemaVersion": {
+                    "type": "integer"
+                },
+                "staleSince": {
+                    "type": "string"
+                },
+                "syncStatus": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus"
                 }
             }
         },
