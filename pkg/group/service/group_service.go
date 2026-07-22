@@ -19,6 +19,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
+	"gorm.io/gorm"
 )
 
 type GroupService interface {
@@ -171,36 +172,10 @@ func (g *groupService) ListGroups(ctx context.Context, instance *instance_model.
 }
 
 func (g *groupService) ListGroupsRead(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error) {
-	if g.groupReader != nil {
-		groups, meta, err := g.groupReader.List(ctx, instance.Id)
-		if err == nil {
-			return groups, meta, nil
-		}
-		if !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
-			return nil, nil, err
-		}
+	if g.groupReader == nil {
+		return nil, nil, errors.New("group projection reader is required")
 	}
-	client, err := g.ensureClientConnected(instance.Id)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	resp, err := waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupsList, "", client.GetJoinedGroups)
-	if err != nil {
-		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error getting groups: %v", instance.Id, err)
-		return nil, nil, err
-	}
-
-	gc := new(GroupCollection)
-	for _, info := range resp {
-		simpleGroup := SimpleGroupInfo{
-			JID:       info.JID,
-			GroupName: info.GroupName.Name,
-		}
-		gc.Groups = append(gc.Groups, simpleGroup)
-	}
-
-	return resp, nil, nil
+	return g.groupReader.List(ctx, instance.Id)
 }
 
 func (g *groupService) GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error) {
@@ -214,29 +189,10 @@ func (g *groupService) GetGroupInfoRead(ctx context.Context, data *GetGroupInfoS
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
 		return nil, nil, errors.New("invalid group jid")
 	}
-	if g.groupReader != nil {
-		info, meta, err := g.groupReader.Get(ctx, instance.Id, recipient.String())
-		if err == nil {
-			return info, meta, nil
-		}
-		if !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
-			return nil, nil, err
-		}
+	if g.groupReader == nil {
+		return nil, nil, errors.New("group projection reader is required")
 	}
-	client, err := g.ensureClientConnected(instance.Id)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	resp, err := waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupInfo, recipient.String(), func(queryCtx context.Context) (*types.GroupInfo, error) {
-		return client.GetGroupInfo(queryCtx, recipient)
-	})
-	if err != nil {
-		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error mute chat: %v", instance.Id, err)
-		return nil, nil, err
-	}
-
-	return resp, nil, nil
+	return g.groupReader.Get(ctx, instance.Id, recipient.String())
 }
 
 func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {
@@ -245,14 +201,18 @@ func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInv
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
 		return "", errors.New("invalid group jid")
 	}
-	if !data.Reset && g.groupReader != nil {
-		inviteLink, _, found, err := g.groupReader.InviteLink(ctx, instance.Id, recipient.String())
-		if err == nil && found {
-			return inviteLink, nil
+	if !data.Reset {
+		if g.groupReader == nil {
+			return "", errors.New("group projection reader is required")
 		}
-		if err != nil && !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
+		inviteLink, _, found, err := g.groupReader.InviteLink(ctx, instance.Id, recipient.String())
+		if err != nil {
 			return "", err
 		}
+		if !found {
+			return "", gorm.ErrRecordNotFound
+		}
+		return inviteLink, nil
 	}
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
@@ -265,10 +225,6 @@ func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInv
 		// information-query budget.
 		resp, err = client.GetGroupInviteLink(ctx, recipient, true)
 		err = g.queryGuard.ObserveError(instance.Id, err)
-	} else {
-		resp, err = waquery.Do(ctx, g.queryGuard, instance.Id, waquery.OperationGroupInviteLink, recipient.String(), func(queryCtx context.Context) (string, error) {
-			return client.GetGroupInviteLink(queryCtx, recipient, false)
-		})
 	}
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error mute chat: %v", instance.Id, err)

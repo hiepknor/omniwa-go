@@ -1,12 +1,15 @@
 package group_handler
 
 import (
+	"errors"
 	"net/http"
 
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type GroupHandler interface {
@@ -35,8 +38,8 @@ type groupHandler struct {
 // @Accept json
 // @Produce json
 // @Success 200 {object} apidocs.SuccessResponse{data=[]types.GroupInfo} "success"
+// @Failure 503 {object} apidocs.ErrorResponse "Groups projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
-// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /group/list [get]
 func (g *groupHandler) ListGroups(ctx *gin.Context) {
@@ -50,10 +53,7 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 
 	resp, meta, err := g.groupService.ListGroupsRead(ctx.Request.Context(), instance)
 	if err != nil {
-		if httpapi.WriteRateLimit(ctx, err) {
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeGroupProjectionReadError(ctx, err)
 		return
 	}
 
@@ -73,8 +73,9 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 // @Param message body group_service.GetGroupInfoStruct true "Group data"
 // @Success 200 {object} apidocs.SuccessResponse{data=types.GroupInfo} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 404 {object} apidocs.ErrorResponse "Projected group not found"
+// @Failure 503 {object} apidocs.ErrorResponse "Groups projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
-// @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
 // @Router /group/info [post]
 func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
@@ -100,10 +101,7 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 
 	resp, meta, err := g.groupService.GetGroupInfoRead(ctx.Request.Context(), data, instance)
 	if err != nil {
-		if httpapi.WriteRateLimit(ctx, err) {
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeGroupProjectionReadError(ctx, err)
 		return
 	}
 
@@ -123,6 +121,8 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 // @Param message body group_service.GetGroupInviteLinkStruct true "Group data"
 // @Success 200 {object} apidocs.SuccessResponse{data=string} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 404 {object} apidocs.ErrorResponse "Cached invite link not found"
+// @Failure 503 {object} apidocs.ErrorResponse "Groups projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
@@ -153,11 +153,22 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeGroupProjectionReadError(ctx, err)
 		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": resp})
+}
+
+func writeGroupProjectionReadError(ctx *gin.Context, err error) {
+	switch {
+	case errors.Is(err, projection_service.ErrGroupsProjectionNotReady):
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "groups projection is not ready", "code": "projection_not_ready"})
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "group projection record not found", "code": "not_found"})
+	default:
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+	}
 }
 
 // Set group photo

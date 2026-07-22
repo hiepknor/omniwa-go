@@ -362,8 +362,11 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 
 		delete(i.clientPointer, instance.Id)
 		delete(i.killChannel, instance.Id)
-		i.queryGuard.RemoveInstance(instance.Id)
-		i.identityResolver.RemoveInstance(instance.Id)
+		if cleanupErr := clearInstanceRateLimitState(instance.Id, i.queryGuard, i.identityResolver, func() error {
+			return i.whatsmeowService.ClearInstanceCache(instance.Id, instance.Token)
+		}); cleanupErr != nil {
+			i.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Logout completed with partial runtime cleanup error_code=cache_cleanup_failed", instance.Id)
+		}
 
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Logout successful", instance.Id)
 		return instance, nil
@@ -379,8 +382,11 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 
 		delete(i.clientPointer, instance.Id)
 		delete(i.killChannel, instance.Id)
-		i.queryGuard.RemoveInstance(instance.Id)
-		i.identityResolver.RemoveInstance(instance.Id)
+		if cleanupErr := clearInstanceRateLimitState(instance.Id, i.queryGuard, i.identityResolver, func() error {
+			return i.whatsmeowService.ClearInstanceCache(instance.Id, instance.Token)
+		}); cleanupErr != nil {
+			i.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Disconnection completed with partial runtime cleanup error_code=cache_cleanup_failed", instance.Id)
+		}
 
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Disconnection successful", instance.Id)
 		return instance, nil
@@ -388,6 +394,20 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 
 	i.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Ignoring logout as it was not connected", instance.Id)
 	return instance, fmt.Errorf("ignoring logout as it was not connected")
+}
+
+func clearInstanceRateLimitState(instanceID string, queryGuard waquery.Guard, identityResolver waquery.IdentityResolver, clearRuntime func() error) error {
+	if clearRuntime == nil {
+		return errors.New("instance runtime cleanup is required")
+	}
+	err := clearRuntime()
+	if queryGuard != nil {
+		queryGuard.RemoveInstance(instanceID)
+	}
+	if identityResolver != nil {
+		identityResolver.RemoveInstance(instanceID)
+	}
+	return err
 }
 
 func (i instances) Status(instance *instance_model.Instance) (*StatusStruct, error) {
