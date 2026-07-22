@@ -55,6 +55,7 @@ import (
 	message_service "github.com/evolution-foundation/evolution-go/pkg/message/service"
 	auth_middleware "github.com/evolution-foundation/evolution-go/pkg/middleware"
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
+	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 	newsletter_handler "github.com/evolution-foundation/evolution-go/pkg/newsletter/handler"
 	newsletter_service "github.com/evolution-foundation/evolution-go/pkg/newsletter/service"
 	"github.com/evolution-foundation/evolution-go/pkg/outbound"
@@ -373,7 +374,16 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		identityResolver,
 		loggerWrapper,
 	)
-	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), loggerWrapper)
+	remoteMediaFetcher, err := netguard.NewFetcher(netguard.Settings{
+		Policy:       netguard.Policy(config.RemoteMedia.Policy),
+		AllowedHosts: config.RemoteMedia.AllowedHosts,
+		Timeout:      config.RemoteMedia.Timeout,
+		MaxBytes:     config.RemoteMedia.MaxBytes,
+	})
+	if err != nil {
+		logger.LogFatal("component=remote_media action=initialize result=failed error=%v", err)
+	}
+	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, loggerWrapper)
 	campaignRepository := campaign_repository.NewCampaignRepository(db)
 	campaignWorker := campaign_service.NewWorker(
 		campaignRepository,
@@ -397,10 +407,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			logger.LogError("component=campaign action=worker result=stopped error_code=invalid_worker_configuration")
 		}
 	}()
-	userService := user_service.NewUserService(clientPointer, whatsmeowService, queryGuard, identityResolver, contactReader, loggerWrapper)
+	userService := user_service.NewUserService(clientPointer, whatsmeowService, queryGuard, identityResolver, contactReader, remoteMediaFetcher, loggerWrapper)
 	messageService := message_service.NewMessageService(clientPointer, messageRepository, whatsmeowService, loggerWrapper)
 	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)
-	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, queryGuard, groupReader, groupWriter, loggerWrapper)
+	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, queryGuard, groupReader, groupWriter, remoteMediaFetcher, loggerWrapper)
 	callService := call_service.NewCallService(clientPointer, whatsmeowService, loggerWrapper)
 	communityService := community_service.NewCommunityService(clientPointer, whatsmeowService, loggerWrapper)
 	labelService := label_service.NewLabelService(clientPointer, whatsmeowService, labelRepository, labelReader, labelWriter, loggerWrapper)

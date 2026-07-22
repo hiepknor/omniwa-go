@@ -24,6 +24,7 @@ import (
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
@@ -62,6 +63,7 @@ type sendService struct {
 	queryGuard       waquery.Guard
 	identityResolver waquery.IdentityResolver
 	messageWriter    projection_service.MessageWriteThrough
+	mediaFetcher     netguard.Fetcher
 }
 
 const projectionWriteThroughTimeout = 2 * time.Second
@@ -664,14 +666,13 @@ func (s *sendService) sendTextWithRetry(data *TextStruct, instance *instance_mod
 	return nil, fmt.Errorf("failed to send text after %d attempts", maxRetries)
 }
 
-func fetchLinkMetadata(url string) (string, string, string, error) {
-	resp, err := http.Get(url)
+func (s *sendService) fetchLinkMetadata(url string) (string, string, string, error) {
+	data, err := s.mediaFetcher.Fetch(context.Background(), url)
 	if err != nil {
 		return "", "", "", err
 	}
-	defer resp.Body.Close()
 
-	doc, err := html.Parse(resp.Body)
+	doc, err := html.Parse(bytes.NewReader(data))
 	if err != nil {
 		return "", "", "", err
 	}
@@ -734,7 +735,7 @@ func (s *sendService) sendLinkWithRetry(data *LinkStruct, instance *instance_mod
 		matchedText := findURL(data.Text)
 
 		if matchedText != "" {
-			title, description, imgUrl, err := fetchLinkMetadata(matchedText)
+			title, description, imgUrl, err := s.fetchLinkMetadata(matchedText)
 			if err != nil {
 				if attempt == maxRetries {
 					return nil, err
@@ -749,15 +750,13 @@ func (s *sendService) sendLinkWithRetry(data *LinkStruct, instance *instance_mod
 
 		var fileData []byte
 		if data.ImgUrl != "" {
-			resp, err := http.Get(data.ImgUrl)
+			fileData, err = s.mediaFetcher.Fetch(context.Background(), data.ImgUrl)
 			if err != nil {
 				if attempt == maxRetries {
 					return nil, err
 				}
 				continue
 			}
-			defer resp.Body.Close()
-			fileData, _ = io.ReadAll(resp.Body)
 		}
 
 		previewType := waE2E.ExtendedTextMessage_VIDEO
@@ -1247,19 +1246,14 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 
 		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Starting remote media download", instance.Id)
 
-		resp, err := http.Get(data.Url)
+		fileData, err := s.mediaFetcher.Fetch(context.Background(), data.Url)
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
 
 		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Download concluído em %v. Lendo dados...", instance.Id, time.Since(startTime))
 
 		downloadStart := time.Now()
-		fileData, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
 		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Leitura dos dados concluída em %v. Tamanho: %d bytes", instance.Id, time.Since(downloadStart), len(fileData))
 
 		mime, _ := mimetype.DetectReader(bytes.NewReader(fileData))
@@ -1586,17 +1580,16 @@ func (s *sendService) sendPollWithRetry(data *PollStruct, instance *instance_mod
 	return nil, fmt.Errorf("failed to send poll after %d attempts", maxRetries)
 }
 
-func convertToWebP(imageData string) ([]byte, error) {
+func (s *sendService) convertToWebP(imageData string) ([]byte, error) {
 	var img image.Image
 	var err error
 
-	resp, err := http.Get(imageData)
+	fileData, err := s.mediaFetcher.Fetch(context.Background(), imageData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch image from URL: %v", err)
 	}
-	defer resp.Body.Close()
 
-	img, _, err = image.Decode(resp.Body)
+	img, _, err = image.Decode(bytes.NewReader(fileData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image: %v", err)
 	}
@@ -1620,7 +1613,7 @@ func (s *sendService) SendSticker(data *StickerStruct, instance *instance_model.
 	var filedata []byte
 
 	if strings.HasPrefix(data.Sticker, "http") {
-		webpData, err := convertToWebP(data.Sticker)
+		webpData, err := s.convertToWebP(data.Sticker)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert image to WebP: %v", err)
 		}
@@ -1886,44 +1879,36 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 
 		// Optional media header (image or video URL).
 		if data.ImageUrl != "" {
-			if resp, err := http.Get(data.ImageUrl); err == nil {
-				fileData, readErr := io.ReadAll(resp.Body)
-				resp.Body.Close()
-				if readErr == nil {
-					if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaImage); upErr == nil {
-						buttonsMsg.HeaderType = waE2E.ButtonsMessage_IMAGE.Enum()
-						buttonsMsg.Header = &waE2E.ButtonsMessage_ImageMessage{
-							ImageMessage: &waE2E.ImageMessage{
-								URL:           proto.String(uploaded.URL),
-								DirectPath:    proto.String(uploaded.DirectPath),
-								MediaKey:      uploaded.MediaKey,
-								Mimetype:      proto.String("image/jpeg"),
-								FileEncSHA256: uploaded.FileEncSHA256,
-								FileSHA256:    uploaded.FileSHA256,
-								FileLength:    proto.Uint64(uint64(len(fileData))),
-							},
-						}
+			if fileData, fetchErr := s.mediaFetcher.Fetch(context.Background(), data.ImageUrl); fetchErr == nil {
+				if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaImage); upErr == nil {
+					buttonsMsg.HeaderType = waE2E.ButtonsMessage_IMAGE.Enum()
+					buttonsMsg.Header = &waE2E.ButtonsMessage_ImageMessage{
+						ImageMessage: &waE2E.ImageMessage{
+							URL:           proto.String(uploaded.URL),
+							DirectPath:    proto.String(uploaded.DirectPath),
+							MediaKey:      uploaded.MediaKey,
+							Mimetype:      proto.String("image/jpeg"),
+							FileEncSHA256: uploaded.FileEncSHA256,
+							FileSHA256:    uploaded.FileSHA256,
+							FileLength:    proto.Uint64(uint64(len(fileData))),
+						},
 					}
 				}
 			}
 		} else if data.VideoUrl != "" {
-			if resp, err := http.Get(data.VideoUrl); err == nil {
-				fileData, readErr := io.ReadAll(resp.Body)
-				resp.Body.Close()
-				if readErr == nil {
-					if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo); upErr == nil {
-						buttonsMsg.HeaderType = waE2E.ButtonsMessage_VIDEO.Enum()
-						buttonsMsg.Header = &waE2E.ButtonsMessage_VideoMessage{
-							VideoMessage: &waE2E.VideoMessage{
-								URL:           proto.String(uploaded.URL),
-								DirectPath:    proto.String(uploaded.DirectPath),
-								MediaKey:      uploaded.MediaKey,
-								Mimetype:      proto.String("video/mp4"),
-								FileEncSHA256: uploaded.FileEncSHA256,
-								FileSHA256:    uploaded.FileSHA256,
-								FileLength:    proto.Uint64(uint64(len(fileData))),
-							},
-						}
+			if fileData, fetchErr := s.mediaFetcher.Fetch(context.Background(), data.VideoUrl); fetchErr == nil {
+				if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo); upErr == nil {
+					buttonsMsg.HeaderType = waE2E.ButtonsMessage_VIDEO.Enum()
+					buttonsMsg.Header = &waE2E.ButtonsMessage_VideoMessage{
+						VideoMessage: &waE2E.VideoMessage{
+							URL:           proto.String(uploaded.URL),
+							DirectPath:    proto.String(uploaded.DirectPath),
+							MediaKey:      uploaded.MediaKey,
+							Mimetype:      proto.String("video/mp4"),
+							FileEncSHA256: uploaded.FileEncSHA256,
+							FileSHA256:    uploaded.FileSHA256,
+							FileLength:    proto.Uint64(uint64(len(fileData))),
+						},
 					}
 				}
 			}
@@ -2964,53 +2949,45 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 
 			if card.Header.ImageUrl != "" {
 				// Download image
-				resp, err := http.Get(card.Header.ImageUrl)
+				fileData, err := s.mediaFetcher.Fetch(context.Background(), card.Header.ImageUrl)
 				if err == nil {
-					defer resp.Body.Close()
-					fileData, err := io.ReadAll(resp.Body)
+					uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaImage)
 					if err == nil {
-						uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaImage)
-						if err == nil {
-							// Generate JPEG thumbnail for iOS compatibility
-							jpegThumb := makeJPEGThumbnail(fileData, 72)
+						// Generate JPEG thumbnail for iOS compatibility
+						jpegThumb := makeJPEGThumbnail(fileData, 72)
 
-							header.HasMediaAttachment = proto.Bool(true)
-							header.Media = &waE2E.InteractiveMessage_Header_ImageMessage{
-								ImageMessage: &waE2E.ImageMessage{
-									URL:           proto.String(uploaded.URL),
-									DirectPath:    proto.String(uploaded.DirectPath),
-									MediaKey:      uploaded.MediaKey,
-									Mimetype:      proto.String("image/jpeg"),
-									FileEncSHA256: uploaded.FileEncSHA256,
-									FileSHA256:    uploaded.FileSHA256,
-									FileLength:    proto.Uint64(uint64(len(fileData))),
-									JPEGThumbnail: jpegThumb,
-								},
-							}
+						header.HasMediaAttachment = proto.Bool(true)
+						header.Media = &waE2E.InteractiveMessage_Header_ImageMessage{
+							ImageMessage: &waE2E.ImageMessage{
+								URL:           proto.String(uploaded.URL),
+								DirectPath:    proto.String(uploaded.DirectPath),
+								MediaKey:      uploaded.MediaKey,
+								Mimetype:      proto.String("image/jpeg"),
+								FileEncSHA256: uploaded.FileEncSHA256,
+								FileSHA256:    uploaded.FileSHA256,
+								FileLength:    proto.Uint64(uint64(len(fileData))),
+								JPEGThumbnail: jpegThumb,
+							},
 						}
 					}
 				}
 			} else if card.Header.VideoUrl != "" {
 				// Download and upload video
-				resp, err := http.Get(card.Header.VideoUrl)
+				fileData, err := s.mediaFetcher.Fetch(context.Background(), card.Header.VideoUrl)
 				if err == nil {
-					defer resp.Body.Close()
-					fileData, err := io.ReadAll(resp.Body)
+					uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo)
 					if err == nil {
-						uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo)
-						if err == nil {
-							header.HasMediaAttachment = proto.Bool(true)
-							header.Media = &waE2E.InteractiveMessage_Header_VideoMessage{
-								VideoMessage: &waE2E.VideoMessage{
-									URL:           proto.String(uploaded.URL),
-									DirectPath:    proto.String(uploaded.DirectPath),
-									MediaKey:      uploaded.MediaKey,
-									Mimetype:      proto.String("video/mp4"),
-									FileEncSHA256: uploaded.FileEncSHA256,
-									FileSHA256:    uploaded.FileSHA256,
-									FileLength:    proto.Uint64(uint64(len(fileData))),
-								},
-							}
+						header.HasMediaAttachment = proto.Bool(true)
+						header.Media = &waE2E.InteractiveMessage_Header_VideoMessage{
+							VideoMessage: &waE2E.VideoMessage{
+								URL:           proto.String(uploaded.URL),
+								DirectPath:    proto.String(uploaded.DirectPath),
+								MediaKey:      uploaded.MediaKey,
+								Mimetype:      proto.String("video/mp4"),
+								FileEncSHA256: uploaded.FileEncSHA256,
+								FileSHA256:    uploaded.FileSHA256,
+								FileLength:    proto.Uint64(uint64(len(fileData))),
+							},
 						}
 					}
 				}
@@ -3220,26 +3197,9 @@ func (s *sendService) SendStatusMediaUrl(data *StatusMediaStruct, instance *inst
 		return nil, errors.New("type must be 'image' or 'video'")
 	}
 
-	req, err := http.NewRequest("GET", data.Url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "Evolution-GO/1.0")
-
-	httpClient := &http.Client{}
-	resp, err := httpClient.Do(req)
+	fileData, err := s.mediaFetcher.Fetch(context.Background(), data.Url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download file from URL: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("failed to download file: HTTP status %d", resp.StatusCode)
-	}
-
-	fileData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
 	}
 
 	return s.sendStatusMedia(client, data, fileData, instance)
@@ -3428,6 +3388,7 @@ func NewSendService(
 	queryGuard waquery.Guard,
 	identityResolver waquery.IdentityResolver,
 	messageWriter projection_service.MessageWriteThrough,
+	mediaFetcher netguard.Fetcher,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) SendService {
 	return &sendService{
@@ -3437,6 +3398,7 @@ func NewSendService(
 		queryGuard:       queryGuard,
 		identityResolver: identityResolver,
 		messageWriter:    messageWriter,
+		mediaFetcher:     mediaFetcher,
 		loggerWrapper:    loggerWrapper,
 	}
 }

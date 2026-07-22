@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
@@ -49,6 +48,7 @@ type groupService struct {
 	queryGuard       waquery.Guard
 	groupReader      *projection_service.GroupReader
 	groupWriter      *projection_service.GroupWriter
+	mediaFetcher     netguard.Fetcher
 }
 
 const groupProjectionWriteTimeout = 2 * time.Second
@@ -260,17 +260,10 @@ func (g *groupService) SetGroupPhoto(data *SetGroupPhotoStruct, instance *instan
 	var fileData []byte
 
 	if strings.HasPrefix(data.Image, "http://") || strings.HasPrefix(data.Image, "https://") {
-		resp, err := http.Get(data.Image)
+		fileData, err = g.mediaFetcher.Fetch(context.Background(), data.Image)
 		if err != nil {
 			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Could not download image from URL", instance.Id)
 			return "", fmt.Errorf("failed to fetch image from URL: %v", err)
-		}
-		defer resp.Body.Close()
-
-		fileData, err = io.ReadAll(resp.Body)
-		if err != nil {
-			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Could not read image data from URL", instance.Id)
-			return "", fmt.Errorf("failed to read image data: %v", err)
 		}
 
 	} else if strings.HasPrefix(data.Image, "data:image/jpeg;base64,") || strings.HasPrefix(data.Image, "data:image/png;base64,") {
@@ -756,6 +749,7 @@ func NewGroupService(
 	queryGuard waquery.Guard,
 	groupReader *projection_service.GroupReader,
 	groupWriter *projection_service.GroupWriter,
+	mediaFetcher netguard.Fetcher,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) GroupService {
 	return &groupService{
@@ -764,6 +758,7 @@ func NewGroupService(
 		queryGuard:       queryGuard,
 		groupReader:      groupReader,
 		groupWriter:      groupWriter,
+		mediaFetcher:     mediaFetcher,
 		loggerWrapper:    loggerWrapper,
 	}
 }
