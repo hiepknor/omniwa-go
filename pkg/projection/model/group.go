@@ -17,24 +17,37 @@ type Group struct {
 	InstanceID           string          `json:"instanceId" gorm:"column:instance_id;type:uuid;primaryKey"`
 	GroupID              string          `json:"groupId" gorm:"column:group_id;size:255;primaryKey"`
 	Name                 *string         `json:"name,omitempty" gorm:"column:name"`
+	NameSetAt            *time.Time      `json:"nameSetAt,omitempty" gorm:"column:name_set_at"`
+	NameSetBy            *string         `json:"nameSetBy,omitempty" gorm:"column:name_set_by;size:255"`
+	NameSetByPhone       *string         `json:"nameSetByPhone,omitempty" gorm:"column:name_set_by_phone;size:255"`
 	Topic                *string         `json:"topic,omitempty" gorm:"column:topic"`
+	TopicID              *string         `json:"topicId,omitempty" gorm:"column:topic_id;size:255"`
+	TopicSetAt           *time.Time      `json:"topicSetAt,omitempty" gorm:"column:topic_set_at"`
+	TopicSetBy           *string         `json:"topicSetBy,omitempty" gorm:"column:topic_set_by;size:255"`
+	TopicSetByPhone      *string         `json:"topicSetByPhone,omitempty" gorm:"column:topic_set_by_phone;size:255"`
+	TopicDeleted         *bool           `json:"topicDeleted,omitempty" gorm:"column:topic_deleted"`
 	OwnerJID             *string         `json:"ownerJid,omitempty" gorm:"column:owner_jid;size:255"`
 	OwnerPhoneJID        *string         `json:"ownerPhoneJid,omitempty" gorm:"column:owner_phone_jid;size:255"`
 	Locked               *bool           `json:"locked,omitempty" gorm:"column:locked"`
 	Announce             *bool           `json:"announce,omitempty" gorm:"column:announce"`
+	AnnounceVersion      *string         `json:"announceVersion,omitempty" gorm:"column:announce_version;size:255"`
+	Incognito            *bool           `json:"incognito,omitempty" gorm:"column:incognito"`
 	EphemeralEnabled     *bool           `json:"ephemeralEnabled,omitempty" gorm:"column:ephemeral_enabled"`
 	EphemeralTimer       *int64          `json:"ephemeralTimer,omitempty" gorm:"column:ephemeral_timer"`
 	JoinApprovalRequired *bool           `json:"joinApprovalRequired,omitempty" gorm:"column:join_approval_required"`
 	Suspended            *bool           `json:"suspended,omitempty" gorm:"column:suspended"`
 	ParticipantVersion   *string         `json:"participantVersion,omitempty" gorm:"column:participant_version;size:255"`
+	ParticipantCount     *int            `json:"participantCount,omitempty" gorm:"column:participant_count"`
 	AddressingMode       *string         `json:"addressingMode,omitempty" gorm:"column:addressing_mode;size:32"`
 	MemberAddMode        *string         `json:"memberAddMode,omitempty" gorm:"column:member_add_mode;size:32"`
 	ParentGroupID        *string         `json:"parentGroupId,omitempty" gorm:"column:parent_group_id;size:255"`
 	IsParent             *bool           `json:"isParent,omitempty" gorm:"column:is_parent"`
+	DefaultApprovalMode  *string         `json:"defaultMembershipApprovalMode,omitempty" gorm:"column:default_membership_approval_mode;size:64"`
 	IsDefaultSubgroup    *bool           `json:"isDefaultSubgroup,omitempty" gorm:"column:is_default_subgroup"`
 	InviteLink           *string         `json:"inviteLink,omitempty" gorm:"column:invite_link"`
 	InviteLinkUpdatedAt  *time.Time      `json:"inviteLinkUpdatedAt,omitempty" gorm:"column:invite_link_updated_at"`
 	ProviderCreatedAt    *time.Time      `json:"providerCreatedAt,omitempty" gorm:"column:provider_created_at"`
+	CreatorCountryCode   *string         `json:"creatorCountryCode,omitempty" gorm:"column:creator_country_code;size:32"`
 	SourceOccurredAt     time.Time       `json:"sourceOccurredAt" gorm:"column:source_occurred_at;not null"`
 	SourceEventKey       string          `json:"-" gorm:"column:source_event_key;size:255;not null"`
 	FieldVersions        json.RawMessage `json:"-" gorm:"column:field_versions;type:jsonb;not null"`

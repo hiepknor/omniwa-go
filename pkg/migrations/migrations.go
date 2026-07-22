@@ -145,6 +145,25 @@ SET field_versions = jsonb_build_object(
     '_snapshot', jsonb_build_object('occurredAt', source_occurred_at, 'eventKey', source_event_key)
 );`,
 	},
+	{
+		Version: 5,
+		Name:    "complete_group_read_model",
+		SQL: `ALTER TABLE projected_groups
+    ADD COLUMN name_set_at TIMESTAMPTZ NULL,
+    ADD COLUMN name_set_by VARCHAR(255) NULL,
+    ADD COLUMN name_set_by_phone VARCHAR(255) NULL,
+    ADD COLUMN topic_id VARCHAR(255) NULL,
+    ADD COLUMN topic_set_at TIMESTAMPTZ NULL,
+    ADD COLUMN topic_set_by VARCHAR(255) NULL,
+    ADD COLUMN topic_set_by_phone VARCHAR(255) NULL,
+    ADD COLUMN topic_deleted BOOLEAN NULL,
+    ADD COLUMN announce_version VARCHAR(255) NULL,
+    ADD COLUMN incognito BOOLEAN NULL,
+    ADD COLUMN creator_country_code VARCHAR(32) NULL,
+    ADD COLUMN participant_count INTEGER NULL,
+    ADD COLUMN default_membership_approval_mode VARCHAR(64) NULL,
+    ADD CONSTRAINT projected_groups_participant_count_check CHECK (participant_count IS NULL OR participant_count >= 0);`,
+	},
 }
 
 func Run(db *gorm.DB) error {
