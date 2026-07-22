@@ -126,7 +126,11 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": uc})
+	response := gin.H{"message": "success", "data": uc}
+	if uc.Stale {
+		response["meta"] = gin.H{"source": "cache", "stale": true}
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 // Get a user's avatar

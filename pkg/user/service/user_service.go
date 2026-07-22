@@ -87,6 +87,7 @@ type User struct {
 
 type CheckUserCollection struct {
 	Users []User
+	Stale bool `json:"-"`
 }
 
 type CheckUserStruct struct {
@@ -261,9 +262,17 @@ func (u *userService) performCheckUser(ctx context.Context, client *whatsmeow.Cl
 		return nil, false, nil
 	}
 
-	resp, err := u.identityResolver.Resolve(ctx, instanceId, phoneNumbers, func(queryCtx context.Context, missing []string) ([]types.IsOnWhatsAppResponse, error) {
+	query := func(queryCtx context.Context, missing []string) ([]types.IsOnWhatsAppResponse, error) {
 		return client.IsOnWhatsApp(queryCtx, missing)
-	})
+	}
+	var resp []types.IsOnWhatsAppResponse
+	stale := false
+	if reader, ok := u.identityResolver.(waquery.IdentityReadResolver); ok {
+		result, resolveErr := reader.ResolveRead(ctx, instanceId, phoneNumbers, query)
+		resp, stale, err = result.Responses, result.Stale, resolveErr
+	} else {
+		resp, err = u.identityResolver.Resolve(ctx, instanceId, phoneNumbers, query)
+	}
 	if err != nil {
 		u.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to check users on WhatsApp: %v", instanceId, err)
 		var rateLimitErr *waquery.RateLimitError
@@ -273,7 +282,7 @@ func (u *userService) performCheckUser(ctx context.Context, client *whatsmeow.Cl
 		return nil, false, nil
 	}
 
-	uc := new(CheckUserCollection)
+	uc := &CheckUserCollection{Stale: stale}
 	shouldRetry := false
 
 	for _, item := range resp {
@@ -291,7 +300,7 @@ func (u *userService) performCheckUser(ctx context.Context, client *whatsmeow.Cl
 		if item.IsIn {
 			// When user exists on WhatsApp, use the JID returned by WhatsApp
 			remoteJID = fmt.Sprintf("%v", item.JID)
-		} else if formatJid {
+		} else if formatJid && !stale {
 			// If user not found and we used formatJid=true, we should retry with formatJid=false
 			shouldRetry = true
 		}
@@ -336,7 +345,7 @@ func (u *userService) mergeCheckUserResults(original, retry *CheckUserCollection
 	}
 
 	// Merge results
-	merged := &CheckUserCollection{}
+	merged := &CheckUserCollection{Stale: original.Stale || retry.Stale}
 	for _, originalUser := range original.Users {
 		if retryUser, exists := retryMap[originalUser.Query]; exists && retryUser.IsInWhatsapp && !originalUser.IsInWhatsapp {
 			// Use retry result if it found the user and original didn't

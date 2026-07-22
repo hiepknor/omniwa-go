@@ -86,6 +86,9 @@ returns a typed rate-limit error instead.
 - Information lookups performed during outbound sending may affect send
   throughput and therefore require bounded caching; this does not replace the
   separate outbound message safety controls.
+- Read-only identity checks may return a complete bounded cache snapshot while
+  the breaker is unavailable. Such responses carry additive stale metadata;
+  mutation and outbound callers never receive stale fallback data.
 
 ## Rollout and rollback
 
