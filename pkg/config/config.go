@@ -35,6 +35,7 @@ type Config struct {
 	AmqpUrl              string
 	AmqpGlobalEnabled    bool
 	WebhookUrl           string
+	Webhook              WebhookConfig
 	ClientName           string
 	ApiAudioConverter    string
 	ApiAudioConverterKey string
@@ -94,6 +95,15 @@ type RemoteMediaConfig struct {
 	AllowedHosts []string
 	Timeout      time.Duration
 	MaxBytes     int64
+}
+
+type WebhookConfig struct {
+	AllowedHosts     []string
+	AllowedPorts     []string
+	AllowPrivate     bool
+	Timeout          time.Duration
+	MaxRequestBytes  int64
+	MaxResponseBytes int64
 }
 
 // EnsureDBExists connects to postgres (without the target database) and creates it if it doesn't exist.
@@ -283,6 +293,22 @@ func Load() *Config {
 	amqpGlobalEnabled := os.Getenv(config_env.AMQP_GLOBAL_ENABLED)
 
 	webhookUrl := os.Getenv(config_env.WEBHOOK_URL)
+	webhookAllowedHosts := splitNonEmptyCSV(os.Getenv(config_env.WEBHOOK_ALLOWED_HOSTS))
+	webhookAllowedPorts := splitNonEmptyCSV(os.Getenv(config_env.WEBHOOK_ALLOWED_PORTS))
+	if len(webhookAllowedPorts) == 0 {
+		webhookAllowedPorts = []string{"80", "443"}
+	}
+	webhookAllowPrivate := os.Getenv(config_env.WEBHOOK_ALLOW_PRIVATE) == "true"
+	webhookTimeoutValue := os.Getenv(config_env.WEBHOOK_TIMEOUT)
+	if webhookTimeoutValue == "" {
+		webhookTimeoutValue = "10s"
+	}
+	webhookTimeout, err := parsePositiveDuration(webhookTimeoutValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WEBHOOK_TIMEOUT, err)
+	}
+	webhookMaxRequestBytes := parsePositiveInt64OrFatal(config_env.WEBHOOK_MAX_REQUEST_BYTES, "4194304")
+	webhookMaxResponseBytes := parsePositiveInt64OrFatal(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "65536")
 
 	apiAudioConverter := os.Getenv(config_env.API_AUDIO_CONVERTER)
 	apiAudioConverterKey := os.Getenv(config_env.API_AUDIO_CONVERTER_KEY)
@@ -543,6 +569,10 @@ func Load() *Config {
 		AmqpUrl:              amqpUrl,
 		AmqpGlobalEnabled:    amqpGlobalEnabled == "true",
 		WebhookUrl:           webhookUrl,
+		Webhook: WebhookConfig{
+			AllowedHosts: webhookAllowedHosts, AllowedPorts: webhookAllowedPorts, AllowPrivate: webhookAllowPrivate, Timeout: webhookTimeout,
+			MaxRequestBytes: webhookMaxRequestBytes, MaxResponseBytes: webhookMaxResponseBytes,
+		},
 		ClientName:           clientName,
 		ApiAudioConverter:    apiAudioConverter,
 		ApiAudioConverterKey: apiAudioConverterKey,
@@ -648,6 +678,18 @@ func splitNonEmptyCSV(value string) []string {
 		}
 	}
 	return result
+}
+
+func parsePositiveInt64OrFatal(name, fallback string) int64 {
+	value := os.Getenv(name)
+	if value == "" {
+		value = fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 {
+		logger.LogFatal("[CONFIG] invalid %s: must be a positive integer", name)
+	}
+	return parsed
 }
 
 func parseNonNegativeDuration(value string) (time.Duration, error) {

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"image/png"
-	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -46,6 +45,7 @@ import (
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
+	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 	"github.com/evolution-foundation/evolution-go/pkg/outbound"
 	"github.com/evolution-foundation/evolution-go/pkg/passkey/ceremony"
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
@@ -2992,6 +2992,20 @@ var (
 	webVersionCacheTTL = 1 * time.Hour
 )
 
+var whatsappWebRequester = mustWhatsAppWebRequester()
+
+func mustWhatsAppWebRequester() netguard.Requester {
+	requester, err := netguard.NewRequester(netguard.RequestSettings{
+		AllowedHosts: []string{"web.whatsapp.com"}, Timeout: 10 * time.Second,
+		AllowedContentTypes: []string{"application/javascript", "application/x-javascript", "text/javascript"},
+		MaxRequestBytes:     1, MaxResponseBytes: 2 * 1024 * 1024,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return requester
+}
+
 func fetchWhatsAppWebVersion() (*clientVersion, error) {
 	cachedWebVersionMu.Lock()
 	defer cachedWebVersionMu.Unlock()
@@ -3000,18 +3014,15 @@ func fetchWhatsAppWebVersion() (*clientVersion, error) {
 		return cachedWebVersion, nil
 	}
 
-	resp, err := http.Get("https://web.whatsapp.com/sw.js")
+	resp, err := whatsappWebRequester.Do(context.Background(), http.MethodGet, "https://web.whatsapp.com/sw.js", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch WhatsApp Web version: %v", err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %v", err)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("failed to fetch WhatsApp Web version: HTTP %d", resp.StatusCode)
 	}
 
-	content := string(body)
+	content := string(resp.Body)
 
 	// Múltiplas estratégias para encontrar client_revision
 	patterns := []string{
