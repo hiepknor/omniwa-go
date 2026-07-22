@@ -55,7 +55,7 @@ type chatMessageReadState struct {
 	states map[string]*projection_model.State
 }
 
-func (s *chatMessageReadState) Get(_ string, resource string) (*projection_model.State, error) {
+func (s *chatMessageReadState) GetServingState(_ string, resource string) (*projection_model.State, error) {
 	state := s.states[resource]
 	if state == nil {
 		return nil, gorm.ErrRecordNotFound

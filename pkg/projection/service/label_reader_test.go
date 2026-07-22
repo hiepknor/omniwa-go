@@ -20,7 +20,7 @@ type labelReaderStateStub struct {
 	err   error
 }
 
-func (s *labelReaderStateStub) Get(string, string) (*projection_model.State, error) {
+func (s *labelReaderStateStub) GetServingState(string, string) (*projection_model.State, error) {
 	return s.state, s.err
 }
 

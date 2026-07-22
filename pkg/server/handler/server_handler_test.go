@@ -20,6 +20,9 @@ type projectionStateHandlerStub struct{ healthInstanceID string }
 func (s *projectionStateHandlerStub) Get(string, string) (*projection_model.State, error) {
 	return nil, nil
 }
+func (s *projectionStateHandlerStub) GetServingState(instanceID, resource string) (*projection_model.State, error) {
+	return s.Get(instanceID, resource)
+}
 
 type eventHistoryRepositoryStub struct {
 	instanceID string

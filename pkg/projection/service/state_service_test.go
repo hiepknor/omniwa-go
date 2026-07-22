@@ -1,10 +1,12 @@
 package projection_service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	"gorm.io/gorm"
 )
 
@@ -59,6 +61,35 @@ func (r *memoryStateRepository) RecordEvent(instanceID, resource string, schemaV
 	}
 	r.states[key] = state
 	return nil
+}
+
+type memoryWorkHealthRepository struct {
+	records map[string]projection_repository.ProjectionWorkHealth
+	err     error
+}
+
+func (r *memoryWorkHealthRepository) Get(instanceID, resource string) (*projection_repository.ProjectionWorkHealth, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	record, exists := r.records[stateKey(instanceID, resource)]
+	if !exists {
+		return &projection_repository.ProjectionWorkHealth{}, nil
+	}
+	return &record, nil
+}
+
+func (r *memoryWorkHealthRepository) List(instanceID string) ([]projection_repository.ProjectionWorkHealth, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	result := []projection_repository.ProjectionWorkHealth{}
+	for _, record := range r.records {
+		if instanceID == "" || record.InstanceID == instanceID {
+			result = append(result, record)
+		}
+	}
+	return result, nil
 }
 
 func TestStateLifecyclePreservesNewestEventAndControlsCapabilities(t *testing.T) {
@@ -181,5 +212,130 @@ func TestProjectionHealthMetricsAreScopedAndTimestamped(t *testing.T) {
 	global, err := service.Health("")
 	if err != nil || global.Status != "degraded" || global.Total != 2 || global.ByStatus["stale"] != 1 || len(global.Resources) != 2 {
 		t.Fatalf("global Health() = %#v, %v", global, err)
+	}
+}
+
+func TestProjectionHealthDistinguishesNoStateFromReadyEmptyProjection(t *testing.T) {
+	service := NewStateServiceWithHealth(newMemoryRepository(), &memoryWorkHealthRepository{records: map[string]projection_repository.ProjectionWorkHealth{}}, ProjectionHealthPolicy{})
+	health, err := service.Health("instance-a")
+	if err != nil || health.Status != "not_started" || health.Total != 0 || len(health.Resources) != 0 {
+		t.Fatalf("empty projection health = %#v, %v", health, err)
+	}
+}
+
+func TestProjectionHealthDerivesReadinessFromWorkBacklogAndDeadLetters(t *testing.T) {
+	now := time.Unix(1000, 0).UTC()
+	reconciledAt := now.Add(-time.Minute)
+	repository := newMemoryRepository()
+	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "groups", SyncStatus: projection_model.SyncStatusReady,
+		SchemaVersion: GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
+	}
+	recent := now.Add(-30 * time.Second)
+	work := &memoryWorkHealthRepository{records: map[string]projection_repository.ProjectionWorkHealth{
+		stateKey("instance-a", "groups"): {
+			InstanceID: "instance-a", Resource: "groups", PendingEvents: 1, OldestUnprocessedAt: &recent,
+		},
+	}}
+	service := &stateService{
+		repository: repository, work: work,
+		policy: ProjectionHealthPolicy{WorkLagThreshold: 2 * time.Minute, MaxReconcileAge: map[string]time.Duration{"groups": 10 * time.Minute}},
+		now:    func() time.Time { return now },
+	}
+
+	health, err := service.Health("instance-a")
+	if err != nil || health.Status != "healthy" || health.Resources[0].SyncStatus != projection_model.SyncStatusReady || health.Resources[0].PendingEvents != 1 {
+		t.Fatalf("recent backlog health = %#v, %v", health, err)
+	}
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, "groups_projection") {
+		t.Fatalf("recent backlog capabilities = %v, %v", capabilities, err)
+	}
+
+	oldest := now.Add(-3 * time.Minute)
+	record := work.records[stateKey("instance-a", "groups")]
+	record.OldestUnprocessedAt = &oldest
+	work.records[stateKey("instance-a", "groups")] = record
+	health, err = service.Health("instance-a")
+	if err != nil || health.Status != "degraded" || health.Resources[0].SyncStatus != projection_model.SyncStatusStale ||
+		health.Resources[0].StoredSyncStatus != projection_model.SyncStatusReady || len(health.Resources[0].DegradedReasons) != 1 ||
+		health.Resources[0].DegradedReasons[0] != "work_lag" || health.Resources[0].StaleSince == nil ||
+		health.Resources[0].WorkLagSeconds == nil || *health.Resources[0].WorkLagSeconds != 180 {
+		t.Fatalf("lagged backlog health = %#v, %v", health, err)
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, "groups_projection") {
+		t.Fatalf("lagged backlog capabilities = %v, %v", capabilities, err)
+	}
+
+	record.DeadLetterEvents = 2
+	record.OldestUnprocessedAt = &recent
+	work.records[stateKey("instance-a", "groups")] = record
+	health, err = service.Health("instance-a")
+	if err != nil || health.Resources[0].DeadLetterEvents != 2 || len(health.Resources[0].DegradedReasons) != 1 || health.Resources[0].DegradedReasons[0] != "dead_letters" {
+		t.Fatalf("dead-letter health = %#v, %v", health, err)
+	}
+}
+
+func TestProjectionHealthPreservesUsableSnapshotAndFailsUnreadyResource(t *testing.T) {
+	now := time.Unix(1000, 0).UTC()
+	oldReconciliation := now.Add(-11 * time.Minute)
+	repository := newMemoryRepository()
+	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "groups", SyncStatus: projection_model.SyncStatusSyncing,
+		SchemaVersion: GroupsProjectionSchemaVersion, LastReconciledAt: &oldReconciliation,
+	}
+	repository.states[stateKey("instance-a", "labels")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "labels", SyncStatus: projection_model.SyncStatusReady,
+		SchemaVersion: LabelsProjectionSchemaVersion, LastReconciledAt: &oldReconciliation,
+	}
+	work := &memoryWorkHealthRepository{records: map[string]projection_repository.ProjectionWorkHealth{
+		stateKey("instance-a", "groups"):   {InstanceID: "instance-a", Resource: "groups", DeadLetterEvents: 1},
+		stateKey("instance-a", "contacts"): {InstanceID: "instance-a", Resource: "contacts", DeadLetterEvents: 1},
+	}}
+	service := &stateService{
+		repository: repository, work: work,
+		policy: ProjectionHealthPolicy{WorkLagThreshold: 2 * time.Minute, MaxReconcileAge: map[string]time.Duration{"groups": 10 * time.Minute}},
+		now:    func() time.Time { return now },
+	}
+
+	storedGroup, err := service.Get("instance-a", "groups")
+	if err != nil || storedGroup.SyncStatus != projection_model.SyncStatusSyncing || storedGroup.StaleSince != nil {
+		t.Fatalf("stored group state was mutated by health = %#v, %v", storedGroup, err)
+	}
+	group, err := service.GetServingState("instance-a", "groups")
+	if err != nil || group.SyncStatus != projection_model.SyncStatusStale || group.StaleSince == nil {
+		t.Fatalf("usable group snapshot = %#v, %v", group, err)
+	}
+	label, err := service.GetServingState("instance-a", "labels")
+	if err != nil || label.SyncStatus != projection_model.SyncStatusReady {
+		t.Fatalf("non-periodic label state = %#v, %v", label, err)
+	}
+	health, err := service.Health("instance-a")
+	if err != nil || health.ByStatus["stale"] != 1 || health.ByStatus["failed"] != 1 || health.ByStatus["ready"] != 1 || len(health.Resources) != 3 {
+		t.Fatalf("derived health = %#v, %v", health, err)
+	}
+	if health.Resources[0].Resource != "contacts" || health.Resources[0].SyncStatus != projection_model.SyncStatusFailed ||
+		health.Resources[0].StoredSyncStatus != projection_model.SyncStatusNotStarted || health.Resources[0].DeadLetterEvents != 1 {
+		t.Fatalf("work-only projection health = %#v", health.Resources[0])
+	}
+}
+
+func TestProjectionHealthFailsClosedWhenWorkHealthCannotBeRead(t *testing.T) {
+	want := errors.New("work health unavailable")
+	repository := newMemoryRepository()
+	repository.states[stateKey("instance-a", "groups")] = projection_model.State{InstanceID: "instance-a", Resource: "groups", SyncStatus: projection_model.SyncStatusReady}
+	service := NewStateServiceWithHealth(repository, &memoryWorkHealthRepository{err: want}, ProjectionHealthPolicy{})
+	if state, err := service.Get("instance-a", "groups"); err != nil || state.SyncStatus != projection_model.SyncStatusReady {
+		t.Fatalf("Get() = %#v, %v", state, err)
+	}
+	if _, err := service.GetServingState("instance-a", "groups"); !errors.Is(err, want) {
+		t.Fatalf("GetServingState() error = %v, want %v", err, want)
+	}
+	if _, err := service.Capabilities("instance-a"); !errors.Is(err, want) {
+		t.Fatalf("Capabilities() error = %v, want %v", err, want)
+	}
+	if _, err := service.Health("instance-a"); !errors.Is(err, want) {
+		t.Fatalf("Health() error = %v, want %v", err, want)
 	}
 }

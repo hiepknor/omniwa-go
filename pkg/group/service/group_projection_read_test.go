@@ -71,7 +71,7 @@ func (r *groupServiceReadRepository) GetInviteLink(context.Context, string, stri
 
 type groupServiceReadState struct{ state projection_model.State }
 
-func (s groupServiceReadState) Get(string, string) (*projection_model.State, error) {
+func (s groupServiceReadState) GetServingState(string, string) (*projection_model.State, error) {
 	return &s.state, nil
 }
 

@@ -66,3 +66,31 @@ reached. Claim-token fencing makes retry and dead-letter transitions atomic.
 Older binaries ignore the new nullable/defaulted columns, so image rollback does
 not require schema rollback. Rolling back worker behavior leaves terminal rows
 intact for later inspection or replay.
+
+The readiness slice aggregates unprocessed inbox work by instance and resource.
+It uses `ingested_at`, not the provider's `occurred_at`, so imported history does
+not look like worker lag. A ready snapshot becomes effectively `stale` when its
+oldest unprocessed item is older than two minutes or any unresolved dead letter
+exists. A `not_started` or `syncing` resource with no completed snapshot becomes
+effectively `failed`; a syncing resource with a previously completed snapshot
+becomes `stale` and remains readable. These derived states are returned without
+rewriting the stored synchronization state, preserving the distinction between
+a usable snapshot and current serving health. Synchronization coordinators read
+stored lifecycle state, while API readers explicitly request serving state, so
+health degradation cannot itself trigger another full upstream synchronization.
+Health uses the union of lifecycle rows and unprocessed inbox work. A poison
+event that fails before a lifecycle row can be created is therefore still
+reported as a failed, not-started resource instead of disappearing from
+operational visibility.
+
+Reconciliation age is resource-specific. Groups become stale after twice the
+configured `WA_GROUP_RECONCILE_INTERVAL`; disabling periodic group
+reconciliation also disables that age check. Resources without a periodic
+reconciler are not assigned an arbitrary age limit. A projection capability is
+advertised only while its effective state is ready and its schema version is
+current. The two-minute work-lag threshold is an internal conservative default,
+not a WhatsApp service limit.
+
+Migration 16 adds a partial covering index for this aggregation. It contains
+only unprocessed work and keys by instance, resource, and ingestion time, so
+routine health checks do not scan the durable processed-event history.

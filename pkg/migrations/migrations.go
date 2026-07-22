@@ -569,6 +569,14 @@ CREATE INDEX projection_event_inbox_health_idx
 ON projection_event_inbox (instance_id, resource, status, available_at)
 WHERE status IN ('pending', 'failed', 'dead_letter');`,
 	},
+	{
+		Version: 16,
+		Name:    "index_projection_work_health",
+		SQL: `CREATE INDEX projection_event_inbox_work_health_idx
+ON projection_event_inbox (instance_id, resource, ingested_at)
+INCLUDE (status)
+WHERE status <> 'processed';`,
+	},
 }
 
 func Run(db *gorm.DB) error {

@@ -18,8 +18,10 @@ Keep unauthenticated `GET /server/ok` as process/API liveness. Add authenticated
 
 - `connection` uses the persisted instance connection flag and never probes
   WhatsApp;
-- `projection` reports persisted per-resource sync state and is `not_started`
-  when no resource state exists;
+- `projection` combines persisted per-resource sync state with durable inbox
+  backlog age, processing/failure counts, unresolved dead letters, and
+  resource-specific reconciliation age; it is `not_started` when no resource
+  state exists;
 - `throttling` reports the in-memory per-instance information-query circuit,
   its observation state, cooldown deadline, and retry interval;
 - `api` confirms that the authenticated health request was served.
@@ -36,3 +38,6 @@ does not claim that an unobserved circuit proves upstream availability.
   connection states survive restart.
 - The endpoint contains operational metadata only and never returns tokens,
   message content, contact data, or provider payloads.
+- Derived health preserves the stored status as additive diagnostic metadata
+  when it differs, so operators can distinguish snapshot lifecycle from current
+  serving readiness without inspecting event payloads.
