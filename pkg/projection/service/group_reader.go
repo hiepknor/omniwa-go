@@ -26,6 +26,7 @@ type ProjectionReadMeta struct {
 type groupReadRepository interface {
 	Get(context.Context, string, string) (*projection_model.Group, []projection_model.GroupParticipant, error)
 	List(context.Context, string) ([]projection_repository.GroupRecord, error)
+	GetInviteLink(context.Context, string, string) (*string, error)
 }
 
 type groupReadState interface {
@@ -72,6 +73,24 @@ func (r *GroupReader) Get(ctx context.Context, instanceID, groupID string) (*typ
 	}
 	info, err := groupInfoFromProjection(group, participants)
 	return info, meta, err
+}
+
+func (r *GroupReader) InviteLink(ctx context.Context, instanceID, groupID string) (string, *ProjectionReadMeta, bool, error) {
+	meta, err := r.readMeta(instanceID)
+	if err != nil {
+		return "", nil, false, err
+	}
+	inviteLink, err := r.groups.GetInviteLink(ctx, instanceID, groupID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", meta, false, nil
+	}
+	if err != nil {
+		return "", nil, false, err
+	}
+	if inviteLink == nil || *inviteLink == "" {
+		return "", meta, false, nil
+	}
+	return *inviteLink, meta, true, nil
 }
 
 func (r *GroupReader) readMeta(instanceID string) (*ProjectionReadMeta, error) {

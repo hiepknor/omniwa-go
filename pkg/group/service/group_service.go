@@ -46,7 +46,11 @@ type groupService struct {
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
 	groupReader      *projection_service.GroupReader
+	groupWriter      *projection_service.GroupWriter
 }
+
+const groupProjectionWriteTimeout = 2 * time.Second
+const groupPostMutationQueryTimeout = 15 * time.Second
 
 type SimpleGroupInfo struct {
 	JID       types.JID `json:"jid"`
@@ -236,15 +240,23 @@ func (g *groupService) GetGroupInfoRead(ctx context.Context, data *GetGroupInfoS
 }
 
 func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {
-	client, err := g.ensureClientConnected(instance.Id)
-	if err != nil {
-		return "", err
-	}
-
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
 		return "", errors.New("invalid group jid")
+	}
+	if !data.Reset && g.groupReader != nil {
+		inviteLink, _, found, err := g.groupReader.InviteLink(ctx, instance.Id, recipient.String())
+		if err == nil && found {
+			return inviteLink, nil
+		}
+		if err != nil && !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) {
+			return "", err
+		}
+	}
+	client, err := g.ensureClientConnected(instance.Id)
+	if err != nil {
+		return "", err
 	}
 
 	var resp string
@@ -262,6 +274,9 @@ func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInv
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error mute chat: %v", instance.Id, err)
 		return "", err
 	}
+	g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteInviteLink(writeCtx, instance.Id, recipient.String(), resp)
+	})
 
 	return resp, nil
 }
@@ -338,6 +353,9 @@ func (g *groupService) SetGroupName(data *SetGroupNameStruct, instance *instance
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error setting group name: %v", instance.Id, err)
 		return err
 	}
+	g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteName(writeCtx, instance.Id, recipient.String(), data.Name)
+	})
 
 	g.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Group name set successfully", instance.Id)
 	return nil
@@ -368,6 +386,9 @@ func (g *groupService) SetGroupDescription(data *SetGroupDescriptionStruct, inst
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error setting group description: %v", instance.Id, err)
 		return err
 	}
+	g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteTopic(writeCtx, instance.Id, recipient.String(), data.Description)
+	})
 
 	g.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Group description set successfully", instance.Id)
 	return nil
@@ -421,6 +442,13 @@ func (g *groupService) CreateGroup(ctx context.Context, data *CreateGroupStruct,
 			added = append(added, participant.JID)
 		}
 	}
+	confirmedInfo := resp
+	if infoResp != nil {
+		confirmedInfo = infoResp
+	}
+	g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteInfo(writeCtx, instance.Id, confirmedInfo)
+	})
 
 	response := gin.H{
 		"jid":    resp.JID,
@@ -449,11 +477,14 @@ func (g *groupService) UpdateParticipant(data *AddParticipantStruct, instance *i
 		}
 	}
 
-	_, err = client.UpdateGroupParticipants(context.Background(), data.GroupJID, participants, data.Action)
+	results, err := client.UpdateGroupParticipants(context.Background(), data.GroupJID, participants, data.Action)
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create group: %v", instance.Id, err)
 		return err
 	}
+	g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteParticipants(writeCtx, instance.Id, data.GroupJID.String(), string(data.Action), results)
+	})
 
 	return nil
 }
@@ -494,10 +525,22 @@ func (g *groupService) JoinGroupLink(data *JoinGroupStruct, instance *instance_m
 		return err
 	}
 
-	_, err = client.JoinGroupWithLink(context.Background(), data.Code)
+	joinedGroup, err := client.JoinGroupWithLink(context.Background(), data.Code)
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create group: %v", instance.Id, err)
 		return err
+	}
+	queryCtx, cancel := context.WithTimeout(context.Background(), groupPostMutationQueryTimeout)
+	defer cancel()
+	info, queryErr := waquery.Do(queryCtx, g.queryGuard, instance.Id, waquery.OperationGroupInfo, joinedGroup.String(), func(ctx context.Context) (*types.GroupInfo, error) {
+		return client.GetGroupInfo(ctx, joinedGroup)
+	})
+	if queryErr != nil {
+		g.loggerWrapper.GetLogger(instance.Id).LogWarn("component=projection action=write_through instance_id=%s resource=groups operation=join result=deferred error_code=post_mutation_query_failed", instance.Id)
+	} else {
+		g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
+			return g.groupWriter.WriteInfo(writeCtx, instance.Id, info)
+		})
 	}
 
 	return nil
@@ -514,6 +557,9 @@ func (g *groupService) LeaveGroup(data *LeaveGroupStruct, instance *instance_mod
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error leave group: %v", instance.Id, err)
 		return err
 	}
+	g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
+		return g.groupWriter.Tombstone(writeCtx, instance.Id, data.GroupJID.String())
+	})
 
 	return nil
 }
@@ -523,7 +569,6 @@ func (g *groupService) UpdateGroupSettings(data *UpdateGroupSettingsStruct, inst
 	if err != nil {
 		return err
 	}
-
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating group jid", instance.Id)
@@ -571,9 +616,45 @@ func (g *groupService) UpdateGroupSettings(data *UpdateGroupSettingsStruct, inst
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error updating group settings: %v", instance.Id, err)
 		return err
 	}
+	g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
+		switch data.Action {
+		case "announcement":
+			return g.groupWriter.WriteSetting(writeCtx, instance.Id, recipient.String(), "announce", true)
+		case "not_announcement":
+			return g.groupWriter.WriteSetting(writeCtx, instance.Id, recipient.String(), "announce", false)
+		case "locked":
+			return g.groupWriter.WriteSetting(writeCtx, instance.Id, recipient.String(), "locked", true)
+		case "unlocked":
+			return g.groupWriter.WriteSetting(writeCtx, instance.Id, recipient.String(), "locked", false)
+		case "approval_on":
+			return g.groupWriter.WriteSetting(writeCtx, instance.Id, recipient.String(), "join_approval", true)
+		case "approval_off":
+			return g.groupWriter.WriteSetting(writeCtx, instance.Id, recipient.String(), "join_approval", false)
+		case "admin_add":
+			return g.groupWriter.WriteSetting(writeCtx, instance.Id, recipient.String(), "member_add", false)
+		case "all_member_add":
+			return g.groupWriter.WriteSetting(writeCtx, instance.Id, recipient.String(), "member_add", true)
+		default:
+			return nil
+		}
+	})
 
 	g.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Group settings updated successfully: %s", instance.Id, data.Action)
 	return nil
+}
+
+func (g *groupService) writeGroupProjection(instanceID string, write func(context.Context) error) {
+	if g.groupWriter == nil || write == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), groupProjectionWriteTimeout)
+	defer cancel()
+	if err := write(ctx); err != nil {
+		g.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=write_through instance_id=%s resource=groups result=failed error_code=projection_write_failed", instanceID)
+		if staleErr := g.groupWriter.MarkStale(instanceID); staleErr != nil {
+			g.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=mark_stale instance_id=%s resource=groups result=failed error_code=projection_state_write_failed", instanceID)
+		}
+	}
 }
 
 func (g *groupService) GetGroupRequestParticipants(ctx context.Context, data *GetGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]EnrichedGroupParticipantRequest, error) {
@@ -695,6 +776,11 @@ func (g *groupService) UpdateGroupRequestParticipants(data *UpdateGroupRequestPa
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error updating group request participants: %v", instance.Id, err)
 		return nil, err
 	}
+	if data.Action == "approve" {
+		g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
+			return g.groupWriter.WriteParticipants(writeCtx, instance.Id, recipient.String(), "add", results)
+		})
+	}
 
 	g.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Successfully %sd %d participants", instance.Id, data.Action, len(participants))
 	return results, nil
@@ -705,6 +791,7 @@ func NewGroupService(
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
 	groupReader *projection_service.GroupReader,
+	groupWriter *projection_service.GroupWriter,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) GroupService {
 	return &groupService{
@@ -712,6 +799,7 @@ func NewGroupService(
 		whatsmeowService: whatsmeowService,
 		queryGuard:       queryGuard,
 		groupReader:      groupReader,
+		groupWriter:      groupWriter,
 		loggerWrapper:    loggerWrapper,
 	}
 }

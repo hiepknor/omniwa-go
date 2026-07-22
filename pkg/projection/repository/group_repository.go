@@ -19,6 +19,7 @@ type GroupRepository interface {
 	TombstoneMissing(ctx context.Context, instanceID string, activeGroupIDs []string, eventKey string, occurredAt time.Time) (int, error)
 	Get(ctx context.Context, instanceID, groupID string) (*projection_model.Group, []projection_model.GroupParticipant, error)
 	List(ctx context.Context, instanceID string) ([]GroupRecord, error)
+	GetInviteLink(ctx context.Context, instanceID, groupID string) (*string, error)
 }
 
 type GroupRecord struct {
@@ -96,6 +97,7 @@ type GroupPatch struct {
 	JoinApprovalRequired *bool
 	Suspended            *bool
 	ParticipantVersion   *string
+	MemberAddMode        *string
 	ParentGroupID        *string
 	IsDefaultSubgroup    *bool
 	InviteLink           *string
@@ -328,6 +330,9 @@ func (r *groupRepository) ApplyPatch(ctx context.Context, patch GroupPatch) (boo
 		if patch.ParticipantVersion != nil {
 			applyField("participant_version", "participant_version", *patch.ParticipantVersion)
 		}
+		if patch.MemberAddMode != nil {
+			applyField("member_add_mode", "member_add_mode", *patch.MemberAddMode)
+		}
 		if patch.ParentGroupID != nil {
 			applyField("parent_group_id", "parent_group_id", *patch.ParentGroupID)
 		}
@@ -504,6 +509,18 @@ func (r *groupRepository) List(ctx context.Context, instanceID string) ([]GroupR
 		records[index] = GroupRecord{Group: groups[index], Participants: byGroup[groups[index].GroupID]}
 	}
 	return records, nil
+}
+
+func (r *groupRepository) GetInviteLink(ctx context.Context, instanceID, groupID string) (*string, error) {
+	if instanceID == "" || groupID == "" {
+		return nil, errors.New("group identity is required")
+	}
+	var group projection_model.Group
+	if err := r.db.WithContext(ctx).Select("invite_link").
+		Where("instance_id = ? AND group_id = ? AND tombstoned_at IS NULL", instanceID, groupID).First(&group).Error; err != nil {
+		return nil, err
+	}
+	return group.InviteLink, nil
 }
 
 type snapshotGroupField struct {
