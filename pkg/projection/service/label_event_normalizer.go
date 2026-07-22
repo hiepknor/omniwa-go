@@ -5,10 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	"go.mau.fi/whatsmeow/appstate"
 	waSyncAction "go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -16,18 +18,21 @@ import (
 const labelResource = "labels"
 
 type labelEventPayload struct {
-	LabelID      string  `json:"labelId"`
-	ChatID       string  `json:"chatId,omitempty"`
-	MessageID    string  `json:"messageId,omitempty"`
-	Name         *string `json:"name,omitempty"`
-	Color        *int32  `json:"color,omitempty"`
-	PredefinedID *int32  `json:"predefinedId,omitempty"`
-	Deleted      *bool   `json:"deleted,omitempty"`
-	OrderIndex   *int32  `json:"orderIndex,omitempty"`
-	Active       *bool   `json:"active,omitempty"`
-	Kind         *string `json:"kind,omitempty"`
-	Immutable    *bool   `json:"immutable,omitempty"`
-	Labeled      *bool   `json:"labeled,omitempty"`
+	LabelID      string    `json:"labelId"`
+	ChatID       string    `json:"chatId,omitempty"`
+	MessageID    string    `json:"messageId,omitempty"`
+	Name         *string   `json:"name,omitempty"`
+	Color        *int32    `json:"color,omitempty"`
+	PredefinedID *int32    `json:"predefinedId,omitempty"`
+	Deleted      *bool     `json:"deleted,omitempty"`
+	OrderIndex   *int32    `json:"orderIndex,omitempty"`
+	Active       *bool     `json:"active,omitempty"`
+	Kind         *string   `json:"kind,omitempty"`
+	Immutable    *bool     `json:"immutable,omitempty"`
+	Labeled      *bool     `json:"labeled,omitempty"`
+	Collection   string    `json:"collection,omitempty"`
+	SyncVersion  uint64    `json:"syncVersion"`
+	CompletedAt  time.Time `json:"completedAt,omitempty"`
 }
 
 func NormalizeLabelEvent(instanceID string, rawEvent any) (*projection_model.Event, bool, error) {
@@ -65,6 +70,13 @@ func NormalizeLabelEvent(instanceID string, rawEvent any) (*projection_model.Eve
 		}
 		eventType, occurredAt = "label_message_association", event.Timestamp.UTC()
 		payload = labelEventPayload{LabelID: event.LabelID, ChatID: event.JID.String(), MessageID: event.MessageID, Labeled: event.Action.Labeled}
+	case *events.AppStateSyncComplete:
+		if event == nil || event.Name != appstate.WAPatchRegular {
+			return nil, false, nil
+		}
+		eventType = "label_sync_complete"
+		occurredAt = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
+		payload = labelEventPayload{LabelID: "labels-sync", Collection: string(event.Name), SyncVersion: event.Version, CompletedAt: time.Now().UTC()}
 	default:
 		return nil, false, nil
 	}
@@ -76,6 +88,9 @@ func NormalizeLabelEvent(instanceID string, rawEvent any) (*projection_model.Eve
 		return nil, true, err
 	}
 	keyMaterial := eventType + "\x00" + payload.LabelID + "\x00" + occurredAt.Format(time.RFC3339Nano) + "\x00" + string(encoded)
+	if eventType == "label_sync_complete" {
+		keyMaterial = eventType + "\x00" + payload.Collection + "\x00" + fmt.Sprintf("%d", payload.SyncVersion)
+	}
 	sum := sha256.Sum256([]byte(keyMaterial))
 	return &projection_model.Event{
 		InstanceID: instanceID, Resource: labelResource, EventKey: hex.EncodeToString(sum[:]),

@@ -17,6 +17,14 @@ type captureLabels struct {
 	messageAssociation *projection_model.LabelMessageAssociation
 }
 
+type captureLabelReadiness struct {
+	unprocessed bool
+}
+
+func (c *captureLabelReadiness) HasUnprocessedEvents(context.Context, string, string, []string, string) (bool, error) {
+	return c.unprocessed, nil
+}
+
 func (c *captureLabels) ApplyLabel(_ context.Context, label *projection_model.Label) (bool, error) {
 	c.label = label
 	return true, nil
@@ -43,7 +51,7 @@ func TestLabelProjectorAppliesDefinitionTombstoneAndRecordsState(t *testing.T) {
 	}
 	labels := &captureLabels{}
 	state := &captureProjectionState{}
-	if err := NewLabelProjector(labels, state).Handle(context.Background(), event); err != nil {
+	if err := NewLabelProjector(labels, state, &captureLabelReadiness{}).Handle(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}
 	if labels.label == nil || labels.label.Name == nil || *labels.label.Name != name || labels.label.TombstonedAt == nil || labels.label.SourceEventKey != event.EventKey {
@@ -64,11 +72,31 @@ func TestLabelProjectorMapsAssociationRemovalToTombstone(t *testing.T) {
 		t.Fatal(err)
 	}
 	labels := &captureLabels{}
-	if err := NewLabelProjector(labels, &captureProjectionState{}).Handle(context.Background(), event); err != nil {
+	if err := NewLabelProjector(labels, &captureProjectionState{}, &captureLabelReadiness{}).Handle(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}
 	association := labels.messageAssociation
 	if association == nil || association.ChatID != "chat@s.whatsapp.net" || association.MessageID != "message-1" || association.TombstonedAt == nil || !association.TombstonedAt.Equal(event.OccurredAt) {
 		t.Fatalf("projected message association = %#v", association)
+	}
+}
+
+func TestLabelProjectorWaitsForInboxBarrierBeforeReady(t *testing.T) {
+	event, relevant, err := NormalizeLabelEvent("instance-a", &events.AppStateSyncComplete{Name: "regular", Version: 0})
+	if err != nil || !relevant {
+		t.Fatalf("sync completion normalization = %#v, %v, %v", event, relevant, err)
+	}
+	state := &captureProjectionState{}
+	readiness := &captureLabelReadiness{unprocessed: true}
+	projector := NewLabelProjector(&captureLabels{}, state, readiness)
+	if err := projector.Handle(context.Background(), event); err == nil {
+		t.Fatal("sync completion ignored unprocessed label events")
+	}
+	readiness.unprocessed = false
+	if err := projector.Handle(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if state.readyResource != labelResource || state.readyVersion != LabelsProjectionSchemaVersion || state.readyAt.IsZero() {
+		t.Fatalf("ready state = %#v", state)
 	}
 }

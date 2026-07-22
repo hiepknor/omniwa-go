@@ -15,6 +15,7 @@ import (
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
+	"go.mau.fi/whatsmeow/appstate"
 	waSyncAction "go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -283,15 +284,29 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if inserted, err := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second).Ingest(context.Background(), inboxLabelEvent); err != nil || !inserted {
 		t.Fatalf("label inbox ingest = %v, %v", inserted, err)
 	}
-	labelProjector := projection_service.NewLabelProjector(projection_repository.NewLabelProjectionRepository(reopened), stateService)
+	labelSyncEvent, relevant, err := projection_service.NormalizeProjectionEvent(instance.Id, &events.AppStateSyncComplete{Name: appstate.WAPatchRegular, Version: 7})
+	if err != nil || !relevant {
+		t.Fatalf("normalize label sync completion = %#v, %v, %v", labelSyncEvent, relevant, err)
+	}
+	if inserted, err := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second).Ingest(context.Background(), labelSyncEvent); err != nil || !inserted {
+		t.Fatalf("label sync completion ingest = %v, %v", inserted, err)
+	}
+	labelProjector := projection_service.NewLabelProjector(
+		projection_repository.NewLabelProjectionRepository(reopened), stateService, projection_repository.NewReadinessRepository(reopened),
+	)
 	labelBatch, err := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second).
-		ProcessBatchFor(context.Background(), "labels", []string{"label_edit", "label_chat_association", "label_message_association"}, 10, labelProjector.Handle)
-	if err != nil || labelBatch.Claimed != 1 || labelBatch.Processed != 1 || labelBatch.Failed != 0 {
+		ProcessBatchFor(context.Background(), "labels", []string{"label_edit", "label_chat_association", "label_message_association", "label_sync_complete"}, 10, labelProjector.Handle)
+	if err != nil || labelBatch.Claimed != 2 || labelBatch.Processed != 2 || labelBatch.Failed != 0 {
 		t.Fatalf("label projection batch = %#v, %v", labelBatch, err)
 	}
 	storedLabel, err = projection_repository.NewLabelProjectionRepository(reopened).GetLabel(context.Background(), instance.Id, "label-1")
 	if err != nil || storedLabel.Name == nil || *storedLabel.Name != inboxLabelName {
 		t.Fatalf("label projected through inbox = %#v, %v", storedLabel, err)
+	}
+	labelState, err := stateService.Get(instance.Id, "labels")
+	labelCapabilities, capabilityErr := stateService.Capabilities(instance.Id)
+	if err != nil || capabilityErr != nil || labelState.SyncStatus != projection_model.SyncStatusReady || labelState.LastReconciledAt == nil || !containsString(labelCapabilities, "labels_projection") {
+		t.Fatalf("ready labels state = %#v capabilities=%v errors=%v/%v", labelState, labelCapabilities, err, capabilityErr)
 	}
 	projector := projection_service.NewGroupProjector(groupRepository, stateService)
 	eventService := projection_service.NewEventService(projection_repository.NewEventRepository(reopened), time.Minute, time.Second)
@@ -395,9 +410,9 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		t.Fatalf("write-through tombstone remained readable: %v", err)
 	}
 	health, err := stateService.Health(instance.Id)
-	if err != nil || health.Total != 3 || health.Status != "syncing" || health.ByStatus["ready"] != 1 || health.ByStatus["not_started"] != 2 ||
+	if err != nil || health.Total != 3 || health.Status != "syncing" || health.ByStatus["ready"] != 2 || health.ByStatus["not_started"] != 1 ||
 		len(health.Resources) != 3 || !containsHealthResource(health.Resources, "groups", projection_model.SyncStatusReady) ||
-		!containsHealthResource(health.Resources, "labels", projection_model.SyncStatusNotStarted) {
+		!containsHealthResource(health.Resources, "labels", projection_model.SyncStatusReady) {
 		t.Fatalf("projection health = %#v, %v", health, err)
 	}
 }

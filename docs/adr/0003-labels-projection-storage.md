@@ -33,6 +33,15 @@ This migration does not switch public endpoints or advertise the
 `labels_projection` capability. Those changes require event ingestion and a
 ready projection state first.
 
+Initial population uses a guarded full sync of WhatsApp's `regular` app-state
+collection. Full-sync app-state events are ingested into the durable inbox but
+are not fanned out to legacy webhooks or WebSockets. A durable
+`label_sync_complete` event sorts after mutation events and may mark the
+projection ready only when the inbox contains no unprocessed label mutations.
+This barrier prevents an empty or partially processed snapshot from enabling
+the capability. The persisted ready state also prevents a full sync on every
+reconnect.
+
 ## Consequences
 
 - Existing label behavior remains compatible while the projection is built.

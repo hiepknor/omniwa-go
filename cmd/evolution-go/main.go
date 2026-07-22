@@ -183,7 +183,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	groupProjectionRepository := projection_repository.NewGroupRepository(db)
 	groupProjector := projection_service.NewGroupProjector(groupProjectionRepository, projectionStateService)
 	labelProjectionRepository := projection_repository.NewLabelProjectionRepository(db)
-	labelProjector := projection_service.NewLabelProjector(labelProjectionRepository, projectionStateService)
+	labelProjector := projection_service.NewLabelProjector(labelProjectionRepository, projectionStateService, projection_repository.NewReadinessRepository(db))
+	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
 	groupReconciler := projection_service.NewGroupReconciler(queryGuard, groupProjectionRepository, projectionStateService)
 	groupReader := projection_service.NewGroupReader(groupProjectionRepository, projectionStateService)
 	groupWriter := projection_service.NewGroupWriter(groupProjectionRepository, projectionStateService)
@@ -205,7 +206,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 	}()
 	labelWorker := projection_service.NewWorker(
-		projectionEventService, "labels", []string{"label_edit", "label_chat_association", "label_message_association"}, 50, time.Second, labelProjector.Handle,
+		projectionEventService, "labels", []string{"label_edit", "label_chat_association", "label_message_association", "label_sync_complete"}, 50, time.Second, labelProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
 			if err != nil {
 				logger.LogError("component=projection action=process resource=labels result=failed error_code=batch_failed")
@@ -240,6 +241,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		queryGuard,
 		projectionEventService,
 		groupReconciler,
+		labelSyncer,
 		appCtx,
 		loggerWrapper,
 	)
