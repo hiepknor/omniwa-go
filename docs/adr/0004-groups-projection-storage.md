@@ -17,13 +17,17 @@ and roles in `projected_group_participants`. Both tables are instance-scoped,
 retain source occurrence and local synchronization timestamps, and represent
 deletion with tombstones. Cached invite links carry their own update timestamp.
 
-Snapshot application is transactional. A snapshot may replace metadata and the
-participant set only when its source version is at least as new as the stored
-group version. A stable source event key breaks equal-timestamp ties, so
-ordering compares `(source_occurred_at, source_event_key)` rather than arrival
-order. Participant upserts and missing-participant tombstones have the same
-guard. A stale snapshot or delete therefore cannot roll back newer state.
-Duplicate snapshots are safe to replay.
+Snapshot and delta application is transactional. Migration 4 adds an internal
+JSONB version map. The `_snapshot` version is the fallback for all metadata,
+while each changed field receives its own version. A late snapshot can fill
+fields that have no newer value without overwriting a later delta in another
+field. Participant rows retain independent versions, so snapshot replacement
+also preserves later joins and role changes.
+
+A stable source event key breaks equal-timestamp ties, so ordering compares
+`(source_occurred_at, source_event_key)` rather than arrival order. A stale
+snapshot, delta, or delete therefore cannot roll back newer state. Duplicate
+events are safe to replay.
 
 Rows distinguish unknown values with nullable columns. API handlers must not
 interpret a partial row as a completed initial sync; projection state remains
@@ -31,11 +35,11 @@ the authority for `not_started`, `syncing`, `ready`, `stale`, and `failed`.
 
 ## Rollout and rollback
 
-Migration 3 is additive. A lease-based background worker applies
-`JoinedGroup` snapshots and shuts down through the application context. It
-claims only event types with a registered projector; `GroupInfo` deltas remain
-pending until per-field ordering is implemented. Existing group API reads and
-`groups_projection` remain unchanged. Initial reconciliation, delta handling,
+Migrations 3 and 4 are additive. A lease-based background worker applies
+`JoinedGroup` snapshots and `GroupInfo` metadata, settings, participant,
+invite-link, and delete deltas, and shuts down through the application context.
+It claims only event types with a registered projector. Existing group API
+reads and `groups_projection` remain unchanged. Initial reconciliation,
 write-through mutations, and compatible read cutover must be delivered and
 verified before the capability becomes ready.
 

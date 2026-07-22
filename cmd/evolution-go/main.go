@@ -182,7 +182,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	projectionEventService := projection_service.NewEventService(projection_repository.NewEventRepository(db), 30*time.Second, 5*time.Second)
 	groupProjector := projection_service.NewGroupProjector(projection_repository.NewGroupRepository(db), projectionStateService)
 	groupWorker := projection_service.NewWorker(
-		projectionEventService, "groups", []string{"joined_group"}, 50, time.Second, groupProjector.Handle,
+		projectionEventService, "groups", []string{"joined_group", "group_info"}, 50, time.Second, groupProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
 			if err != nil {
 				logger.LogError("component=projection action=process resource=groups result=failed error_code=batch_failed")
