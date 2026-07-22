@@ -159,7 +159,11 @@ func TestProjectedMessageViewDoesNotExposeStorageCoordinationFields(t *testing.T
 		ProviderTimestamp: time.Unix(100, 0).UTC(), Provenance: projection_model.MessageProvenanceLive,
 		SourceEventKey: "private-event", FieldVersions: json.RawMessage(`{"envelope":{}}`),
 	}
-	value, err := json.Marshal(projectedMessageView(message))
+	view := projectedMessageView(message, 30*24*time.Hour)
+	if view.RetentionExpiresAt == nil || !view.RetentionExpiresAt.Equal(message.ProviderTimestamp.Add(30*24*time.Hour)) {
+		t.Fatalf("current-policy retention deadline = %v", view.RetentionExpiresAt)
+	}
+	value, err := json.Marshal(view)
 	if err != nil {
 		t.Fatal(err)
 	}

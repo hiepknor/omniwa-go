@@ -188,8 +188,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	projectionReadinessRepository := projection_repository.NewReadinessRepository(db)
 	contactProjector := projection_service.NewContactProjector(contactProjectionRepository, projectionStateService, projectionReadinessRepository)
 	chatMessageProjectionRepository := projection_repository.NewChatMessageRepository(db)
-	chatMessageProjector := projection_service.NewChatMessageProjector(chatMessageProjectionRepository, projectionStateService)
-	chatMessageReader := projection_service.NewChatMessageReader(chatMessageProjectionRepository, projectionStateService)
+	chatMessageProjector := projection_service.NewChatMessageProjector(chatMessageProjectionRepository, projectionStateService, config.MessageRetention)
+	chatMessageReader := projection_service.NewChatMessageReader(chatMessageProjectionRepository, projectionStateService, config.MessageRetention)
 	historySyncer := projection_service.NewHistorySyncer(projectionEventService, projectionStateService)
 	historyReadinessProjector := projection_service.NewHistoryReadinessProjector(projectionStateService, projectionReadinessRepository)
 	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
@@ -283,6 +283,23 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		defer backgroundWorkers.Done()
 		if err := historyReadinessWorker.Run(appCtx); err != nil {
 			logger.LogError("component=projection action=worker resource=messages_readiness result=stopped error_code=invalid_worker_configuration")
+		}
+	}()
+	messageRetentionWorker := projection_service.NewMessageRetentionWorker(
+		projection_repository.NewMessageRetentionRepository(db), config.MessageRetention, 5_000, time.Minute,
+		func(deleted int64, err error) {
+			if err != nil {
+				logger.LogError("component=projection action=retention resource=messages result=failed error_code=delete_failed")
+			} else if deleted > 0 {
+				logger.LogInfo("component=projection action=retention resource=messages result=deleted count=%d", deleted)
+			}
+		},
+	)
+	backgroundWorkers.Add(1)
+	go func() {
+		defer backgroundWorkers.Done()
+		if err := messageRetentionWorker.Run(appCtx); err != nil {
+			logger.LogError("component=projection action=worker resource=message_retention result=stopped error_code=invalid_worker_configuration")
 		}
 	}()
 

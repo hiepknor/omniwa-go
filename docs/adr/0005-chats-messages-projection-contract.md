@@ -48,11 +48,12 @@ independently only after their respective readiness barriers complete.
 
 ## Retention and privacy
 
-`WA_MSG_RETENTION` will default to `2160h` (90 days) when the retention worker is
-introduced. Operators may shorten or extend it according to their legal basis
-and user expectations. Expired rows are deleted by an auditable background job;
-deleting a message cascades its receipt history. Logs must not include message
-content, media object keys, or participant identifiers at info level.
+`WA_MSG_RETENTION` defaults to `2160h` (90 days). Operators may shorten or
+extend it according to their legal basis and user expectations. Expired rows
+and internal normalized message events are deleted in bounded batches by an
+auditable background job; deleting a message cascades its receipt history.
+Logs must not include message content, media object keys, or participant
+identifiers at info level.
 
 ## Consequences
 

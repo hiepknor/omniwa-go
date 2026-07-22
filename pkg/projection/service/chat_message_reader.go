@@ -31,6 +31,7 @@ type chatMessageReadRepository interface {
 type ChatMessageReader struct {
 	repository chatMessageReadRepository
 	state      groupReadState
+	retention  time.Duration
 }
 
 // ProjectedChat is the stable public chat representation. Storage coordination
@@ -98,8 +99,12 @@ type projectionCursor struct {
 	ProviderTimestamp *time.Time `json:"providerTimestamp,omitempty"`
 }
 
-func NewChatMessageReader(repository chatMessageReadRepository, state groupReadState) *ChatMessageReader {
-	return &ChatMessageReader{repository: repository, state: state}
+func NewChatMessageReader(repository chatMessageReadRepository, state groupReadState, retention ...time.Duration) *ChatMessageReader {
+	policy := DefaultMessageRetention
+	if len(retention) == 1 {
+		policy = retention[0]
+	}
+	return &ChatMessageReader{repository: repository, state: state, retention: policy}
 }
 
 func (r *ChatMessageReader) ListChats(ctx context.Context, instanceID string, limit int, cursor string) ([]ProjectedChat, *ProjectionReadMeta, error) {
@@ -164,7 +169,7 @@ func (r *ChatMessageReader) ListMessages(ctx context.Context, instanceID, chatID
 	}
 	items := make([]ProjectedMessage, len(page.Items))
 	for index := range page.Items {
-		items[index] = projectedMessageView(&page.Items[index])
+		items[index] = projectedMessageView(&page.Items[index], r.retention)
 	}
 	if page.NextCursor != nil {
 		at := page.NextCursor.ProviderTimestamp.UTC()
@@ -190,7 +195,7 @@ func (r *ChatMessageReader) GetMessage(ctx context.Context, instanceID, messageI
 	if err != nil {
 		return nil, meta, err
 	}
-	view := projectedMessageView(message)
+	view := projectedMessageView(message, r.retention)
 	return &view, meta, nil
 }
 
@@ -228,7 +233,8 @@ func projectedChatView(chat *projection_model.Chat) ProjectedChat {
 	}
 }
 
-func projectedMessageView(message *projection_model.ProjectedMessage) ProjectedMessage {
+func projectedMessageView(message *projection_model.ProjectedMessage, retention time.Duration) ProjectedMessage {
+	retentionExpiresAt := message.ProviderTimestamp.UTC().Add(retention)
 	return ProjectedMessage{
 		MessageID: message.MessageID, ChatID: message.ChatID, SenderJID: message.SenderJID, RecipientJID: message.RecipientJID,
 		ParticipantJID: message.ParticipantJID, Direction: message.Direction, MessageType: message.MessageType,
@@ -238,12 +244,12 @@ func projectedMessageView(message *projection_model.ProjectedMessage) ProjectedM
 		MediaWidth: message.MediaWidth, MediaHeight: message.MediaHeight, Status: message.Status,
 		ProviderTimestamp: message.ProviderTimestamp, SentAt: message.SentAt, DeliveredAt: message.DeliveredAt,
 		ReadAt: message.ReadAt, PlayedAt: message.PlayedAt, Provenance: message.Provenance,
-		HistorySyncID: message.HistorySyncID, RetentionExpiresAt: message.RetentionExpiresAt,
+		HistorySyncID: message.HistorySyncID, RetentionExpiresAt: &retentionExpiresAt,
 	}
 }
 
 func (r *ChatMessageReader) readMeta(instanceID, resource string, version int64, notReady error) (*ProjectionReadMeta, error) {
-	if r == nil || r.repository == nil || r.state == nil || instanceID == "" {
+	if r == nil || r.repository == nil || r.state == nil || r.retention <= 0 || instanceID == "" {
 		return nil, errors.New("chat and message projection reader dependencies and instance identity are required")
 	}
 	state, err := r.state.Get(instanceID, resource)

@@ -15,6 +15,7 @@ import (
 const (
 	ChatsProjectionSchemaVersion    int64 = 1
 	MessagesProjectionSchemaVersion int64 = 1
+	DefaultMessageRetention               = 90 * 24 * time.Hour
 )
 
 type chatMessageProjectionWriter interface {
@@ -26,14 +27,19 @@ type chatMessageProjectionWriter interface {
 type ChatMessageProjector struct {
 	repository chatMessageProjectionWriter
 	state      projectionEventState
+	retention  time.Duration
 }
 
-func NewChatMessageProjector(repository chatMessageProjectionWriter, state projectionEventState) *ChatMessageProjector {
-	return &ChatMessageProjector{repository: repository, state: state}
+func NewChatMessageProjector(repository chatMessageProjectionWriter, state projectionEventState, retention ...time.Duration) *ChatMessageProjector {
+	policy := DefaultMessageRetention
+	if len(retention) == 1 {
+		policy = retention[0]
+	}
+	return &ChatMessageProjector{repository: repository, state: state, retention: policy}
 }
 
 func (p *ChatMessageProjector) Handle(ctx context.Context, event *projection_model.Event) error {
-	if p == nil || p.repository == nil || p.state == nil {
+	if p == nil || p.repository == nil || p.state == nil || p.retention <= 0 {
 		return errors.New("chat and message projector dependencies are required")
 	}
 	if event == nil || event.Resource != messageResource || event.InstanceID == "" || event.EventKey == "" {
@@ -72,6 +78,7 @@ func (p *ChatMessageProjector) applyMessage(ctx context.Context, event *projecti
 		return errors.New("normalized message projection payload is incomplete")
 	}
 	activityAt := payload.ProviderTimestamp.UTC()
+	retentionExpiresAt := activityAt.Add(p.retention)
 	chat := &projection_model.Chat{
 		InstanceID: event.InstanceID, ChatID: payload.ChatID, Type: payload.ChatType,
 		LastMessageID: &payload.MessageID, LastMessageAt: &activityAt, LastActivityAt: &activityAt,
@@ -88,11 +95,13 @@ func (p *ChatMessageProjector) applyMessage(ctx context.Context, event *projecti
 		MediaType: payload.MediaType, MediaMIMEType: payload.MediaMIMEType, MediaFileName: payload.MediaFileName,
 		MediaSize: payload.MediaSize, MediaDuration: payload.MediaDurationSeconds, MediaWidth: payload.MediaWidth, MediaHeight: payload.MediaHeight,
 		Status: payload.Status, ProviderTimestamp: activityAt, SentAt: payload.SentAt, Provenance: payload.Provenance, HistorySyncID: payload.HistorySyncID,
-		SourceOccurredAt: event.OccurredAt, SourceEventKey: event.EventKey,
+		RetentionExpiresAt: &retentionExpiresAt,
+		SourceOccurredAt:   event.OccurredAt, SourceEventKey: event.EventKey,
 	}
 	_, err := p.repository.ApplyMessage(ctx, message,
 		projection_repository.MessageAspectEnvelope, projection_repository.MessageAspectContent,
 		projection_repository.MessageAspectMedia, projection_repository.MessageAspectLifecycle,
+		projection_repository.MessageAspectRetention,
 	)
 	return err
 }
@@ -135,13 +144,15 @@ func (p *ChatMessageProjector) applyReceipts(ctx context.Context, event *project
 		if messageID == "" {
 			return errors.New("normalized receipt contains an empty message identity")
 		}
+		retentionExpiresAt := payload.ReceiptAt.UTC().Add(p.retention)
 		placeholder := &projection_model.ProjectedMessage{
 			InstanceID: event.InstanceID, MessageID: messageID, ChatID: payload.ChatID,
 			Direction: payload.Direction, MessageType: "unknown", ProviderTimestamp: payload.ReceiptAt.UTC(),
-			Provenance:       projection_model.MessageProvenanceLive,
-			SourceOccurredAt: time.Unix(0, 0).UTC(), SourceEventKey: projectionChildEventKey("placeholder", event.EventKey, messageID),
+			Provenance:         projection_model.MessageProvenanceLive,
+			RetentionExpiresAt: &retentionExpiresAt,
+			SourceOccurredAt:   time.Unix(0, 0).UTC(), SourceEventKey: projectionChildEventKey("placeholder", event.EventKey, messageID),
 		}
-		if _, err := p.repository.ApplyMessage(ctx, placeholder, projection_repository.MessageAspectEnvelope); err != nil {
+		if _, err := p.repository.ApplyMessage(ctx, placeholder, projection_repository.MessageAspectEnvelope, projection_repository.MessageAspectRetention); err != nil {
 			return err
 		}
 		receipt := &projection_model.MessageReceipt{

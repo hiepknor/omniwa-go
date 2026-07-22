@@ -67,14 +67,16 @@ func TestChatMessageProjectorAppliesMessageAndBothResourceStates(t *testing.T) {
 		t.Fatal(err)
 	}
 	writes, state := &captureChatMessageWrites{}, &captureChatMessageState{}
-	if err := NewChatMessageProjector(writes, state).Handle(context.Background(), event); err != nil {
+	retention := 24 * time.Hour
+	if err := NewChatMessageProjector(writes, state, retention).Handle(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}
 	if len(writes.chats) != 1 || writes.chats[0].LastMessageID == nil || *writes.chats[0].LastMessageID != "message-700" || len(writes.chatAspects[0]) != 2 {
 		t.Fatalf("projected chat writes = %#v %#v", writes.chats, writes.chatAspects)
 	}
 	if len(writes.messages) != 1 || writes.messages[0].Direction != projection_model.MessageDirectionOutgoing ||
-		writes.messages[0].ContentText == nil || *writes.messages[0].ContentText != "Hello" || len(writes.messageParts[0]) != 4 {
+		writes.messages[0].ContentText == nil || *writes.messages[0].ContentText != "Hello" || len(writes.messageParts[0]) != 5 ||
+		writes.messages[0].RetentionExpiresAt == nil || !writes.messages[0].RetentionExpiresAt.Equal(occurredAt.Add(retention)) {
 		t.Fatalf("projected message writes = %#v %#v", writes.messages, writes.messageParts)
 	}
 	if len(state.records) != 2 || state.records[0].resource != "chats" || state.records[0].version != ChatsProjectionSchemaVersion ||
@@ -102,7 +104,8 @@ func TestChatMessageProjectorCreatesIdempotentReceiptPlaceholders(t *testing.T) 
 	for index := range writes.messages {
 		if !writes.messages[index].SourceOccurredAt.Equal(time.Unix(0, 0)) || writes.messages[index].MessageType != "unknown" ||
 			writes.receipts[index].MessageID != writes.messages[index].MessageID || writes.receipts[index].ReceiptType != "read" ||
-			len(writes.messages[index].SourceEventKey) != 64 || len(writes.receipts[index].SourceEventKey) != 64 {
+			len(writes.messages[index].SourceEventKey) != 64 || len(writes.receipts[index].SourceEventKey) != 64 ||
+			writes.messages[index].RetentionExpiresAt == nil || !writes.messages[index].RetentionExpiresAt.Equal(time.Unix(800, 0).Add(DefaultMessageRetention)) {
 			t.Fatalf("receipt placeholder %d = %#v receipt=%#v", index, writes.messages[index], writes.receipts[index])
 		}
 	}
