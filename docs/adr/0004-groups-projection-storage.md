@@ -38,8 +38,7 @@ the authority for `not_started`, `syncing`, `ready`, `stale`, and `failed`.
 Migrations 3 and 4 are additive. A lease-based background worker applies
 `JoinedGroup` snapshots and `GroupInfo` metadata, settings, participant,
 invite-link, and delete deltas, and shuts down through the application context.
-It claims only event types with a registered projector. Write-through mutations
-must still be completed.
+It claims only event types with a registered projector.
 
 Initial reconciliation starts asynchronously after a client connects and uses
 the shared information-query guard. It marks the instance `syncing`, captures a
@@ -74,6 +73,16 @@ WhatsApp and includes additive `source`, `syncStatus`, and `lastSyncedAt`
 metadata. The `groups_projection` capability is published only for a ready
 schema-3 projection. List reads load groups and participants in two bounded
 database queries rather than one query per group.
+
+Confirmed create, join, leave, name, topic, settings, participant, membership
+request, and invite-link mutations write through to the projection before the
+success response completes. Create and join enrichment queries use the shared
+query guard; a failed enrichment cannot turn a completed mutation into an API
+failure. Projection-write failures likewise do not invite an unsafe mutation
+retry: they are logged with stable error codes, mark the resource stale, and
+are repaired by reconciliation. Invite-link reads use the cached projection
+when present; cache misses retain the guarded live fallback, and reset remains
+a live mutation whose returned link replaces the cache.
 
 Application rollback leaves the new tables unused. Instance deletion cascades
 to groups, and group deletion cascades to participants. Physical cleanup is not

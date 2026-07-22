@@ -286,6 +286,32 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || len(groupRecords) != 1 || groupRecords[0].Group.GroupID != "authoritative@g.us" || len(groupRecords[0].Participants) != 1 {
 		t.Fatalf("projection group list = %#v, %v", groupRecords, err)
 	}
+	writer := projection_service.NewGroupWriter(groupRepository, stateService)
+	if err := writer.WriteName(context.Background(), instance.Id, "authoritative@g.us", "Write-through group"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteInviteLink(context.Background(), instance.Id, "authoritative@g.us", "https://chat.whatsapp.com/write-through"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteSetting(context.Background(), instance.Id, "authoritative@g.us", "announce", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteParticipants(context.Background(), instance.Id, "authoritative@g.us", "add", []types.GroupParticipant{{JID: types.NewJID("new-member", types.DefaultUserServer)}}); err != nil {
+		t.Fatal(err)
+	}
+	reader := projection_service.NewGroupReader(groupRepository, stateService)
+	writtenGroup, writtenMeta, err := reader.Get(context.Background(), instance.Id, "authoritative@g.us")
+	inviteLink, _, inviteFound, inviteErr := reader.InviteLink(context.Background(), instance.Id, "authoritative@g.us")
+	if err != nil || inviteErr != nil || writtenMeta == nil || writtenGroup.Name != "Write-through group" || !writtenGroup.IsAnnounce ||
+		len(writtenGroup.Participants) != 2 || !inviteFound || inviteLink != "https://chat.whatsapp.com/write-through" {
+		t.Fatalf("write-through read = %#v meta=%#v invite=%q/%v errors=%v/%v", writtenGroup, writtenMeta, inviteLink, inviteFound, err, inviteErr)
+	}
+	if err := writer.Tombstone(context.Background(), instance.Id, "authoritative@g.us"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := reader.Get(context.Background(), instance.Id, "authoritative@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("write-through tombstone remained readable: %v", err)
+	}
 }
 
 func containsString(values []string, expected string) bool {

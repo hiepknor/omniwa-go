@@ -30,6 +30,14 @@ func (s *groupReaderRepositoryStub) Get(context.Context, string, string) (*proje
 	return &s.get.Group, s.get.Participants, nil
 }
 
+func (s *groupReaderRepositoryStub) GetInviteLink(context.Context, string, string) (*string, error) {
+	s.calls++
+	if s.get == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return s.get.Group.InviteLink, nil
+}
+
 type groupReaderStateStub struct {
 	state *projection_model.State
 	err   error
@@ -93,6 +101,19 @@ func TestGroupReaderUsesStaleDataWithoutProviderProbe(t *testing.T) {
 	groups, meta, err := reader.List(context.Background(), "instance-a")
 	if err != nil || groups == nil || len(groups) != 0 || meta == nil || meta.SyncStatus != projection_model.SyncStatusStale || repository.calls != 1 {
 		t.Fatalf("stale List() = %#v, %#v, %v calls=%d", groups, meta, err, repository.calls)
+	}
+}
+
+func TestGroupReaderReturnsCachedInviteLink(t *testing.T) {
+	reconciledAt := time.Unix(500, 0)
+	inviteLink := "https://chat.whatsapp.com/cached"
+	repository := &groupReaderRepositoryStub{get: &projection_repository.GroupRecord{Group: projection_model.Group{InviteLink: &inviteLink}}}
+	reader := NewGroupReader(repository, groupReaderStateStub{state: &projection_model.State{
+		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
+	}})
+	got, meta, found, err := reader.InviteLink(context.Background(), "instance-a", "group@g.us")
+	if err != nil || !found || got != inviteLink || meta == nil || repository.calls != 1 {
+		t.Fatalf("InviteLink() = %q, %#v, %v, %v calls=%d", got, meta, found, err, repository.calls)
 	}
 }
 
