@@ -82,3 +82,13 @@ during the credential migration window, while stored proxy credentials and QR
 ceremony material are always redacted. Internal handlers obtain the authenticated
 instance by type assertion rather than JSON round-tripping the persistence
 record.
+
+The bootstrap adoption slice introduces `pkg/bootstrap` without moving the
+entrypoint or provider code. A process supervisor now owns background worker
+registration, cancellation context propagation, error reporting, shutdown
+sealing, and completion signaling. This prevents `WaitGroup.Add` from racing
+with shutdown `Wait` and removes per-worker goroutine bookkeeping from
+`main.go`. The package also constructs the typed instance runtime registry;
+runtime lifecycle behavior remains in `pkg/instance/runtime` and the WhatsApp
+adapter. Domain workers still own their processing logic and accept context,
+so bootstrap remains composition rather than a generic business layer.

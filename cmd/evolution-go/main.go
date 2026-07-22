@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -22,6 +21,7 @@ import (
 	"gorm.io/gorm"
 	_ "modernc.org/sqlite"
 
+	"github.com/evolution-foundation/evolution-go/pkg/bootstrap"
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
 	campaign_handler "github.com/evolution-foundation/evolution-go/pkg/campaign/handler"
@@ -46,7 +46,6 @@ import (
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_ownership "github.com/evolution-foundation/evolution-go/pkg/instance/ownership"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
-	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
 	label_handler "github.com/evolution-foundation/evolution-go/pkg/label/handler"
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
@@ -97,8 +96,14 @@ func init() {
 	}
 }
 
-func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *sync.WaitGroup) *gin.Engine {
-	runtimeRegistry := instance_runtime.NewRegistry[*whatsmeow_service.MyClient](appCtx)
+func startBackground(supervisor *bootstrap.Supervisor, name string, work bootstrap.Work) {
+	if err := supervisor.Start(name, work); err != nil {
+		logger.LogFatal("component=bootstrap action=register_worker worker=%s result=failed", name)
+	}
+}
+
+func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *bootstrap.Supervisor) *gin.Engine {
+	runtimeRegistry := bootstrap.NewInstanceRuntime(appCtx)
 
 	loggerWrapper := logger_wrapper.NewLoggerManager(config)
 	queryGuard, err := waquery.New(waquery.Settings{
@@ -188,12 +193,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	webhookProducer := webhook_producer.NewWebhookProducer(config.WebhookUrl, webhookRequester, loggerWrapper)
 	websocketProducer := websocket_producer.NewWebsocketProducer(loggerWrapper)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		<-appCtx.Done()
+	startBackground(backgroundWorkers, "websocket.shutdown", func(ctx context.Context) error {
+		<-ctx.Done()
 		websocketProducer.Close()
-	}()
+		return nil
+	})
 
 	// Cria filas globais se o RabbitMQ global estiver habilitado
 	if config.AmqpGlobalEnabled && conn != nil {
@@ -236,16 +240,15 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		if !ok {
 			log.Fatal("instance repository does not support token digest backfill")
 		}
-		backgroundWorkers.Add(1)
-		go func() {
-			defer backgroundWorkers.Done()
-			result, err := instance_credential.RunBoundedBackfill(appCtx, backfiller, config.InstanceTokenBackfillBatch, config.InstanceTokenBackfillMaxBatches)
+		startBackground(backgroundWorkers, "instance_token.backfill", func(ctx context.Context) error {
+			result, err := instance_credential.RunBoundedBackfill(ctx, backfiller, config.InstanceTokenBackfillBatch, config.InstanceTokenBackfillMaxBatches)
 			if err != nil {
 				logger.LogError("Instance token digest backfill failed: %v", err)
-				return
+				return nil
 			}
 			logger.LogInfo("Instance token digest backfill finished: updated=%d batches=%d complete=%t", result.Updated, result.Batches, result.Complete)
-		}()
+			return nil
+		})
 		rotator, ok := instanceRepository.(instance_repository.TokenRotator)
 		if !ok {
 			log.Fatal("instance repository does not support token rotation")
@@ -301,13 +304,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			}
 		},
 	)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		if err := groupWorker.Run(appCtx); err != nil {
-			logger.LogError("component=projection action=worker resource=groups result=stopped error_code=invalid_worker_configuration")
-		}
-	}()
+	startBackground(backgroundWorkers, "projection.groups", groupWorker.Run)
 	labelWorker := projection_service.NewWorker(
 		projectionEventService, "labels", []string{"label_edit", "label_chat_association", "label_message_association", "label_sync_complete"}, 50, time.Second, labelProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
@@ -318,13 +315,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			}
 		},
 	)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		if err := labelWorker.Run(appCtx); err != nil {
-			logger.LogError("component=projection action=worker resource=labels result=stopped error_code=invalid_worker_configuration")
-		}
-	}()
+	startBackground(backgroundWorkers, "projection.labels", labelWorker.Run)
 	contactWorker := projection_service.NewWorker(
 		projectionEventService, "contacts", []string{"contact", "push_name", "business_name", "picture", "user_about", "contact_sync_complete"}, 50, time.Second, contactProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
@@ -335,13 +326,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			}
 		},
 	)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		if err := contactWorker.Run(appCtx); err != nil {
-			logger.LogError("component=projection action=worker resource=contacts result=stopped error_code=invalid_worker_configuration")
-		}
-	}()
+	startBackground(backgroundWorkers, "projection.contacts", contactWorker.Run)
 	chatMessageWorker := projection_service.NewWorker(
 		projectionEventService, "messages", []string{"message", "receipt", "history_chat", "history_message"}, 50, time.Second, chatMessageProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
@@ -352,13 +337,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			}
 		},
 	)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		if err := chatMessageWorker.Run(appCtx); err != nil {
-			logger.LogError("component=projection action=worker resource=messages result=stopped error_code=invalid_worker_configuration")
-		}
-	}()
+	startBackground(backgroundWorkers, "projection.messages", chatMessageWorker.Run)
 	historyReadinessWorker := projection_service.NewWorker(
 		projectionEventService, "messages", []string{"history_sync_complete"}, 10, time.Second, historyReadinessProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
@@ -369,13 +348,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			}
 		},
 	)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		if err := historyReadinessWorker.Run(appCtx); err != nil {
-			logger.LogError("component=projection action=worker resource=messages_readiness result=stopped error_code=invalid_worker_configuration")
-		}
-	}()
+	startBackground(backgroundWorkers, "projection.messages_readiness", historyReadinessWorker.Run)
 	messageRetentionWorker := projection_service.NewMessageRetentionWorker(
 		projection_repository.NewMessageRetentionRepository(db), config.MessageRetention, 5_000, time.Minute,
 		func(deleted int64, err error) {
@@ -386,13 +359,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			}
 		},
 	)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		if err := messageRetentionWorker.Run(appCtx); err != nil {
-			logger.LogError("component=projection action=worker resource=message_retention result=stopped error_code=invalid_worker_configuration")
-		}
-	}()
+	startBackground(backgroundWorkers, "projection.message_retention", messageRetentionWorker.Run)
 	durableEventRetentionWorker := projection_service.NewDurableEventRetentionWorker(
 		durableEventRepository, 5_000, time.Minute,
 		func(deleted int64, err error) {
@@ -403,13 +370,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			}
 		},
 	)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		if err := durableEventRetentionWorker.Run(appCtx); err != nil {
-			logger.LogError("component=events action=worker resource=event_retention result=stopped error_code=invalid_worker_configuration")
-		}
-	}()
+	startBackground(backgroundWorkers, "events.retention", durableEventRetentionWorker.Run)
 
 	whatsmeowService := whatsmeow_service.NewWhatsmeowService(
 		instanceRepository,
@@ -493,13 +454,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			}
 		},
 	)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		if err := campaignWorker.Run(appCtx); err != nil {
-			logger.LogError("component=campaign action=worker result=stopped error_code=invalid_worker_configuration")
-		}
-	}()
+	startBackground(backgroundWorkers, "campaign.delivery", campaignWorker.Run)
 	userService := user_service.NewUserService(runtimeRegistry, whatsmeowService, queryGuard, identityResolver, contactReader, remoteMediaFetcher, loggerWrapper)
 	messageService := message_service.NewMessageService(runtimeRegistry, messageRepository, whatsmeowService, loggerWrapper)
 	chatService := chat_service.NewChatService(runtimeRegistry, whatsmeowService, loggerWrapper)
@@ -773,16 +728,17 @@ func main() {
 
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
-	var backgroundWorkers sync.WaitGroup
+	backgroundWorkers := bootstrap.NewSupervisor(appCtx, func(name string, _ error) {
+		logger.LogError("component=bootstrap action=worker_exit worker=%s result=failed error_code=worker_failed", name)
+	})
 	ownershipLost := make(chan error, 1)
-	backgroundWorkers.Add(1)
-	go func() {
-		defer backgroundWorkers.Done()
-		if err := ownershipGuard.Monitor(appCtx, 5*time.Second); err != nil {
+	startBackground(backgroundWorkers, "instance_ownership.monitor", func(ctx context.Context) error {
+		if err := ownershipGuard.Monitor(ctx, 5*time.Second); err != nil {
 			ownershipLost <- err
 		}
-	}()
-	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, &backgroundWorkers)
+		return nil
+	})
+	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, backgroundWorkers)
 
 	// Graceful shutdown with heartbeat
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
@@ -833,13 +789,8 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.LogError("[SHUTDOWN] Server forced to shutdown: %v", err)
 	}
-	workersStopped := make(chan struct{})
-	go func() {
-		backgroundWorkers.Wait()
-		close(workersStopped)
-	}()
 	select {
-	case <-workersStopped:
+	case <-backgroundWorkers.Stopped():
 		logger.LogInfo("[SHUTDOWN] Background workers stopped")
 	case <-shutdownCtx.Done():
 		logger.LogError("[SHUTDOWN] Background worker shutdown timed out")
