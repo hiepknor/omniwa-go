@@ -81,3 +81,32 @@ and configure the identical key and version on every replica. Never rotate or
 discard that secret ad hoc: the current rollout has a single active digest key
 and retains plaintext only as a measured rollback path. Backfill work is
 bounded per startup and safely resumes on a later restart.
+
+### Audited token rotation
+
+When an admin-scoped `GET /server/capabilities` response contains
+`instance_token_rotation`, rotate an instance token with:
+
+```http
+POST /instance/rotate-token/{instanceId}
+apikey: <GLOBAL_API_KEY>
+Content-Type: application/json
+X-Request-ID: <stable 16-64 character request identity>
+
+{
+  "expectedVersion": 1,
+  "reason": "scheduled operator rotation"
+}
+```
+
+`expectedVersion` comes from the additive `credentialVersion` field on the
+instance create, list, and info views. A successful response returns the new
+token and incremented version. Store the token immediately: it is not written
+to audit metadata and this endpoint does not reveal it again. The previous
+token stops authenticating as soon as the transaction commits.
+
+A `409 credential_version_conflict` means another rotation won; refresh the
+instance and deliberately retry with the new version. The endpoint returns
+`503 capability_unavailable` when the HMAC key is not configured. Rotation
+audit records contain safe metadata only and are not currently a public
+history contract.

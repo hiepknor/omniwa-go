@@ -124,6 +124,31 @@ func TestCapabilitiesExposeBuildRevision(t *testing.T) {
 	}
 }
 
+func TestCredentialCapabilityIsAdminScoped(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewServerHandler("test", "abc123", &projectionStateHandlerStub{}, nil, nil, WithAdminCapabilities("instance_token_rotation"))
+	for _, test := range []struct {
+		name      string
+		authScope string
+		want      bool
+	}{
+		{name: "admin", authScope: "admin", want: true},
+		{name: "instance", authScope: "instance", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(response)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/server/capabilities", nil)
+			ctx.Set("auth_scope", test.authScope)
+			handler.Capabilities(ctx)
+			got := strings.Contains(response.Body.String(), "instance_token_rotation")
+			if response.Code != http.StatusOK || got != test.want {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestProjectionHealthUsesAuthenticationScope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, test := range []struct {

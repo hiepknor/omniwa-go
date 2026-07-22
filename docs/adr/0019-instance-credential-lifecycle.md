@@ -65,3 +65,21 @@ backfills legacy rows. The worker is finite per process start and restartable;
 it records only aggregate counts. Plaintext remains the rollback path during
 this phase. Operators must use the same base64-encoded key and key version on
 every replica and retain the old secret until a later measured rotation phase.
+
+The audited rotation phase is implemented by migration 19 and the admin-only
+`POST /instance/rotate-token/{instanceId}` endpoint. Callers submit the current
+`expectedVersion` and a bounded reason. The repository uses a compare-and-swap
+update, so concurrent operators cannot silently invalidate a token another
+operator has just received. The new high-entropy token is returned once; audit
+rows contain only the generation transition, reason, request ID, and a
+domain-separated hash of the admin actor credential. The database update and
+audit insert share one transaction. A successful rotation also updates the
+active runtime's token under synchronization so subsequent event envelopes use
+the current credential.
+
+The admin capability `instance_token_rotation` is advertised only when the HMAC
+key is configured. Instance-scoped capability calls do not receive this
+administrative capability. Public instance views expose the additive
+`credentialVersion` needed for optimistic concurrency; they continue returning
+the legacy token until the Console migration and rollback measurement required
+by the contract phase are complete.

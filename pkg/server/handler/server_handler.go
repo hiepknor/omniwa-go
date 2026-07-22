@@ -3,6 +3,7 @@ package server_handler
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -50,13 +51,14 @@ func (s *serverHandler) ProjectionHealth(ctx *gin.Context) {
 }
 
 type serverHandler struct {
-	version         string
-	revision        string
-	projectionState projection_service.StateService
-	eventReader     *projection_service.DurableEventReader
-	overview        *projection_service.OverviewService
-	health          *projection_service.ServerHealthService
-	failures        *projection_service.FailureService
+	version           string
+	revision          string
+	projectionState   projection_service.StateService
+	eventReader       *projection_service.DurableEventReader
+	overview          *projection_service.OverviewService
+	health            *projection_service.ServerHealthService
+	failures          *projection_service.FailureService
+	adminCapabilities []string
 }
 
 // Health returns independent API, connection, projection, and throttling dimensions.
@@ -204,6 +206,10 @@ func (s *serverHandler) Capabilities(ctx *gin.Context) {
 		httpapi.WriteInternal(ctx, err)
 		return
 	}
+	if ctx.GetString("auth_scope") == "admin" {
+		capabilities = append(capabilities, s.adminCapabilities...)
+		sort.Strings(capabilities)
+	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{"version": s.version, "revision": s.revision, "capabilities": capabilities}})
 }
 
@@ -215,6 +221,10 @@ func WithHealthService(health *projection_service.ServerHealthService) ServerOpt
 
 func WithFailureService(failures *projection_service.FailureService) ServerOption {
 	return func(handler *serverHandler) { handler.failures = failures }
+}
+
+func WithAdminCapabilities(capabilities ...string) ServerOption {
+	return func(handler *serverHandler) { handler.adminCapabilities = append([]string(nil), capabilities...) }
 }
 
 func NewServerHandler(version, revision string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overview *projection_service.OverviewService, options ...ServerOption) ServerHandler {
