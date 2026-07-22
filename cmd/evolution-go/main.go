@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -161,7 +162,29 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		)
 	}
 
-	webhookProducer := webhook_producer.NewWebhookProducer(config.WebhookUrl, loggerWrapper)
+	webhookHosts := append([]string(nil), config.Webhook.AllowedHosts...)
+	webhookPorts := append([]string(nil), config.Webhook.AllowedPorts...)
+	if config.WebhookUrl != "" {
+		globalWebhookURL, parseErr := url.Parse(config.WebhookUrl)
+		if parseErr != nil || globalWebhookURL.Hostname() == "" {
+			logger.LogFatal("component=webhook action=initialize result=failed error=invalid_url")
+		}
+		webhookHosts = append(webhookHosts, globalWebhookURL.Hostname())
+		if globalWebhookURL.Port() != "" {
+			webhookPorts = append(webhookPorts, globalWebhookURL.Port())
+		}
+	}
+	var webhookRequester netguard.Requester
+	if len(webhookHosts) > 0 {
+		webhookRequester, err = netguard.NewRequester(netguard.RequestSettings{
+			AllowedHosts: webhookHosts, AllowedPorts: webhookPorts, AllowPrivate: config.Webhook.AllowPrivate, Timeout: config.Webhook.Timeout,
+			MaxRequestBytes: config.Webhook.MaxRequestBytes, MaxResponseBytes: config.Webhook.MaxResponseBytes,
+		})
+		if err != nil {
+			logger.LogFatal("component=webhook action=initialize result=failed error=%v", err)
+		}
+	}
+	webhookProducer := webhook_producer.NewWebhookProducer(config.WebhookUrl, webhookRequester, loggerWrapper)
 	websocketProducer := websocket_producer.NewWebsocketProducer(loggerWrapper)
 
 	// Cria filas globais se o RabbitMQ global estiver habilitado
@@ -384,7 +407,25 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if err != nil {
 		logger.LogFatal("component=remote_media action=initialize result=failed error=%v", err)
 	}
-	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, loggerWrapper)
+	var audioConverterRequester netguard.Requester
+	if config.ApiAudioConverter != "" {
+		converterURL, parseErr := url.Parse(config.ApiAudioConverter)
+		if parseErr != nil || converterURL.Hostname() == "" {
+			logger.LogFatal("component=audio_converter action=initialize result=failed error=invalid_url")
+		}
+		converterPorts := []string{"80", "443"}
+		if converterURL.Port() != "" {
+			converterPorts = append(converterPorts, converterURL.Port())
+		}
+		audioConverterRequester, err = netguard.NewRequester(netguard.RequestSettings{
+			AllowedHosts: []string{converterURL.Hostname()}, AllowedPorts: converterPorts, AllowedContentTypes: []string{"application/json"}, AllowPrivate: true, Timeout: 60 * time.Second,
+			MaxRequestBytes: 64 * 1024 * 1024, MaxResponseBytes: 64 * 1024 * 1024,
+		})
+		if err != nil {
+			logger.LogFatal("component=audio_converter action=initialize result=failed error=%v", err)
+		}
+	}
+	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, audioConverterRequester, loggerWrapper)
 	campaignRepository := campaign_repository.NewCampaignRepository(db)
 	campaignWorker := campaign_service.NewWorker(
 		campaignRepository,

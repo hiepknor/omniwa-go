@@ -1,29 +1,32 @@
 package webhook_producer
 
 import (
-	"bytes"
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 )
 
 type webhookProducer struct {
 	url           string
 	loggerWrapper *logger_wrapper.LoggerManager
+	requester     netguard.Requester
 }
 
 func NewWebhookProducer(
 	url string,
+	requester netguard.Requester,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) producer_interfaces.Producer {
 	return &webhookProducer{
 		url:           url,
+		requester:     requester,
 		loggerWrapper: loggerWrapper,
 	}
 }
@@ -52,43 +55,37 @@ func (p *webhookProducer) Produce(
 
 func (p *webhookProducer) sendWebhookWithRetry(url string, body []byte, maxRetries int, retryInterval time.Duration, userID string) {
 	for i := 0; i < maxRetries; i++ {
-		err, _, statusCode := p.sendWebhook(url, body, userID)
+		err, statusCode := p.sendWebhook(url, body)
 		if err == nil {
 			p.loggerWrapper.GetLogger(userID).LogInfo("[%s] webhook sent successfully - status: %d", userID, statusCode)
 			return
 		}
 		p.loggerWrapper.GetLogger(userID).LogWarn("[%s] webhook failed - attempt: %d, error: %v", userID, i+1, err)
+		if errors.Is(err, netguard.ErrUnsafeTarget) {
+			return
+		}
 
 		time.Sleep(retryInterval)
 	}
 	p.loggerWrapper.GetLogger(userID).LogError("[%s] webhook failed after maximum retries", userID)
 }
 
-func (p *webhookProducer) sendWebhook(url string, body []byte, userID string) (error, []byte, int) {
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
-	if err != nil {
-		return err, nil, 0
+func (p *webhookProducer) sendWebhook(url string, body []byte) (error, int) {
+	if p.requester == nil {
+		return fmt.Errorf("%w: webhook host is not configured", netguard.ErrUnsafeTarget), 0
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	header := make(http.Header)
+	header.Set("Content-Type", "application/json")
+	resp, err := p.requester.Do(context.Background(), http.MethodPost, url, header, body)
 	if err != nil {
-		return err, nil, 0
-	}
-	defer resp.Body.Close()
-
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("erro ao ler resposta: %v", err), nil, 0
+		return err, 0
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errors.New("received non-2xx response: " + resp.Status), responseBody, resp.StatusCode
+		return errors.New("received non-2xx webhook response"), resp.StatusCode
 	}
 
-	return nil, responseBody, resp.StatusCode
+	return nil, resp.StatusCode
 }
 
 // CreateGlobalQueues não faz nada para webhook producer

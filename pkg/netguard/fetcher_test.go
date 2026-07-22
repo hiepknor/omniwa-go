@@ -142,6 +142,63 @@ func TestUserControlledRemoteFetchesDoNotBypassGuard(t *testing.T) {
 	}
 }
 
+func TestProductionOutboundHTTPDoesNotBypassNetguard(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate test source")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
+	root := filepath.Join(repoRoot, "pkg")
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if path == filepath.Join(root, "netguard") || path == filepath.Join(root, "core") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+		fileSet := token.NewFileSet()
+		file, parseErr := parser.ParseFile(fileSet, path, nil, 0)
+		if parseErr != nil {
+			return parseErr
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch typed := node.(type) {
+			case *ast.CallExpr:
+				selector, ok := typed.Fun.(*ast.SelectorExpr)
+				identifier, isHTTP := selectorIdentifier(selector)
+				if ok && isHTTP && identifier.Name == "http" && (selector.Sel.Name == "Get" || selector.Sel.Name == "Post" || selector.Sel.Name == "NewRequest" || selector.Sel.Name == "NewRequestWithContext") {
+					t.Errorf("unguarded outbound HTTP call in %s at line %d", path, fileSet.Position(typed.Pos()).Line)
+				}
+			case *ast.CompositeLit:
+				selector, ok := typed.Type.(*ast.SelectorExpr)
+				identifier, isHTTP := selectorIdentifier(selector)
+				if ok && isHTTP && identifier.Name == "http" && selector.Sel.Name == "Client" {
+					t.Errorf("unguarded HTTP client in %s at line %d", path, fileSet.Position(typed.Pos()).Line)
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan production outbound HTTP: %v", err)
+	}
+}
+
+func selectorIdentifier(selector *ast.SelectorExpr) (*ast.Ident, bool) {
+	if selector == nil {
+		return nil, false
+	}
+	identifier, ok := selector.X.(*ast.Ident)
+	return identifier, ok
+}
+
 func hasLiteralGET(arguments []ast.Expr) bool {
 	for _, argument := range arguments {
 		if literal, ok := argument.(*ast.BasicLit); ok && literal.Value == `"GET"` {

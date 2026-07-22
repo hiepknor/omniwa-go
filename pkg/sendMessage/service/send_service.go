@@ -11,7 +11,6 @@ import (
 	"image"
 	"image/jpeg"
 	"image/png"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"os/exec"
@@ -64,6 +63,7 @@ type sendService struct {
 	identityResolver waquery.IdentityResolver
 	messageWriter    projection_service.MessageWriteThrough
 	mediaFetcher     netguard.Fetcher
+	audioRequester   netguard.Requester
 }
 
 const projectionWriteThroughTimeout = 2 * time.Second
@@ -812,7 +812,10 @@ type ApiResponse struct {
 	Audio    string `json:"audio"`
 }
 
-func convertAudioWithApi(apiUrl string, apiKey string, convertData ConvertAudio) ([]byte, int, error) {
+func (s *sendService) convertAudioWithApi(apiUrl string, apiKey string, convertData ConvertAudio) ([]byte, int, error) {
+	if s.audioRequester == nil {
+		return nil, 0, errors.New("audio converter is not configured")
+	}
 	var requestBody bytes.Buffer
 	writer := multipart.NewWriter(&requestBody)
 
@@ -838,32 +841,20 @@ func convertAudioWithApi(apiUrl string, apiKey string, convertData ConvertAudio)
 		return nil, 0, fmt.Errorf("erro ao finalizar o form-data: %v", err)
 	}
 
-	req, err := http.NewRequest("POST", apiUrl, &requestBody)
-	if err != nil {
-		return nil, 0, fmt.Errorf("erro ao criar a requisição: %v", err)
-	}
-
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("apikey", apiKey)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	header := make(http.Header)
+	header.Set("Content-Type", writer.FormDataContentType())
+	header.Set("apikey", apiKey)
+	resp, err := s.audioRequester.Do(context.Background(), http.MethodPost, apiUrl, header, requestBody.Bytes())
 	if err != nil {
 		return nil, 0, fmt.Errorf("erro ao enviar a requisição: %v", err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, fmt.Errorf("erro ao ler a resposta: %v", err)
-	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, fmt.Errorf("requisição falhou com status: %d, resposta: %s", resp.StatusCode, string(body))
+		return nil, 0, fmt.Errorf("requisição falhou com status: %d", resp.StatusCode)
 	}
 
 	var apiResponse ApiResponse
-	err = json.Unmarshal(body, &apiResponse)
+	err = json.Unmarshal(resp.Body, &apiResponse)
 	if err != nil {
 		return nil, 0, fmt.Errorf("erro ao deserializar a resposta: %v", err)
 	}
@@ -1001,7 +992,7 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 					return nil, err
 				}
 			} else {
-				convertedData, duration, err = convertAudioWithApi(converterApiUrl, converterApiKey, ConvertAudio{Base64: base64.StdEncoding.EncodeToString(fileData)})
+				convertedData, duration, err = s.convertAudioWithApi(converterApiUrl, converterApiKey, ConvertAudio{Base64: base64.StdEncoding.EncodeToString(fileData)})
 				if err != nil {
 					return nil, err
 				}
@@ -1296,7 +1287,7 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 				convertedData, duration, err = convertAudioToOpusWithDuration(fileData)
 			} else {
 				s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Usando API de conversão...", instance.Id)
-				convertedData, duration, err = convertAudioWithApi(converterApiUrl, converterApiKey, ConvertAudio{Base64: base64.StdEncoding.EncodeToString(fileData)})
+				convertedData, duration, err = s.convertAudioWithApi(converterApiUrl, converterApiKey, ConvertAudio{Base64: base64.StdEncoding.EncodeToString(fileData)})
 			}
 			if err != nil {
 				return nil, err
@@ -3389,6 +3380,7 @@ func NewSendService(
 	identityResolver waquery.IdentityResolver,
 	messageWriter projection_service.MessageWriteThrough,
 	mediaFetcher netguard.Fetcher,
+	audioRequester netguard.Requester,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) SendService {
 	return &sendService{
@@ -3399,6 +3391,7 @@ func NewSendService(
 		identityResolver: identityResolver,
 		messageWriter:    messageWriter,
 		mediaFetcher:     mediaFetcher,
+		audioRequester:   audioRequester,
 		loggerWrapper:    loggerWrapper,
 	}
 }

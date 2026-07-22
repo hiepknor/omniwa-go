@@ -29,6 +29,12 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT, "")
 	t.Setenv(config_env.REMOTE_MEDIA_MAX_BYTES, "")
+	t.Setenv(config_env.WEBHOOK_ALLOWED_HOSTS, "")
+	t.Setenv(config_env.WEBHOOK_ALLOWED_PORTS, "")
+	t.Setenv(config_env.WEBHOOK_ALLOW_PRIVATE, "")
+	t.Setenv(config_env.WEBHOOK_TIMEOUT, "")
+	t.Setenv(config_env.WEBHOOK_MAX_REQUEST_BYTES, "")
+	t.Setenv(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
@@ -61,6 +67,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.RemoteMedia.Policy != "public_only" || config.RemoteMedia.Timeout != 15*time.Second || config.RemoteMedia.MaxBytes != 32*1024*1024 || len(config.RemoteMedia.AllowedHosts) != 0 {
 		t.Fatalf("remote media defaults = %+v", config.RemoteMedia)
 	}
+	if config.Webhook.Timeout != 10*time.Second || config.Webhook.MaxRequestBytes != 4*1024*1024 || config.Webhook.MaxResponseBytes != 64*1024 || config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 0 || len(config.Webhook.AllowedPorts) != 2 {
+		t.Fatalf("webhook defaults are invalid")
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -84,10 +93,19 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "cdn.example.com, media.example.com")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT, "3s")
 	t.Setenv(config_env.REMOTE_MEDIA_MAX_BYTES, "4096")
+	t.Setenv(config_env.WEBHOOK_ALLOWED_HOSTS, "hooks.example.com, internal.example.com")
+	t.Setenv(config_env.WEBHOOK_ALLOWED_PORTS, "443,8443")
+	t.Setenv(config_env.WEBHOOK_ALLOW_PRIVATE, "true")
+	t.Setenv(config_env.WEBHOOK_TIMEOUT, "4s")
+	t.Setenv(config_env.WEBHOOK_MAX_REQUEST_BYTES, "2048")
+	t.Setenv(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "1024")
 
 	config := Load()
 	if config.RemoteMedia.Policy != "allowlist" || config.RemoteMedia.Timeout != 3*time.Second || config.RemoteMedia.MaxBytes != 4096 || len(config.RemoteMedia.AllowedHosts) != 2 {
 		t.Fatalf("remote media overrides = %+v", config.RemoteMedia)
+	}
+	if config.Webhook.Timeout != 4*time.Second || config.Webhook.MaxRequestBytes != 2048 || config.Webhook.MaxResponseBytes != 1024 || !config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 2 || len(config.Webhook.AllowedPorts) != 2 {
+		t.Fatalf("webhook overrides are invalid")
 	}
 	if math.Abs(config.WAInfoRatePerSecond-(12.0/3600.0)) > 1e-12 {
 		t.Fatalf("WAInfoRatePerSecond = %v", config.WAInfoRatePerSecond)
