@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+scenario="${FAKE_IMAGE_SCENARIO:-index}"
+if [[ "$1 $2 $3" != "buildx imagetools inspect" ]]; then
+  echo "unexpected docker command" >&2
+  exit 2
+fi
+
+if [[ "$4" == "--raw" ]]; then
+  if [[ "$scenario" == "single" ]]; then
+    printf '%s\n' '{"mediaType":"application/vnd.oci.image.manifest.v1+json"}'
+    exit 0
+  fi
+  if [[ "$scenario" == "duplicate" ]]; then
+    printf '%s\n' '{"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","platform":{"os":"linux","architecture":"amd64"}},{"digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","platform":{"os":"linux","architecture":"amd64"}}]}'
+    exit 0
+  fi
+  printf '%s\n' '{"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","platform":{"os":"linux","architecture":"amd64"}},{"digest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","platform":{"os":"linux","architecture":"arm64"}}]}'
+  exit 0
+fi
+
+if [[ "$4" == "--format" && "$5" == "{{json .Image}}" ]]; then
+  architecture="amd64"
+  if [[ "$scenario" == "wrong-platform" ]]; then
+    architecture="arm64"
+  fi
+  printf '{"architecture":"%s","os":"linux","config":{"User":"10001:10001","Labels":{"org.opencontainers.image.revision":"cccccccccccccccccccccccccccccccccccccccc","org.opencontainers.image.version":"1.2.3"}}}\n' "$architecture"
+  exit 0
+fi
+
+echo "unexpected imagetools arguments" >&2
+exit 2

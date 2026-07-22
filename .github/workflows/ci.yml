@@ -56,7 +56,11 @@ jobs:
       - name: Test with PostgreSQL
         env:
           TEST_POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/omniwa_ci?sslmode=disable
-        run: go test ./... -count=1
+        # Packages share this integration database. Serial package execution
+        # prevents one package's projection worker from claiming another
+        # package's inbox fixtures; concurrency is exercised explicitly inside
+        # the repository tests and by the separate race suite.
+        run: go test -p=1 ./... -count=1
 
       - name: Test with race detector
         run: go test -race ./...
@@ -88,6 +92,7 @@ jobs:
             echo "verify-image accepted a mutable tag" >&2
             exit 1
           fi
+          bash scripts/ci/verify-image_test.sh
           if bash scripts/ci/promote-image.sh example.invalid/image not-a-version >/dev/null 2>&1; then
             echo "promote-image accepted an invalid release tag" >&2
             exit 1

@@ -35,6 +35,11 @@ verification requires:
 expected source SHA = OCI revision = reported runtime revision
 ```
 
+Artifact verification reads the immutable registry index, selects exactly one
+`linux/amd64` platform manifest, and validates that manifest's config. It does
+not rely on `docker image inspect` resolving an OCI index in a local image
+store, because that behavior differs between Docker storage backends.
+
 Versioned database migrations remain immutable. Upgrade smoke tests cover an
 empty database and the previous supported release. Checksum mismatches stop the
 deployment; automation never repairs them silently.
