@@ -3190,7 +3190,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get instance status",
+                "description": "Gets connection state plus the canonical ID and configured administrative name selected by the authenticated instance token. Name remains the WhatsApp provider push name and may be empty; InstanceName falls back to InstanceId for legacy records.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7409,16 +7409,31 @@
         },
         "apidocs.StatusData": {
             "type": "object",
+            "required": [
+                "InstanceId",
+                "InstanceName"
+            ],
             "properties": {
                 "Connected": {
                     "type": "boolean",
                     "example": true
+                },
+                "InstanceId": {
+                    "description": "InstanceId is the canonical ID of the instance selected by the authenticated instance token.",
+                    "type": "string",
+                    "example": "d2b52b8b-64ce-4eae-a2bb-33a7fd6ae4ce"
+                },
+                "InstanceName": {
+                    "description": "InstanceName is the configured administrative instance name. Legacy records without a name fall back to InstanceId.",
+                    "type": "string",
+                    "example": "Nibi EU"
                 },
                 "LoggedIn": {
                     "type": "boolean",
                     "example": true
                 },
                 "Name": {
+                    "description": "Name is the WhatsApp provider push name when the runtime is logged in. It is empty when no provider profile is available.",
                     "type": "string",
                     "example": "My WhatsApp"
                 }

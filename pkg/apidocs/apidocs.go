@@ -131,9 +131,14 @@ type QRCodeResponse struct {
 
 // StatusData is the payload of GET /instance/status.
 type StatusData struct {
-	Connected bool   `json:"Connected" example:"true"`
-	LoggedIn  bool   `json:"LoggedIn" example:"true"`
-	Name      string `json:"Name" example:"My WhatsApp"`
+	Connected bool `json:"Connected" example:"true"`
+	LoggedIn  bool `json:"LoggedIn" example:"true"`
+	// Name is the WhatsApp provider push name when the runtime is logged in. It is empty when no provider profile is available.
+	Name string `json:"Name" example:"My WhatsApp"`
+	// InstanceId is the canonical ID of the instance selected by the authenticated instance token.
+	InstanceId string `json:"InstanceId" example:"d2b52b8b-64ce-4eae-a2bb-33a7fd6ae4ce" binding:"required"`
+	// InstanceName is the configured administrative instance name. Legacy records without a name fall back to InstanceId.
+	InstanceName string `json:"InstanceName" example:"Nibi EU" binding:"required"`
 }
 
 // StatusResponse is returned by GET /instance/status.

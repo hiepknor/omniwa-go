@@ -91,8 +91,23 @@ curl http://localhost:8080/instance/status \
 ```
 
 ```json
-{ "message": "success", "data": { "Connected": true, "LoggedIn": true, "Name": "Sales" } }
+{
+  "message": "success",
+  "data": {
+    "Connected": true,
+    "LoggedIn": true,
+    "Name": "Sales",
+    "InstanceId": "d2b52b8b-64ce-4eae-a2bb-33a7fd6ae4ce",
+    "InstanceName": "sales-bot"
+  }
+}
 ```
+
+`InstanceId` and `InstanceName` identify the configured instance selected by
+the authenticated instance token, even before pairing or while disconnected.
+For legacy records with no configured name, `InstanceName` falls back to
+`InstanceId`. `Name` has its existing, separate meaning: it is the WhatsApp
+provider push name and is empty when no logged-in runtime profile is available.
 
 The `connection` WebSocket event fires on the same transition, so a WebUI can
 flip to its "connected" state without polling.

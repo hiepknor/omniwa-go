@@ -86,10 +86,12 @@ type ConnectStruct struct {
 }
 
 type StatusStruct struct {
-	Connected bool
-	LoggedIn  bool
-	myJid     *types.JID
-	Name      string
+	Connected    bool `json:"Connected"`
+	LoggedIn     bool `json:"LoggedIn"`
+	myJid        *types.JID
+	Name         string `json:"Name"`
+	InstanceId   string `json:"InstanceId"`
+	InstanceName string `json:"InstanceName"`
 }
 
 type QrcodeStruct struct {
@@ -385,11 +387,17 @@ func clearInstanceRateLimitState(instanceID string, queryGuard waquery.Guard, id
 
 func (i instances) Status(instance *instance_model.Instance) (*StatusStruct, error) {
 	client := i.runtime.Get(instance.Id)
+	instanceName := instance.Name
+	if strings.TrimSpace(instanceName) == "" {
+		instanceName = instance.Id
+	}
 
 	if client == nil {
 		return &StatusStruct{
-			Connected: false,
-			LoggedIn:  false,
+			Connected:    false,
+			LoggedIn:     false,
+			InstanceId:   instance.Id,
+			InstanceName: instanceName,
 		}, nil
 	}
 
@@ -404,10 +412,12 @@ func (i instances) Status(instance *instance_model.Instance) (*StatusStruct, err
 	}
 
 	return &StatusStruct{
-		Connected: isConnected,
-		LoggedIn:  isLoggedIn,
-		myJid:     myJid,
-		Name:      name,
+		Connected:    isConnected,
+		LoggedIn:     isLoggedIn,
+		myJid:        myJid,
+		Name:         name,
+		InstanceId:   instance.Id,
+		InstanceName: instanceName,
 	}, nil
 }
 

@@ -400,7 +400,7 @@ func (i *instanceHandler) Logout(ctx *gin.Context) {
 
 // Get instance status
 // @Summary Get instance status
-// @Description Get instance status
+// @Description Gets connection state plus the canonical ID and configured administrative name selected by the authenticated instance token. Name remains the WhatsApp provider push name and may be empty; InstanceName falls back to InstanceId for legacy records.
 // @Tags Instance
 // @Accept json
 // @Produce json

@@ -329,12 +329,27 @@ definitions:
       Connected:
         example: true
         type: boolean
+      InstanceId:
+        description: InstanceId is the canonical ID of the instance selected by the
+          authenticated instance token.
+        example: d2b52b8b-64ce-4eae-a2bb-33a7fd6ae4ce
+        type: string
+      InstanceName:
+        description: InstanceName is the configured administrative instance name.
+          Legacy records without a name fall back to InstanceId.
+        example: Nibi EU
+        type: string
       LoggedIn:
         example: true
         type: boolean
       Name:
+        description: Name is the WhatsApp provider push name when the runtime is logged
+          in. It is empty when no provider profile is available.
         example: My WhatsApp
         type: string
+    required:
+    - InstanceId
+    - InstanceName
     type: object
   apidocs.StatusResponse:
     properties:
@@ -10538,7 +10553,10 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get instance status
+      description: Gets connection state plus the canonical ID and configured administrative
+        name selected by the authenticated instance token. Name remains the WhatsApp
+        provider push name and may be empty; InstanceName falls back to InstanceId
+        for legacy records.
       produces:
       - application/json
       responses:
