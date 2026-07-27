@@ -483,7 +483,7 @@ definitions:
   github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign:
     properties:
       contentType:
-        type: string
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType'
       createdAt:
         type: string
       finishedAt:
@@ -515,6 +515,14 @@ definitions:
       version:
         type: integer
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType:
+    enum:
+    - text
+    - image
+    type: string
+    x-enum-varnames:
+    - CampaignContentText
+    - CampaignContentImage
   github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignStatus:
     enum:
     - draft
@@ -647,6 +655,27 @@ definitions:
     x-enum-varnames:
     - RecipientTargetDirect
     - RecipientTargetGroup
+  github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignContent:
+    properties:
+      caption:
+        type: string
+      height:
+        type: integer
+      mediaId:
+        type: string
+      mimeType:
+        type: string
+      sha256:
+        type: string
+      size:
+        type: integer
+      text:
+        type: string
+      type:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType'
+      width:
+        type: integer
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignDetail:
     properties:
       byStatus:
@@ -655,6 +684,8 @@ definitions:
         type: object
       campaign:
         $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign'
+      content:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignContent'
       needsAttention:
         type: boolean
       pauseReason:
@@ -672,8 +703,10 @@ definitions:
     type: object
   github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignSummary:
     properties:
+      content:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignContent'
       contentType:
-        type: string
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType'
       createdAt:
         type: string
       finishedAt:
@@ -2167,6 +2200,19 @@ definitions:
       time.Time:
         type: string
     type: object
+  pkg_campaign_handler.CampaignContentRequest:
+    properties:
+      caption:
+        type: string
+      mediaId:
+        type: string
+      text:
+        type: string
+      type:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType'
+    required:
+    - type
+    type: object
   pkg_campaign_handler.CampaignRecipientConsent:
     properties:
       jid:
@@ -2198,6 +2244,8 @@ definitions:
     type: object
   pkg_campaign_handler.CreateCampaignRequest:
     properties:
+      content:
+        $ref: '#/definitions/pkg_campaign_handler.CampaignContentRequest'
       name:
         type: string
       recipients:
@@ -2210,7 +2258,6 @@ definitions:
         type: string
     required:
     - name
-    - text
     type: object
   pkg_campaign_handler.ScheduleCampaignRequest:
     properties:
@@ -9021,9 +9068,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a text campaign draft. Group-list targets are available
-        when WA_CAMPAIGN_GROUP_TARGETS_ENABLED is true. Existing direct recipients
-        remain available behind WA_CAMPAIGN_DIRECT_CREATE_ENABLED during migration.
+      description: Creates a text or image campaign draft. Legacy top-level text remains
+        readable for compatibility. Image creation stays disabled until the complete
+        delivery stack is enabled.
       parameters:
       - description: Campaign draft
         in: body

@@ -307,7 +307,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Creates a text campaign draft. Group-list targets are available when WA_CAMPAIGN_GROUP_TARGETS_ENABLED is true. Existing direct recipients remain available behind WA_CAMPAIGN_DIRECT_CREATE_ENABLED during migration.",
+                "description": "Creates a text or image campaign draft. Legacy top-level text remains readable for compatibility. Image creation stays disabled until the complete delivery stack is enabled.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8227,7 +8227,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "contentType": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType"
                 },
                 "createdAt": {
                     "type": "string"
@@ -8275,6 +8275,17 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType": {
+            "type": "string",
+            "enum": [
+                "text",
+                "image"
+            ],
+            "x-enum-varnames": [
+                "CampaignContentText",
+                "CampaignContentImage"
+            ]
         },
         "github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignStatus": {
             "type": "string",
@@ -8457,6 +8468,38 @@ const docTemplate = `{
                 "RecipientTargetGroup"
             ]
         },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignContent": {
+            "type": "object",
+            "properties": {
+                "caption": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "mediaId": {
+                    "type": "string"
+                },
+                "mimeType": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignDetail": {
             "type": "object",
             "properties": {
@@ -8468,6 +8511,9 @@ const docTemplate = `{
                 },
                 "campaign": {
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign"
+                },
+                "content": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignContent"
                 },
                 "needsAttention": {
                     "type": "boolean"
@@ -8495,8 +8541,11 @@ const docTemplate = `{
         "github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignSummary": {
             "type": "object",
             "properties": {
+                "content": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignContent"
+                },
                 "contentType": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType"
                 },
                 "createdAt": {
                     "type": "string"
@@ -10706,6 +10755,26 @@ const docTemplate = `{
                 }
             }
         },
+        "pkg_campaign_handler.CampaignContentRequest": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "caption": {
+                    "type": "string"
+                },
+                "mediaId": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignContentType"
+                }
+            }
+        },
         "pkg_campaign_handler.CampaignRecipientConsent": {
             "type": "object",
             "required": [
@@ -10751,10 +10820,12 @@ const docTemplate = `{
         "pkg_campaign_handler.CreateCampaignRequest": {
             "type": "object",
             "required": [
-                "name",
-                "text"
+                "name"
             ],
             "properties": {
+                "content": {
+                    "$ref": "#/definitions/pkg_campaign_handler.CampaignContentRequest"
+                },
                 "name": {
                     "type": "string"
                 },

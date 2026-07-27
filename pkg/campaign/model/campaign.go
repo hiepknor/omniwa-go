@@ -8,6 +8,7 @@ import (
 type CampaignStatus string
 type CampaignTargetType string
 type RecipientTargetType string
+type CampaignContentType string
 
 const (
 	CampaignStatusDraft     CampaignStatus      = "draft"
@@ -21,6 +22,8 @@ const (
 	CampaignTargetGroupList CampaignTargetType  = "group_list"
 	RecipientTargetDirect   RecipientTargetType = "direct"
 	RecipientTargetGroup    RecipientTargetType = "group"
+	CampaignContentText     CampaignContentType = "text"
+	CampaignContentImage    CampaignContentType = "image"
 )
 
 type RecipientStatus string
@@ -37,27 +40,33 @@ const (
 )
 
 type Campaign struct {
-	ID                    string             `json:"id" gorm:"column:id;type:uuid;primaryKey"`
-	InstanceID            string             `json:"instanceId" gorm:"column:instance_id;type:uuid;not null"`
-	Name                  string             `json:"name" gorm:"column:name;size:255;not null"`
-	Status                CampaignStatus     `json:"status" gorm:"column:status;size:32;not null"`
-	ContentType           string             `json:"contentType" gorm:"column:content_type;size:32;not null"`
-	TextBody              string             `json:"textBody" gorm:"column:text_body;type:text;not null"`
-	TargetType            CampaignTargetType `json:"targetType" gorm:"column:target_type;size:32;not null"`
-	GroupListID           *string            `json:"-" gorm:"column:group_list_id;type:uuid"`
-	GroupListNameSnapshot *string            `json:"-" gorm:"column:group_list_name_snapshot;size:255"`
-	GroupListVersion      *int64             `json:"-" gorm:"column:group_list_version"`
-	StartsAt              *time.Time         `json:"startsAt,omitempty" gorm:"column:starts_at"`
-	FinishedAt            *time.Time         `json:"finishedAt,omitempty" gorm:"column:finished_at"`
-	StatusReason          *string            `json:"statusReason,omitempty" gorm:"column:status_reason;size:64"`
-	PauseReason           *string            `json:"pauseReason,omitempty" gorm:"column:pause_reason;size:64"`
-	RetryAt               *time.Time         `json:"retryAt,omitempty" gorm:"column:retry_at"`
-	NeedsAttention        bool               `json:"needsAttention" gorm:"column:needs_attention;not null"`
-	FailureSignalCount    int                `json:"-" gorm:"column:failure_signal_count;not null"`
-	RateLimitSignalCount  int                `json:"-" gorm:"column:rate_limit_signal_count;not null"`
-	Version               int64              `json:"version" gorm:"column:version;not null"`
-	CreatedAt             time.Time          `json:"createdAt"`
-	UpdatedAt             time.Time          `json:"updatedAt"`
+	ID                    string              `json:"id" gorm:"column:id;type:uuid;primaryKey"`
+	InstanceID            string              `json:"instanceId" gorm:"column:instance_id;type:uuid;not null"`
+	Name                  string              `json:"name" gorm:"column:name;size:255;not null"`
+	Status                CampaignStatus      `json:"status" gorm:"column:status;size:32;not null"`
+	ContentType           CampaignContentType `json:"contentType" gorm:"column:content_type;size:32;not null"`
+	TextBody              string              `json:"textBody" gorm:"column:text_body;type:text;not null"`
+	MediaAssetID          *string             `json:"-" gorm:"column:media_asset_id;type:uuid"`
+	MediaMIMEType         *string             `json:"-" gorm:"column:media_mime_type;size:128"`
+	MediaSizeBytes        *int64              `json:"-" gorm:"column:media_size_bytes"`
+	MediaWidth            *int                `json:"-" gorm:"column:media_width"`
+	MediaHeight           *int                `json:"-" gorm:"column:media_height"`
+	MediaSHA256           *string             `json:"-" gorm:"column:media_sha256;size:64"`
+	TargetType            CampaignTargetType  `json:"targetType" gorm:"column:target_type;size:32;not null"`
+	GroupListID           *string             `json:"-" gorm:"column:group_list_id;type:uuid"`
+	GroupListNameSnapshot *string             `json:"-" gorm:"column:group_list_name_snapshot;size:255"`
+	GroupListVersion      *int64              `json:"-" gorm:"column:group_list_version"`
+	StartsAt              *time.Time          `json:"startsAt,omitempty" gorm:"column:starts_at"`
+	FinishedAt            *time.Time          `json:"finishedAt,omitempty" gorm:"column:finished_at"`
+	StatusReason          *string             `json:"statusReason,omitempty" gorm:"column:status_reason;size:64"`
+	PauseReason           *string             `json:"pauseReason,omitempty" gorm:"column:pause_reason;size:64"`
+	RetryAt               *time.Time          `json:"retryAt,omitempty" gorm:"column:retry_at"`
+	NeedsAttention        bool                `json:"needsAttention" gorm:"column:needs_attention;not null"`
+	FailureSignalCount    int                 `json:"-" gorm:"column:failure_signal_count;not null"`
+	RateLimitSignalCount  int                 `json:"-" gorm:"column:rate_limit_signal_count;not null"`
+	Version               int64               `json:"version" gorm:"column:version;not null"`
+	CreatedAt             time.Time           `json:"createdAt"`
+	UpdatedAt             time.Time           `json:"updatedAt"`
 }
 
 func (Campaign) TableName() string { return "campaigns" }

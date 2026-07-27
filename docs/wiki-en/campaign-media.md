@@ -1,10 +1,10 @@
 # Campaign media assets
 
 Campaign media assets are immutable, instance-scoped images uploaded from a
-device before an image campaign is created. The upload foundation is separate
-from campaign delivery: enabling these routes alone does **not** mean the server
-can create or send image campaigns, and it does not advertise
-`campaign_image_content`.
+device before an image campaign is created. The campaign API accepts their IDs
+through the typed image content contract, but creation and transitions remain
+disabled until the delivery stage is enabled. Upload availability alone does
+not advertise `campaign_image_content`.
 
 ## Deployment prerequisites
 
@@ -71,7 +71,8 @@ returned. `Idempotency-Key` is scoped to the authenticated instance; only its
 SHA-256 digest is persisted.
 
 Use `GET /campaign-media/{mediaId}` to poll metadata after an idempotent replay.
-Use `DELETE /campaign-media/{mediaId}` to remove an unbound asset. Cross-instance
+Use `DELETE /campaign-media/{mediaId}` to remove an unbound asset. An asset
+referenced by a campaign returns `campaign_media_conflict`. Cross-instance
 reads return `campaign_media_not_found`.
 
 ## Lifecycle and operations

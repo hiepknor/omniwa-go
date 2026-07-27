@@ -19,6 +19,7 @@ var (
 	ErrInvalidCampaignCursor        = errors.New("invalid campaign cursor")
 	ErrDirectCampaignCreateDisabled = errors.New("direct campaign creation is disabled")
 	ErrGroupCampaignTargetsDisabled = errors.New("group campaign targets are not enabled")
+	ErrImageCampaignContentDisabled = errors.New("image campaign content is not enabled")
 )
 
 const campaignCursorVersion = 1
@@ -27,6 +28,7 @@ type ManagementService struct {
 	repository          campaign_repository.CampaignRepository
 	directCreateEnabled bool
 	groupTargetsEnabled bool
+	imageContentEnabled bool
 }
 
 type ManagementOption func(*ManagementService)
@@ -39,6 +41,10 @@ func WithGroupTargetsEnabled(enabled bool) ManagementOption {
 	return func(service *ManagementService) { service.groupTargetsEnabled = enabled }
 }
 
+func WithImageContentEnabled(enabled bool) ManagementOption {
+	return func(service *ManagementService) { service.imageContentEnabled = enabled }
+}
+
 type GroupListTargetInput struct {
 	Type             campaign_model.CampaignTargetType
 	GroupListID      string
@@ -46,12 +52,26 @@ type GroupListTargetInput struct {
 }
 
 type CreateCampaignInput struct {
-	Name        string
-	TextBody    string
-	Target      *GroupListTargetInput
-	Recipients  []campaign_repository.RecipientConsent
-	InstanceJID string
-	Actor       campaign_repository.Actor
+	Name         string
+	ContentType  campaign_model.CampaignContentType
+	TextBody     string
+	MediaAssetID string
+	Target       *GroupListTargetInput
+	Recipients   []campaign_repository.RecipientConsent
+	InstanceJID  string
+	Actor        campaign_repository.Actor
+}
+
+type CampaignContent struct {
+	Type      campaign_model.CampaignContentType `json:"type"`
+	Text      *string                            `json:"text,omitempty"`
+	MediaID   *string                            `json:"mediaId,omitempty"`
+	Caption   *string                            `json:"caption,omitempty"`
+	MIMEType  *string                            `json:"mimeType,omitempty"`
+	SizeBytes *int64                             `json:"size,omitempty"`
+	Width     *int                               `json:"width,omitempty"`
+	Height    *int                               `json:"height,omitempty"`
+	SHA256    *string                            `json:"sha256,omitempty"`
 }
 
 type CampaignTarget struct {
@@ -78,6 +98,7 @@ type Progress struct {
 
 type CampaignDetail struct {
 	Campaign       *campaign_model.Campaign                 `json:"campaign"`
+	Content        CampaignContent                          `json:"content"`
 	RecipientCount int64                                    `json:"recipientCount"`
 	ByStatus       map[campaign_model.RecipientStatus]int64 `json:"byStatus"`
 	Target         CampaignTarget                           `json:"target"`
@@ -90,12 +111,13 @@ type CampaignDetail struct {
 
 type CampaignSummary struct {
 	campaign_model.Campaign
-	Target         CampaignTarget `json:"target"`
-	Progress       Progress       `json:"progress"`
-	StatusReason   *string        `json:"statusReason"`
-	PauseReason    *string        `json:"pauseReason"`
-	RetryAt        *time.Time     `json:"retryAt"`
-	NeedsAttention bool           `json:"needsAttention"`
+	Content        CampaignContent `json:"content"`
+	Target         CampaignTarget  `json:"target"`
+	Progress       Progress        `json:"progress"`
+	StatusReason   *string         `json:"statusReason"`
+	PauseReason    *string         `json:"pauseReason"`
+	RetryAt        *time.Time      `json:"retryAt"`
+	NeedsAttention bool            `json:"needsAttention"`
 }
 
 type CampaignList struct {
@@ -136,6 +158,9 @@ func (s *ManagementService) Create(ctx context.Context, instanceID string, input
 	if (input.Target == nil) == (len(input.Recipients) == 0) {
 		return nil, campaign_repository.ErrInvalidCampaignInput
 	}
+	if input.ContentType == campaign_model.CampaignContentImage && !s.imageContentEnabled {
+		return nil, ErrImageCampaignContentDisabled
+	}
 	var campaign *campaign_model.Campaign
 	var recipients []campaign_model.Recipient
 	var err error
@@ -147,7 +172,7 @@ func (s *ManagementService) Create(ctx context.Context, instanceID string, input
 			return nil, campaign_repository.ErrInvalidCampaignInput
 		}
 		campaign, recipients, err = s.repository.CreateGroupDraft(ctx, instanceID, campaign_repository.GroupDraftInput{
-			Name: input.Name, TextBody: input.TextBody, GroupListID: input.Target.GroupListID,
+			Name: input.Name, ContentType: input.ContentType, TextBody: input.TextBody, MediaAssetID: input.MediaAssetID, GroupListID: input.Target.GroupListID,
 			GroupListVersion: input.Target.GroupListVersion, InstanceJID: input.InstanceJID, Actor: input.Actor,
 		})
 	} else {
@@ -155,7 +180,7 @@ func (s *ManagementService) Create(ctx context.Context, instanceID string, input
 			return nil, ErrDirectCampaignCreateDisabled
 		}
 		campaign, recipients, err = s.repository.CreateDraft(ctx, instanceID, campaign_repository.DraftInput{
-			Name: input.Name, TextBody: input.TextBody, Recipients: input.Recipients, Actor: input.Actor,
+			Name: input.Name, ContentType: input.ContentType, TextBody: input.TextBody, MediaAssetID: input.MediaAssetID, Recipients: input.Recipients, Actor: input.Actor,
 		})
 	}
 	if err != nil {
@@ -215,7 +240,7 @@ func (s *ManagementService) List(ctx context.Context, instanceID string, status 
 			campaign := page.Items[index]
 			detail := campaignDetail(&campaign, snapshots[campaign.ID])
 			result.Items[index] = CampaignSummary{
-				Campaign: campaign, Target: detail.Target, Progress: detail.Progress,
+				Campaign: campaign, Content: detail.Content, Target: detail.Target, Progress: detail.Progress,
 				StatusReason: detail.StatusReason, PauseReason: detail.PauseReason, RetryAt: detail.RetryAt, NeedsAttention: detail.NeedsAttention,
 			}
 		}
@@ -288,6 +313,9 @@ func (s *ManagementService) Transition(ctx context.Context, instanceID, campaign
 	if err != nil {
 		return nil, err
 	}
+	if stored.ContentType == campaign_model.CampaignContentImage && !s.imageContentEnabled {
+		return nil, ErrImageCampaignContentDisabled
+	}
 	var campaign *campaign_model.Campaign
 	if stored.TargetType == campaign_model.CampaignTargetGroupList && target == campaign_model.CampaignStatusRunning {
 		if !s.groupTargetsEnabled {
@@ -355,9 +383,26 @@ func campaignDetail(campaign *campaign_model.Campaign, snapshot campaign_reposit
 		target.GroupListVersion = campaign.GroupListVersion
 	}
 	return &CampaignDetail{
-		Campaign: campaign, RecipientCount: total, ByStatus: counts, Target: target, Progress: progress,
+		Campaign: campaign, Content: campaignContent(campaign), RecipientCount: total, ByStatus: counts, Target: target, Progress: progress,
 		StatusReason: campaign.StatusReason, PauseReason: campaign.PauseReason, RetryAt: retryAt, NeedsAttention: campaign.NeedsAttention,
 	}
+}
+
+func campaignContent(campaign *campaign_model.Campaign) CampaignContent {
+	content := CampaignContent{Type: campaign.ContentType}
+	if content.Type == campaign_model.CampaignContentImage {
+		caption := campaign.TextBody
+		content.MediaID, content.Caption = campaign.MediaAssetID, &caption
+		content.MIMEType, content.SizeBytes = campaign.MediaMIMEType, campaign.MediaSizeBytes
+		content.Width, content.Height, content.SHA256 = campaign.MediaWidth, campaign.MediaHeight, campaign.MediaSHA256
+		return content
+	}
+	if content.Type == "" {
+		content.Type = campaign_model.CampaignContentText
+	}
+	text := campaign.TextBody
+	content.Text = &text
+	return content
 }
 
 func earliestTime(values ...*time.Time) *time.Time {

@@ -913,6 +913,48 @@ CREATE INDEX campaign_media_assets_instance_page_idx
 ON campaign_media_assets (instance_id, created_at DESC, id DESC)
 WHERE deleted_at IS NULL;`,
 	},
+	{
+		Version: 25,
+		Name:    "add_campaign_image_content_contract",
+		SQL: `ALTER TABLE campaigns
+    DROP CONSTRAINT campaigns_content_type_check,
+    DROP CONSTRAINT campaigns_text_body_check,
+    ADD COLUMN media_asset_id UUID NULL,
+    ADD COLUMN media_mime_type VARCHAR(128) NULL,
+    ADD COLUMN media_size_bytes BIGINT NULL,
+    ADD COLUMN media_width INTEGER NULL,
+    ADD COLUMN media_height INTEGER NULL,
+    ADD COLUMN media_sha256 VARCHAR(64) NULL,
+    ADD CONSTRAINT campaigns_content_type_check CHECK (content_type IN ('text', 'image')),
+    ADD CONSTRAINT campaigns_text_body_check CHECK (
+        (content_type = 'text' AND CHAR_LENGTH(text_body) BETWEEN 1 AND 4096)
+        OR (content_type = 'image' AND CHAR_LENGTH(text_body) <= 1024)
+    ),
+    ADD CONSTRAINT campaigns_media_asset_fk FOREIGN KEY (media_asset_id, instance_id)
+        REFERENCES campaign_media_assets(id, instance_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT campaigns_content_shape_check CHECK (
+        (content_type = 'text'
+            AND BTRIM(text_body) <> ''
+            AND media_asset_id IS NULL
+            AND media_mime_type IS NULL
+            AND media_size_bytes IS NULL
+            AND media_width IS NULL
+            AND media_height IS NULL
+            AND media_sha256 IS NULL)
+        OR
+        (content_type = 'image'
+            AND CHAR_LENGTH(text_body) <= 1024
+            AND media_asset_id IS NOT NULL
+            AND media_mime_type IN ('image/jpeg', 'image/png')
+            AND media_size_bytes BETWEEN 1 AND 67108864
+            AND media_width BETWEEN 1 AND 32768
+            AND media_height BETWEEN 1 AND 32768
+            AND media_sha256 ~ '^[0-9a-f]{64}$')
+    );
+CREATE INDEX campaigns_media_asset_idx
+ON campaigns (instance_id, media_asset_id)
+WHERE media_asset_id IS NOT NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

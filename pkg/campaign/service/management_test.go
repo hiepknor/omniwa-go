@@ -17,24 +17,49 @@ type managementRepositoryStub struct {
 	campaign_repository.CampaignRepository
 	directCalls int
 	groupCalls  int
+	directInput campaign_repository.DraftInput
+	groupInput  campaign_repository.GroupDraftInput
 	campaigns   []campaign_model.Campaign
 	snapshots   map[string]campaign_repository.RecipientProgress
 }
 
 func (stub *managementRepositoryStub) CreateDraft(_ context.Context, instanceID string, input campaign_repository.DraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error) {
 	stub.directCalls++
-	campaign := &campaign_model.Campaign{ID: uuid.NewString(), InstanceID: instanceID, TargetType: campaign_model.CampaignTargetDirect, UpdatedAt: time.Unix(100, 0)}
+	stub.directInput = input
+	campaign := &campaign_model.Campaign{ID: uuid.NewString(), InstanceID: instanceID, ContentType: input.ContentType, TextBody: input.TextBody, TargetType: campaign_model.CampaignTargetDirect, UpdatedAt: time.Unix(100, 0)}
+	if input.ContentType == campaign_model.CampaignContentImage {
+		campaign.MediaAssetID = &input.MediaAssetID
+	}
 	return campaign, []campaign_model.Recipient{{Status: campaign_model.RecipientStatusPending}}, nil
 }
 
 func (stub *managementRepositoryStub) CreateGroupDraft(_ context.Context, instanceID string, input campaign_repository.GroupDraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error) {
 	stub.groupCalls++
+	stub.groupInput = input
 	name, version := "Branches", input.GroupListVersion
 	campaign := &campaign_model.Campaign{
 		ID: uuid.NewString(), InstanceID: instanceID, TargetType: campaign_model.CampaignTargetGroupList,
 		GroupListID: &input.GroupListID, GroupListNameSnapshot: &name, GroupListVersion: &version, UpdatedAt: time.Unix(100, 0),
 	}
 	return campaign, []campaign_model.Recipient{{Status: campaign_model.RecipientStatusPending}}, nil
+}
+
+func TestImageCampaignCreateIsGatedAndPreservesMediaReferenceAndCaption(t *testing.T) {
+	instanceID, mediaID := uuid.NewString(), uuid.NewString()
+	input := CreateCampaignInput{
+		Name: "Image", ContentType: campaign_model.CampaignContentImage, MediaAssetID: mediaID, TextBody: "Optional caption",
+		Recipients: []campaign_repository.RecipientConsent{{JID: "1@s.whatsapp.net"}}, Actor: campaign_repository.Actor{Type: "system"},
+	}
+	repository := &managementRepositoryStub{}
+	if _, err := NewManagementService(repository).Create(context.Background(), instanceID, input); !errors.Is(err, ErrImageCampaignContentDisabled) || repository.directCalls != 0 {
+		t.Fatalf("disabled image create err=%v calls=%d", err, repository.directCalls)
+	}
+	detail, err := NewManagementService(repository, WithImageContentEnabled(true)).Create(context.Background(), instanceID, input)
+	if err != nil || repository.directInput.MediaAssetID != mediaID || repository.directInput.TextBody != "Optional caption" ||
+		detail.Content.Type != campaign_model.CampaignContentImage || detail.Content.MediaID == nil || *detail.Content.MediaID != mediaID ||
+		detail.Content.Caption == nil || *detail.Content.Caption != "Optional caption" {
+		t.Fatalf("detail=%+v input=%+v err=%v", detail, repository.directInput, err)
+	}
 }
 
 func (stub *managementRepositoryStub) ListCampaigns(_ context.Context, _ string, _ campaign_model.CampaignStatus, _ int, _ *campaign_repository.CampaignCursor) (*campaign_repository.CampaignPage, error) {

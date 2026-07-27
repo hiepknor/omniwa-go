@@ -44,15 +44,19 @@ type RecipientConsent struct {
 }
 
 type DraftInput struct {
-	Name       string
-	TextBody   string
-	Recipients []RecipientConsent
-	Actor      Actor
+	Name         string
+	ContentType  campaign_model.CampaignContentType
+	TextBody     string
+	MediaAssetID string
+	Recipients   []RecipientConsent
+	Actor        Actor
 }
 
 type GroupDraftInput struct {
 	Name             string
+	ContentType      campaign_model.CampaignContentType
 	TextBody         string
+	MediaAssetID     string
 	GroupListID      string
 	GroupListVersion int64
 	InstanceJID      string
@@ -129,20 +133,32 @@ func (r *campaignRepository) CreateDraft(ctx context.Context, instanceID string,
 	now := r.now().UTC()
 	campaign := &campaign_model.Campaign{
 		ID: campaignID, InstanceID: instanceID, Name: name, Status: campaign_model.CampaignStatusDraft,
-		ContentType: "text", TextBody: input.TextBody, TargetType: campaign_model.CampaignTargetDirect, Version: 1, CreatedAt: now, UpdatedAt: now,
+		TargetType: campaign_model.CampaignTargetDirect, Version: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	recipients, err := buildRecipients(campaign, input.Recipients, now)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", ErrInvalidCampaignInput, err)
 	}
-	audit := newAuditEvent(campaign, nil, "created", input.Actor.Type, actorHash, "", string(campaign.Status), now)
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := applyCampaignContent(tx, instanceID, campaign, input.ContentType, input.TextBody, input.MediaAssetID); err != nil {
+			return err
+		}
 		if err := tx.Create(campaign).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&recipients).Error; err != nil {
 			return err
 		}
+		audit := newAuditEvent(campaign, nil, "created", input.Actor.Type, actorHash, "", string(campaign.Status), now)
+		metadata := map[string]any{"targetType": "direct", "targetCount": len(recipients), "contentType": campaign.ContentType}
+		if campaign.MediaAssetID != nil {
+			metadata["mediaAssetId"] = *campaign.MediaAssetID
+		}
+		encoded, err := json.Marshal(metadata)
+		if err != nil {
+			return err
+		}
+		audit.Metadata = encoded
 		return tx.Create(audit).Error
 	})
 	if err != nil {
@@ -319,7 +335,14 @@ func validateDraftInput(input *DraftInput, scope string) (string, *string, error
 	if len(input.Recipients) == 0 || len(input.Recipients) > maxCampaignRecipients {
 		return "", nil, errors.New("campaign name, bounded text, and recipients are required")
 	}
-	return validateCampaignContent(input.Name, input.TextBody, input.Actor, scope)
+	name, actorHash, err := validateCampaignIdentity(input.Name, input.Actor, scope)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := validateCampaignContentInput(input.ContentType, input.TextBody, input.MediaAssetID); err != nil {
+		return "", nil, err
+	}
+	return name, actorHash, nil
 }
 
 func hashReference(scope, value string) string {

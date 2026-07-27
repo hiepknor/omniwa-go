@@ -51,9 +51,17 @@ type campaignHandler struct{ service managementService }
 
 type CreateCampaignRequest struct {
 	Name       string                     `json:"name" binding:"required"`
-	Text       string                     `json:"text" binding:"required"`
+	Text       string                     `json:"text,omitempty"`
+	Content    *CampaignContentRequest    `json:"content,omitempty"`
 	Target     *CampaignTargetRequest     `json:"target,omitempty"`
 	Recipients []CampaignRecipientConsent `json:"recipients,omitempty"`
+}
+
+type CampaignContentRequest struct {
+	Type    campaign_model.CampaignContentType `json:"type" binding:"required"`
+	Text    string                             `json:"text,omitempty"`
+	MediaID string                             `json:"mediaId,omitempty"`
+	Caption string                             `json:"caption,omitempty"`
 }
 
 type CampaignTargetRequest struct {
@@ -79,7 +87,7 @@ func NewCampaignHandler(service managementService) CampaignHandler {
 
 // Create creates a campaign draft.
 // @Summary Create campaign draft
-// @Description Creates a text campaign draft. Group-list targets are available when WA_CAMPAIGN_GROUP_TARGETS_ENABLED is true. Existing direct recipients remain available behind WA_CAMPAIGN_DIRECT_CREATE_ENABLED during migration.
+// @Description Creates a text or image campaign draft. Legacy top-level text remains readable for compatibility. Image creation stays disabled until the complete delivery stack is enabled.
 // @Tags Campaigns
 // @Accept json
 // @Produce json
@@ -113,8 +121,36 @@ func (h *campaignHandler) Create(ctx *gin.Context) {
 			Type: request.Target.Type, GroupListID: request.Target.GroupListID, GroupListVersion: request.Target.GroupListVersion,
 		}
 	}
+	contentType := campaign_model.CampaignContentText
+	textBody := request.Text
+	mediaAssetID := ""
+	if request.Content != nil {
+		if request.Text != "" {
+			writeCampaignError(ctx, campaign_repository.ErrInvalidCampaignInput)
+			return
+		}
+		contentType = request.Content.Type
+		switch contentType {
+		case campaign_model.CampaignContentText:
+			textBody = request.Content.Text
+			if request.Content.MediaID != "" || request.Content.Caption != "" {
+				writeCampaignError(ctx, campaign_repository.ErrInvalidCampaignInput)
+				return
+			}
+		case campaign_model.CampaignContentImage:
+			textBody, mediaAssetID = request.Content.Caption, request.Content.MediaID
+			if request.Content.Text != "" {
+				writeCampaignError(ctx, campaign_repository.ErrInvalidCampaignInput)
+				return
+			}
+		default:
+			writeCampaignError(ctx, campaign_repository.ErrInvalidCampaignInput)
+			return
+		}
+	}
 	detail, err := h.service.Create(ctx.Request.Context(), instance.Id, campaign_service.CreateCampaignInput{
-		Name: request.Name, TextBody: request.Text, Target: target, Recipients: recipients, InstanceJID: instance.Jid, Actor: instanceActor(ctx),
+		Name: request.Name, ContentType: contentType, TextBody: textBody, MediaAssetID: mediaAssetID,
+		Target: target, Recipients: recipients, InstanceJID: instance.Jid, Actor: instanceActor(ctx),
 	})
 	if err != nil {
 		writeCampaignError(ctx, err)
@@ -387,6 +423,12 @@ func writeCampaignError(ctx *gin.Context, err error) {
 		ctx.JSON(http.StatusConflict, gin.H{"error": "direct campaign creation is disabled", "code": "campaign_direct_create_disabled"})
 	case errors.Is(err, campaign_service.ErrGroupCampaignTargetsDisabled):
 		ctx.JSON(http.StatusConflict, gin.H{"error": "group campaign targets are not enabled", "code": "campaign_group_targets_disabled"})
+	case errors.Is(err, campaign_service.ErrImageCampaignContentDisabled):
+		ctx.JSON(http.StatusConflict, gin.H{"error": "image campaign content is not enabled", "code": "campaign_image_content_disabled"})
+	case errors.Is(err, campaign_repository.ErrMediaAssetNotFound):
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "campaign media not found", "code": "campaign_media_not_found"})
+	case errors.Is(err, campaign_repository.ErrMediaAssetConflict):
+		ctx.JSON(http.StatusConflict, gin.H{"error": "campaign media is not ready", "code": "campaign_media_not_ready"})
 	case errors.Is(err, group_list_repository.ErrNotFound):
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "group list not found", "code": "group_list_not_found"})
 	case errors.Is(err, group_list_repository.ErrVersionConflict):

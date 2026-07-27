@@ -25,8 +25,11 @@ func (r *campaignRepository) CreateGroupDraft(ctx context.Context, instanceID st
 	}
 	campaignID := uuid.NewString()
 	input.Actor.Type = strings.TrimSpace(input.Actor.Type)
-	name, actorHash, err := validateCampaignContent(input.Name, input.TextBody, input.Actor, campaignID)
+	name, actorHash, err := validateCampaignIdentity(input.Name, input.Actor, campaignID)
 	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", ErrInvalidCampaignInput, err)
+	}
+	if err := validateCampaignContentInput(input.ContentType, input.TextBody, input.MediaAssetID); err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", ErrInvalidCampaignInput, err)
 	}
 	now := r.now().UTC()
@@ -80,9 +83,12 @@ func (r *campaignRepository) CreateGroupDraft(ctx context.Context, instanceID st
 		}
 		campaign = campaign_model.Campaign{
 			ID: campaignID, InstanceID: instanceID, Name: name, Status: campaign_model.CampaignStatusDraft,
-			ContentType: "text", TextBody: input.TextBody, TargetType: campaign_model.CampaignTargetGroupList,
+			TargetType:  campaign_model.CampaignTargetGroupList,
 			GroupListID: &list.ID, GroupListNameSnapshot: &list.Name, GroupListVersion: &list.Version,
 			Version: 1, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := applyCampaignContent(tx, instanceID, &campaign, input.ContentType, input.TextBody, input.MediaAssetID); err != nil {
+			return err
 		}
 		recipients = make([]campaign_model.Recipient, len(targets))
 		seen := make(map[string]struct{}, len(targets))
@@ -124,6 +130,7 @@ func (r *campaignRepository) CreateGroupDraft(ctx context.Context, instanceID st
 		}
 		metadata, err := json.Marshal(map[string]any{
 			"targetType": "group_list", "groupListId": list.ID, "groupListVersion": list.Version, "targetCount": len(recipients),
+			"contentType": campaign.ContentType, "mediaAssetId": campaign.MediaAssetID,
 		})
 		if err != nil {
 			return err
@@ -150,10 +157,10 @@ func canonicalGroupTargetJID(value string) (string, error) {
 	return canonical, nil
 }
 
-func validateCampaignContent(name, text string, actor Actor, scope string) (string, *string, error) {
+func validateCampaignIdentity(name string, actor Actor, scope string) (string, *string, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || len([]rune(name)) > 255 || strings.TrimSpace(text) == "" || len([]rune(text)) > 4096 {
-		return "", nil, errors.New("campaign name and bounded text are required")
+	if name == "" || len([]rune(name)) > 255 {
+		return "", nil, errors.New("bounded campaign name is required")
 	}
 	actor.Type = strings.TrimSpace(actor.Type)
 	actorHash, err := validateActor(actor, scope)
