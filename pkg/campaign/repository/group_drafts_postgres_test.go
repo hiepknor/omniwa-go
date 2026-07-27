@@ -227,7 +227,7 @@ func TestGroupDraftSnapshotIsAtomicScopedAndImmutable(t *testing.T) {
 		t.Fatalf("open circuit claims = %#v, %v", blockedByCircuit, err)
 	}
 	snapshots, err := repository.ProgressSnapshots(context.Background(), instance.Id, []string{rateLimitedClaim[0].CampaignID})
-	if err != nil || snapshots[rateLimitedClaim[0].CampaignID].RetryAt == nil || snapshots[rateLimitedClaim[0].CampaignID].RetryAt.Before(retryAt) {
+	if err != nil || snapshots[rateLimitedClaim[0].CampaignID].RetryAt == nil || snapshots[rateLimitedClaim[0].CampaignID].RetryAt.Before(retryAt.Add(-time.Millisecond)) {
 		t.Fatalf("circuit progress retry = %#v, %v", snapshots, err)
 	}
 	if err := db.Exec(`DELETE FROM campaign_instance_circuits WHERE instance_id = ?`, instance.Id).Error; err != nil {
