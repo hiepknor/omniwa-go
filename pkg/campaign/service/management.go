@@ -144,7 +144,7 @@ type cursorEnvelope struct {
 }
 
 func NewManagementService(repository campaign_repository.CampaignRepository, options ...ManagementOption) *ManagementService {
-	service := &ManagementService{repository: repository, directCreateEnabled: true}
+	service := &ManagementService{repository: repository}
 	for _, option := range options {
 		option(service)
 	}

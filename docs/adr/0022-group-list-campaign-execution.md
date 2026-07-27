@@ -84,13 +84,11 @@ The group creation contract is:
 }
 ```
 
-Clients cannot submit group JID arrays. The legacy direct-recipient request
-remains accepted only during the compatibility window behind an explicit,
-documented rollback flag. The Console switches to the Group List contract before
-that flag is disabled. Disabling legacy creation never prevents reading,
-auditing, or completing existing direct campaigns. A later contract-removal PR
-requires usage evidence and separate approval; it is not hidden in the group
-rollout.
+Clients cannot submit group JID arrays. The legacy direct-recipient request was
+accepted during the compatibility window behind an explicit rollback flag.
+ADR 0027 completes the cutover by disabling that request by default. Disabling
+legacy creation never prevents reading, auditing, or completing existing direct
+campaigns.
 
 The existing direct-JID canonicalizer remains unchanged. A separate group-target
 canonicalizer accepts only non-empty WhatsApp `@g.us` identities and is callable
@@ -252,8 +250,9 @@ Implementation is split into deployable increments:
    there, move the Console, and observe send, skip, pause, retry, circuit, and
    unknown-outcome metrics. Keep `WA_CAMPAIGN_DIRECT_CREATE_ENABLED=true` as the
    compatibility rollback path during this window.
-5. Expand serving, then disable legacy direct creation only after the agreed
-   compatibility window. Destructive cleanup is a separate future decision.
+5. Expand serving, then disable legacy direct creation after the agreed
+   compatibility window. ADR 0027 records this completed admission cutover;
+   destructive cleanup remains a separate future decision.
 
 Each migration is forward-only and safe for an empty or populated database.
 Application rollback leaves additive columns and tables in place and retains the

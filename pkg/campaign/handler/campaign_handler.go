@@ -54,7 +54,7 @@ type CreateCampaignRequest struct {
 	Text       string                     `json:"text,omitempty"`
 	Content    *CampaignContentRequest    `json:"content,omitempty"`
 	Target     *CampaignTargetRequest     `json:"target,omitempty"`
-	Recipients []CampaignRecipientConsent `json:"recipients,omitempty"`
+	Recipients []CampaignRecipientConsent `json:"recipients,omitempty" swaggerignore:"true"`
 }
 
 type CampaignContentRequest struct {
@@ -87,7 +87,7 @@ func NewCampaignHandler(service managementService) CampaignHandler {
 
 // Create creates a campaign draft.
 // @Summary Create campaign draft
-// @Description Creates a text or image campaign draft. Legacy top-level text remains readable for compatibility. Image campaigns require a Group List target and WA_CAMPAIGN_IMAGE_CONTENT_ENABLED.
+// @Description Creates a text or image campaign draft from one Group List snapshot. Legacy top-level text remains readable for compatibility. Image campaigns require WA_CAMPAIGN_IMAGE_CONTENT_ENABLED.
 // @Tags Campaigns
 // @Accept json
 // @Produce json

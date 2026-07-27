@@ -105,8 +105,8 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.GroupListsEnabled {
 		t.Fatal("expected Group Lists to be disabled by default")
 	}
-	if !config.CampaignDirectCreateEnabled {
-		t.Fatal("expected direct campaign creation compatibility to be enabled by default")
+	if config.CampaignDirectCreateEnabled {
+		t.Fatal("expected direct campaign creation to be disabled by default")
 	}
 	if config.CampaignGroupTargetsEnabled || config.CampaignGroupCooldown != time.Hour || config.CampaignCircuitDuration != 5*time.Minute || config.CampaignRatePauseThreshold != 3 || config.CampaignFailurePauseThreshold != 10 {
 		t.Fatalf("group campaign defaults = %t/%v/%v/%d/%d", config.CampaignGroupTargetsEnabled, config.CampaignGroupCooldown, config.CampaignCircuitDuration, config.CampaignRatePauseThreshold, config.CampaignFailurePauseThreshold)
@@ -153,7 +153,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_POLL_INTERVAL, "2s")
 	t.Setenv(config_env.WA_CAMPAIGN_MAX_ATTEMPTS, "5")
 	t.Setenv(config_env.WA_CAMPAIGN_RETRY_BASE, "45s")
-	t.Setenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED, "false")
+	t.Setenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED, "true")
 	t.Setenv(config_env.WA_CAMPAIGN_GROUP_TARGETS_ENABLED, "true")
 	t.Setenv(config_env.WA_CAMPAIGN_GROUP_COOLDOWN, "2h")
 	t.Setenv(config_env.WA_CAMPAIGN_CIRCUIT_DURATION, "7m")
@@ -231,8 +231,8 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	if !config.GroupListsEnabled {
 		t.Fatal("expected Group Lists feature flag override to be enabled")
 	}
-	if config.CampaignDirectCreateEnabled {
-		t.Fatal("expected direct campaign creation override to be disabled")
+	if !config.CampaignDirectCreateEnabled {
+		t.Fatal("expected direct campaign creation emergency override to be enabled")
 	}
 	if !config.CampaignGroupTargetsEnabled || config.CampaignGroupCooldown != 2*time.Hour || config.CampaignCircuitDuration != 7*time.Minute || config.CampaignRatePauseThreshold != 4 || config.CampaignFailurePauseThreshold != 12 {
 		t.Fatalf("group campaign overrides = %t/%v/%v/%d/%d", config.CampaignGroupTargetsEnabled, config.CampaignGroupCooldown, config.CampaignCircuitDuration, config.CampaignRatePauseThreshold, config.CampaignFailurePauseThreshold)

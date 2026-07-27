@@ -1,16 +1,14 @@
 # Campaign orchestration
 
-Campaigns are durable, instance-scoped text or image delivery jobs. Direct campaigns
-use persisted recipient consent. Group campaigns use a server-snapshotted Group
-List and one delivery target per group.
+Campaigns are durable, instance-scoped text or image delivery jobs. Every new
+campaign uses a server-snapshotted Group List and one delivery target per group.
+Legacy direct campaigns remain readable, auditable, and executable.
 Lifecycle controls, audit history, and progress are owned by the backend.
 
 ## Safety contract
 
 - Use an instance token in the `apikey` header. The global admin key is not
   accepted by campaign routes.
-- A direct campaign recipient must be a direct WhatsApp JID and include
-  `optInSource`, `optInEvidenceReference`, and `optedInAt`.
 - A group campaign accepts one `group_list` target, never a caller-supplied
   array of group JIDs. One list entry becomes one group target; members are not
   expanded.
@@ -27,30 +25,13 @@ Lifecycle controls, audit history, and progress are owned by the backend.
 
 ## Create and activate
 
-Create a legacy-compatible direct draft:
+Create a Group List draft:
 
 ```http
 POST /campaigns
 apikey: <instance-token>
 Content-Type: application/json
 ```
-
-```json
-{
-  "name": "Order update",
-  "text": "Your order is ready.",
-  "recipients": [
-    {
-      "jid": "15550001@s.whatsapp.net",
-      "optInSource": "checkout",
-      "optInEvidenceReference": "consent-record-123",
-      "optedInAt": "2026-07-01T10:00:00Z"
-    }
-  ]
-}
-```
-
-The additive Group List request shape is:
 
 ```json
 {
@@ -100,8 +81,9 @@ optional caption:
 }
 ```
 
-Do not send both legacy top-level `text` and `content`. Image campaigns require
-a Group List target; direct-recipient image creation is rejected. Creation and
+Do not send both legacy top-level `text` and `content`. All new campaigns
+require a Group List target; direct-recipient creation is rejected with
+`409 campaign_direct_create_disabled`. Creation and
 lifecycle transitions return `409 campaign_image_content_disabled` while
 `WA_CAMPAIGN_IMAGE_CONTENT_ENABLED=false`.
 
@@ -224,11 +206,11 @@ execution through `campaign_group_targets` in `GET /server/capabilities`.
 Migrations 22 through 25 are additive. Existing campaigns and recipients are backfilled by
 the database defaults as `targetType=direct`; older direct history remains
 readable and auditable. Migration 23 adds durable group delivery guards,
-instance circuit state, and aggregate safety counters. The default
-`WA_CAMPAIGN_DIRECT_CREATE_ENABLED=true`
-preserves the existing create API during the Console migration. Set it to
-`false` only after clients have moved to Group Lists, or to stop new direct
-campaign creation without affecting existing history.
+instance circuit state, and aggregate safety counters. New direct-recipient
+creation is disabled by default. Existing direct history remains readable,
+auditable, and executable. `WA_CAMPAIGN_DIRECT_CREATE_ENABLED=true` is an
+explicit emergency rollback switch for the retired create shape; enabling it
+does not change the preferred Group List contract.
 
 Keep `WA_CAMPAIGN_GROUP_TARGETS_ENABLED=false` through migration and image
 deployment, then enable it in a canary environment. Disabling the flag removes
