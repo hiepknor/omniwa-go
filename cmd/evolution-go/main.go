@@ -241,6 +241,25 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			log.Fatal(err)
 		}
 	}
+	if config.MediaAssetsEnabled {
+		if !config.MinioEnabled {
+			logger.LogFatal("component=media_assets action=initialize result=failed error=minio_required")
+		}
+		if err := config.ValidateMediaAssetBucketIsolation(); err != nil {
+			logger.LogFatal("component=media_assets action=initialize result=failed error=bucket_isolation_required detail=%v", err)
+		}
+		mediaAssetStore, mediaAssetErr := minio_storage.NewMediaAssetStorage(
+			appCtx, config.MinioEndpoint, config.MinioAccessKey, config.MinioSecretKey,
+			config.MediaAssetBucket, config.MinioRegion, config.MinioUseSSL,
+		)
+		if mediaAssetErr != nil {
+			logger.LogFatal("component=media_assets action=initialize result=failed error=%v", mediaAssetErr)
+		}
+		if err := mediaAssetStore.Health(appCtx); err != nil {
+			logger.LogFatal("component=media_assets action=health result=failed error=%v", err)
+		}
+		logger.LogInfo("component=media_assets action=initialize result=success")
+	}
 
 	var tokenDigester instance_repository.TokenDigester
 	if len(config.InstanceTokenHMACKey) > 0 {
@@ -290,6 +309,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	groupCampaignsEnabled := config.GroupListsEnabled && config.CampaignGroupTargetsEnabled
 	if config.CampaignImageContentEnabled && !groupCampaignsEnabled {
 		logger.LogFatal("component=campaign_media action=initialize result=failed error=group_campaign_targets_required")
+	}
+	if config.CampaignImageContentEnabled {
+		if err := config.ValidatePrivateBucketIsolation(config.CampaignMediaBucket); err != nil {
+			logger.LogFatal("component=campaign_media action=initialize result=failed error=bucket_isolation_required detail=%v", err)
+		}
 	}
 	if config.GroupListsEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupLists))
