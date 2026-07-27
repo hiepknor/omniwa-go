@@ -94,6 +94,11 @@ type Config struct {
 	CampaignCircuitDuration       time.Duration
 	CampaignRatePauseThreshold    int
 	CampaignFailurePauseThreshold int
+	CampaignImageContentEnabled   bool
+	CampaignMediaBucket           string
+	CampaignMediaMaxBytes         int64
+	CampaignMediaMaxPixels        int64
+	CampaignMediaUnboundTTL       time.Duration
 
 	// Logger configurations
 	LogMaxSize    int
@@ -397,6 +402,7 @@ func Load() *Config {
 	groupListsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LISTS_ENABLED)), "true")
 	campaignDirectCreateEnabled := !strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED)), "false")
 	campaignGroupTargetsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_GROUP_TARGETS_ENABLED)), "true")
+	campaignImageContentEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED)), "true")
 
 	waInfoRateValue := os.Getenv(config_env.WA_INFO_RATE)
 	if waInfoRateValue == "" {
@@ -516,6 +522,19 @@ func Load() *Config {
 	campaignFailurePauseThreshold, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD), "10"))
 	if err != nil {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, err)
+	}
+	campaignMediaBucket := defaultIfEmpty(strings.TrimSpace(os.Getenv(config_env.CAMPAIGN_MEDIA_BUCKET)), "omniwa-campaign-media")
+	campaignMediaMaxBytes := parsePositiveInt64OrFatal(config_env.CAMPAIGN_MEDIA_MAX_BYTES, "8388608")
+	if campaignMediaMaxBytes > 64*1024*1024 {
+		logger.LogFatal("[CONFIG] invalid %s: must be no greater than 67108864", config_env.CAMPAIGN_MEDIA_MAX_BYTES)
+	}
+	campaignMediaMaxPixels := parsePositiveInt64OrFatal(config_env.CAMPAIGN_MEDIA_MAX_PIXELS, "16000000")
+	if campaignMediaMaxPixels > 100_000_000 {
+		logger.LogFatal("[CONFIG] invalid %s: must be no greater than 100000000", config_env.CAMPAIGN_MEDIA_MAX_PIXELS)
+	}
+	campaignMediaUnboundTTL, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.CAMPAIGN_MEDIA_UNBOUND_TTL), "24h"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.CAMPAIGN_MEDIA_UNBOUND_TTL, err)
 	}
 
 	waGroupReconcileIntervalValue := os.Getenv(config_env.WA_GROUP_RECONCILE_INTERVAL)
@@ -723,6 +742,11 @@ func Load() *Config {
 		CampaignCircuitDuration:       campaignCircuitDuration,
 		CampaignRatePauseThreshold:    campaignRatePauseThreshold,
 		CampaignFailurePauseThreshold: campaignFailurePauseThreshold,
+		CampaignImageContentEnabled:   campaignImageContentEnabled,
+		CampaignMediaBucket:           campaignMediaBucket,
+		CampaignMediaMaxBytes:         campaignMediaMaxBytes,
+		CampaignMediaMaxPixels:        campaignMediaMaxPixels,
+		CampaignMediaUnboundTTL:       campaignMediaUnboundTTL,
 	}
 
 	minioEnabled := os.Getenv(config_env.MINIO_ENABLED) == "true"

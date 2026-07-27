@@ -37,6 +37,7 @@ type Routes struct {
 	groupListHandler        group_list_handler.Handler
 	callHandler             call_handler.CallHandler
 	campaignHandler         campaign_handler.CampaignHandler
+	campaignMediaHandler    campaign_handler.MediaHandler
 	communityHandler        community_handler.CommunityHandler
 	labelHandler            label_handler.LabelHandler
 	newsletterHandler       newsletter_handler.NewsletterHandler
@@ -75,6 +76,14 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	eng.POST("/server/projection-failures/replay", r.authMiddleware.AuthAdmin, r.serverHandler.ReplayProjectionFailure)
 	eng.POST("/server/projection-failures/discard", r.authMiddleware.AuthAdmin, r.serverHandler.DiscardProjectionFailure)
 	eng.GET("/events", r.authMiddleware.Auth, r.serverHandler.EventHistory)
+
+	if r.campaignMediaHandler != nil {
+		routes := eng.Group("/campaign-media")
+		routes.Use(r.authMiddleware.Auth)
+		routes.POST("", r.campaignMediaHandler.Upload)
+		routes.GET("/:mediaId", r.campaignMediaHandler.Get)
+		routes.DELETE("/:mediaId", r.campaignMediaHandler.Delete)
+	}
 
 	if r.groupListHandler != nil {
 		routes := eng.Group("/group-lists")
@@ -298,6 +307,7 @@ func NewRouter(
 	groupListHandler group_list_handler.Handler,
 	callHandler call_handler.CallHandler,
 	campaignHandler campaign_handler.CampaignHandler,
+	campaignMediaHandler campaign_handler.MediaHandler,
 	communityHandler community_handler.CommunityHandler,
 	labelHandler label_handler.LabelHandler,
 	newsletterHandler newsletter_handler.NewsletterHandler,
@@ -316,6 +326,7 @@ func NewRouter(
 		groupListHandler:        groupListHandler,
 		callHandler:             callHandler,
 		campaignHandler:         campaignHandler,
+		campaignMediaHandler:    campaignMediaHandler,
 		communityHandler:        communityHandler,
 		labelHandler:            labelHandler,
 		newsletterHandler:       newsletterHandler,

@@ -73,6 +73,11 @@ type CampaignAuditListResponse struct {
 	Meta    ProjectionMeta              `json:"meta"`
 }
 
+type CampaignMediaAssetResponse struct {
+	Message string                    `json:"message" example:"success"`
+	Data    campaign_model.MediaAsset `json:"data"`
+}
+
 type GroupListDetailResponse struct {
 	Message string                        `json:"message" example:"success"`
 	Data    group_list_repository.Summary `json:"data"`

@@ -287,3 +287,26 @@ func TestGroupCampaignSafetyMigrationIsDurableScopedAndFenced(t *testing.T) {
 		}
 	}
 }
+
+func TestCampaignMediaAssetsMigrationIsPrivateScopedAndCleanupFenced(t *testing.T) {
+	migration := registeredMigration(t, 24)
+	if migration.Name != "create_campaign_media_assets" {
+		t.Fatalf("migration name = %q", migration.Name)
+	}
+	for _, required := range []string{
+		"CREATE TABLE campaign_media_assets", "instance_id UUID NOT NULL", "object_key TEXT NOT NULL",
+		"campaign_media_assets_instance_identity_unique", "campaign_media_assets_object_key_unique",
+		"campaign_media_assets_request_unique_idx", "request_reference_hash", "cleanup_claim_token",
+		"cleanup_lease_until", "campaign_media_assets_ready_check", "campaign_media_assets_deleted_check",
+		"mime_type IN ('image/jpeg', 'image/png')", "campaign_media_assets_cleanup_idx",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("campaign media migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"presigned", "public_url", "original_filename", "file_bytes", "caption"} {
+		if strings.Contains(strings.ToLower(migration.SQL), forbidden) {
+			t.Fatalf("campaign media migration stores forbidden material %q", forbidden)
+		}
+	}
+}

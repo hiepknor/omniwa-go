@@ -66,6 +66,179 @@ const docTemplate = `{
                 }
             }
         },
+        "/campaign-media": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Uploads and normalizes one private JPEG or PNG image. The response never exposes an object-store key or URL.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaign Media"
+                ],
+                "summary": "Upload campaign image",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "JPEG or PNG image",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Instance-scoped upload idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignMediaAssetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/campaign-media/{mediaId}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaign Media"
+                ],
+                "summary": "Get campaign image metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media asset ID",
+                        "name": "mediaId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignMediaAssetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Campaign Media"
+                ],
+                "summary": "Delete campaign image",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media asset ID",
+                        "name": "mediaId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.CampaignErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/campaigns": {
             "get": {
                 "security": [
@@ -7405,6 +7578,18 @@ const docTemplate = `{
                 }
             }
         },
+        "apidocs.CampaignMediaAssetResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.MediaAsset"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
         "apidocs.CampaignRecipientListResponse": {
             "type": "object",
             "properties": {
@@ -8121,6 +8306,62 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "CampaignTargetDirect",
                 "CampaignTargetGroupList"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.MediaAsset": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "mimeType": {
+                    "type": "string"
+                },
+                "readyAt": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.MediaAssetStatus"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.MediaAssetStatus": {
+            "type": "string",
+            "enum": [
+                "uploading",
+                "ready",
+                "failed",
+                "deleted"
+            ],
+            "x-enum-varnames": [
+                "MediaAssetStatusUploading",
+                "MediaAssetStatusReady",
+                "MediaAssetStatusFailed",
+                "MediaAssetStatusDeleted"
             ]
         },
         "github_com_evolution-foundation_evolution-go_pkg_campaign_model.Recipient": {

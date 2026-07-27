@@ -857,6 +857,62 @@ CREATE TABLE campaign_instance_circuits (
 CREATE INDEX campaign_instance_circuits_open_idx
 ON campaign_instance_circuits (open_until, instance_id);`,
 	},
+	{
+		Version: 24,
+		Name:    "create_campaign_media_assets",
+		SQL: `CREATE TABLE campaign_media_assets (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    object_key TEXT NOT NULL,
+    media_type VARCHAR(32) NOT NULL,
+    mime_type VARCHAR(128) NULL,
+    size_bytes BIGINT NULL,
+    width INTEGER NULL,
+    height INTEGER NULL,
+    sha256 VARCHAR(64) NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'uploading',
+    request_reference_hash VARCHAR(64) NULL,
+    cleanup_claim_token UUID NULL,
+    cleanup_lease_until TIMESTAMPTZ NULL,
+    ready_at TIMESTAMPTZ NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    deleted_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT campaign_media_assets_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT campaign_media_assets_instance_identity_unique UNIQUE (id, instance_id),
+    CONSTRAINT campaign_media_assets_object_key_unique UNIQUE (object_key),
+    CONSTRAINT campaign_media_assets_type_check CHECK (media_type = 'image'),
+    CONSTRAINT campaign_media_assets_status_check CHECK (status IN ('uploading', 'ready', 'failed', 'deleted')),
+    CONSTRAINT campaign_media_assets_mime_check CHECK (mime_type IS NULL OR mime_type IN ('image/jpeg', 'image/png')),
+    CONSTRAINT campaign_media_assets_size_check CHECK (size_bytes IS NULL OR size_bytes BETWEEN 1 AND 67108864),
+    CONSTRAINT campaign_media_assets_dimensions_check CHECK (
+        (width IS NULL AND height IS NULL)
+        OR (width BETWEEN 1 AND 32768 AND height BETWEEN 1 AND 32768)
+    ),
+    CONSTRAINT campaign_media_assets_sha_check CHECK (sha256 IS NULL OR sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT campaign_media_assets_request_hash_check CHECK (request_reference_hash IS NULL OR request_reference_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT campaign_media_assets_cleanup_claim_check CHECK (
+        (cleanup_claim_token IS NULL AND cleanup_lease_until IS NULL)
+        OR (cleanup_claim_token IS NOT NULL AND cleanup_lease_until IS NOT NULL)
+    ),
+    CONSTRAINT campaign_media_assets_ready_check CHECK (
+        status <> 'ready'
+        OR (mime_type IS NOT NULL AND size_bytes IS NOT NULL AND width IS NOT NULL AND height IS NOT NULL AND sha256 IS NOT NULL AND ready_at IS NOT NULL AND deleted_at IS NULL)
+    ),
+    CONSTRAINT campaign_media_assets_deleted_check CHECK ((status = 'deleted') = (deleted_at IS NOT NULL)),
+    CONSTRAINT campaign_media_assets_expiry_check CHECK (expires_at > created_at)
+);
+CREATE UNIQUE INDEX campaign_media_assets_request_unique_idx
+ON campaign_media_assets (instance_id, request_reference_hash)
+WHERE request_reference_hash IS NOT NULL;
+CREATE INDEX campaign_media_assets_cleanup_idx
+ON campaign_media_assets (expires_at, id)
+WHERE status IN ('uploading', 'ready', 'failed') AND deleted_at IS NULL;
+CREATE INDEX campaign_media_assets_instance_page_idx
+ON campaign_media_assets (instance_id, created_at DESC, id DESC)
+WHERE deleted_at IS NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {
