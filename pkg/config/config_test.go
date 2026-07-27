@@ -33,6 +33,11 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_CIRCUIT_DURATION, "")
 	t.Setenv(config_env.WA_CAMPAIGN_RATE_PAUSE_THRESHOLD, "")
 	t.Setenv(config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, "")
+	t.Setenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED, "")
+	t.Setenv(config_env.CAMPAIGN_MEDIA_BUCKET, "")
+	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_BYTES, "")
+	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_PIXELS, "")
+	t.Setenv(config_env.CAMPAIGN_MEDIA_UNBOUND_TTL, "")
 	t.Setenv(config_env.WA_GROUP_LISTS_ENABLED, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "")
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "")
@@ -91,6 +96,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.CampaignGroupTargetsEnabled || config.CampaignGroupCooldown != time.Hour || config.CampaignCircuitDuration != 5*time.Minute || config.CampaignRatePauseThreshold != 3 || config.CampaignFailurePauseThreshold != 10 {
 		t.Fatalf("group campaign defaults = %t/%v/%v/%d/%d", config.CampaignGroupTargetsEnabled, config.CampaignGroupCooldown, config.CampaignCircuitDuration, config.CampaignRatePauseThreshold, config.CampaignFailurePauseThreshold)
 	}
+	if config.CampaignImageContentEnabled || config.CampaignMediaBucket != "omniwa-campaign-media" || config.CampaignMediaMaxBytes != 8*1024*1024 || config.CampaignMediaMaxPixels != 16_000_000 || config.CampaignMediaUnboundTTL != 24*time.Hour {
+		t.Fatalf("campaign media defaults are invalid: enabled=%t bucket=%q bytes=%d pixels=%d ttl=%v", config.CampaignImageContentEnabled, config.CampaignMediaBucket, config.CampaignMediaMaxBytes, config.CampaignMediaMaxPixels, config.CampaignMediaUnboundTTL)
+	}
 	if config.RemoteMedia.Policy != "public_only" || config.RemoteMedia.Timeout != 15*time.Second || config.RemoteMedia.MaxBytes != 32*1024*1024 || len(config.RemoteMedia.AllowedHosts) != 0 {
 		t.Fatalf("remote media defaults = %+v", config.RemoteMedia)
 	}
@@ -125,6 +133,11 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_CIRCUIT_DURATION, "7m")
 	t.Setenv(config_env.WA_CAMPAIGN_RATE_PAUSE_THRESHOLD, "4")
 	t.Setenv(config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, "12")
+	t.Setenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED, "true")
+	t.Setenv(config_env.CAMPAIGN_MEDIA_BUCKET, "private-campaign-images")
+	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_BYTES, "4194304")
+	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_PIXELS, "12000000")
+	t.Setenv(config_env.CAMPAIGN_MEDIA_UNBOUND_TTL, "12h")
 	t.Setenv(config_env.WA_GROUP_LISTS_ENABLED, "true")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "allowlist")
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "cdn.example.com, media.example.com")
@@ -182,6 +195,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if !config.CampaignGroupTargetsEnabled || config.CampaignGroupCooldown != 2*time.Hour || config.CampaignCircuitDuration != 7*time.Minute || config.CampaignRatePauseThreshold != 4 || config.CampaignFailurePauseThreshold != 12 {
 		t.Fatalf("group campaign overrides = %t/%v/%v/%d/%d", config.CampaignGroupTargetsEnabled, config.CampaignGroupCooldown, config.CampaignCircuitDuration, config.CampaignRatePauseThreshold, config.CampaignFailurePauseThreshold)
+	}
+	if !config.CampaignImageContentEnabled || config.CampaignMediaBucket != "private-campaign-images" || config.CampaignMediaMaxBytes != 4*1024*1024 || config.CampaignMediaMaxPixels != 12_000_000 || config.CampaignMediaUnboundTTL != 12*time.Hour {
+		t.Fatalf("campaign media overrides are invalid")
 	}
 	if len(config.InstanceTokenHMACKey) != 32 || config.InstanceTokenHMACKeyVersion != 7 || config.InstanceTokenBackfillBatch != 25 || config.InstanceTokenBackfillMaxBatches != 4 {
 		t.Fatalf("instance token digest overrides are invalid")

@@ -513,6 +513,30 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		Enabled: groupCampaignsEnabled, Cooldown: config.CampaignGroupCooldown, CircuitDuration: config.CampaignCircuitDuration,
 		RatePauseThreshold: config.CampaignRatePauseThreshold, FailurePauseThreshold: config.CampaignFailurePauseThreshold,
 	}))
+	var campaignMediaHandler campaign_handler.MediaHandler
+	if config.CampaignImageContentEnabled {
+		if !config.MinioEnabled {
+			logger.LogFatal("component=campaign_media action=initialize result=failed error=minio_required")
+		}
+		campaignMediaStore, mediaStoreErr := minio_storage.NewCampaignMediaStorage(
+			appCtx, config.MinioEndpoint, config.MinioAccessKey, config.MinioSecretKey,
+			config.CampaignMediaBucket, config.MinioRegion, config.MinioUseSSL,
+		)
+		if mediaStoreErr != nil {
+			logger.LogFatal("component=campaign_media action=initialize result=failed error=%v", mediaStoreErr)
+		}
+		campaignMediaService := campaign_service.NewMediaAssetService(
+			campaign_repository.NewMediaAssetRepository(db),
+			campaignMediaStore,
+			campaign_service.MediaSettings{
+				MaxBytes: config.CampaignMediaMaxBytes, MaxPixels: config.CampaignMediaMaxPixels,
+				UnboundTTL: config.CampaignMediaUnboundTTL, CleanupBatch: 100,
+				CleanupLease: 5 * time.Minute, CleanupInterval: 15 * time.Minute,
+			},
+		)
+		campaignMediaHandler = campaign_handler.NewMediaHandler(campaignMediaService, config.CampaignMediaMaxBytes)
+		startBackground(backgroundWorkers, "campaign_media.cleanup", campaignMediaService.RunCleanup)
+	}
 	campaignWorker := campaign_service.NewWorker(
 		campaignRepository,
 		campaign_service.NewTextSender(instanceRepository, sendMessageService),
@@ -592,6 +616,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			campaign_service.WithDirectCreateEnabled(config.CampaignDirectCreateEnabled),
 			campaign_service.WithGroupTargetsEnabled(groupCampaignsEnabled),
 		)),
+		campaignMediaHandler,
 		community_handler.NewCommunityHandler(communityService),
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),
