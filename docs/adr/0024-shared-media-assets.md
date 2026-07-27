@@ -2,9 +2,10 @@
 
 ## Status
 
-Accepted. Migration 26 and the generic storage boundary are an additive,
-disabled-by-default foundation. Campaign and chat cutovers are separate staged
-changes.
+Accepted. Migration 26 and the generic storage boundary are the additive,
+disabled-by-default foundation. Migration 27 backfills and cuts campaign
+metadata over behind feature flags while retaining a rollback shadow. Chat
+cutovers remain separate staged changes.
 
 ## Context
 
@@ -43,11 +44,18 @@ never mutates bucket policy, and never creates a public or presigned URL.
 `MEDIA_ASSET_BUCKET` must be a dedicated private bucket and must differ from
 the legacy `MINIO_BUCKET`.
 
-Migration 26 is expand-only. It does not backfill campaign rows, move objects,
-start workers, advertise capabilities, or change public APIs. The
+Migration 26 is expand-only. Migration 27 preserves campaign asset identities,
+adds canonical variants and campaign retention references, and does not move
+objects. During the compatibility window, new campaign writes update shared
+metadata and `campaign_media_assets` in one transaction. A routed store sends
+new `media-assets/.../canonical` keys to `MEDIA_ASSET_BUCKET` and exact legacy
+`campaign-media/.../image` keys to `CAMPAIGN_MEDIA_BUCKET`. No shared campaign
+foreign key is added yet because it would prevent rollback to the old binary.
+
+The
 `WA_MEDIA_ASSETS_ENABLED` flag defaults to false. Enabling this foundation only
-validates configuration and private bucket health; consumer behavior remains
-unchanged until later PRs.
+validates configuration and private bucket health. Campaign behavior switches
+only when campaign image content is also enabled.
 
 ## Alternatives considered
 
@@ -67,17 +75,22 @@ migration. Shared references make cleanup aware of consumer retention without
 giving consumers direct storage access.
 
 The database uses `ON DELETE RESTRICT` from shared assets to instances. Instance
-deletion must gain an object purge workflow before any shared consumer writes
-production rows. This deliberately fails closed instead of deleting metadata
-and orphaning private objects.
+deletion first plans and removes every known private variant, then deletes only
+that fenced set of metadata in the same transaction that deletes the instance.
+A concurrently-created asset is not in the fence, so the FK rolls the
+transaction back. Storage failure also stops deletion. Object removal is
+idempotent, which makes retry safe after a database or concurrency failure.
 
 ## Rollout and rollback
 
-Apply migration 26 with `WA_MEDIA_ASSETS_ENABLED=false`. Provision the dedicated
-private bucket, verify anonymous reads fail, then enable only in development or
-staging to exercise startup health. Disable the flag to roll back the runtime;
-leave additive tables and objects in place. Repair schema defects with a
-forward migration. Do not reuse or make the bucket public.
+Apply migrations 26 and 27 with `WA_MEDIA_ASSETS_ENABLED=false`. Validate the
+backfill counts and immutable metadata, provision the dedicated private bucket,
+verify anonymous reads fail, then enable both media flags in development or
+staging. Exercise one backfilled image and one new image before production
+rollout. Disable `WA_MEDIA_ASSETS_ENABLED` to roll campaign traffic back to the
+legacy shadow. Leave both metadata schemas and both object namespaces in place.
+Repair schema defects with a forward migration. Do not reuse or make either
+bucket public.
 
 Backfill, campaign cutover, outbound chat, inbound capture, and destructive
 legacy removal each require their own rollout and rollback gates.

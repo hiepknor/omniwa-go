@@ -1097,6 +1097,114 @@ CREATE TABLE media_asset_audit_events (
 CREATE INDEX media_asset_audit_events_page_idx
 ON media_asset_audit_events (instance_id, media_asset_id, occurred_at DESC, id DESC);`,
 	},
+	{
+		Version: 27,
+		Name:    "backfill_campaign_media_assets",
+		SQL: `INSERT INTO media_assets (
+    id, instance_id, media_type, origin, status, failure_code,
+    request_reference_hash, cleanup_claim_token, cleanup_lease_until,
+    ready_at, expires_at, deleted_at, created_at, updated_at
+)
+SELECT
+    id, instance_id, media_type, 'device_upload', status,
+    CASE WHEN status = 'failed' THEN 'legacy_campaign_media_failed' ELSE NULL END,
+    request_reference_hash, cleanup_claim_token, cleanup_lease_until,
+    ready_at, expires_at, deleted_at, created_at, updated_at
+FROM campaign_media_assets
+ON CONFLICT (id) DO NOTHING;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM campaign_media_assets AS legacy
+        LEFT JOIN media_assets AS shared ON shared.id = legacy.id
+        WHERE shared.id IS NULL
+           OR shared.instance_id <> legacy.instance_id
+           OR shared.media_type <> legacy.media_type
+           OR shared.origin <> 'device_upload'
+           OR shared.status <> legacy.status
+           OR shared.failure_code IS DISTINCT FROM CASE WHEN legacy.status = 'failed' THEN 'legacy_campaign_media_failed' ELSE NULL END
+           OR shared.request_reference_hash IS DISTINCT FROM legacy.request_reference_hash
+           OR shared.cleanup_claim_token IS DISTINCT FROM legacy.cleanup_claim_token
+           OR shared.cleanup_lease_until IS DISTINCT FROM legacy.cleanup_lease_until
+           OR shared.ready_at IS DISTINCT FROM legacy.ready_at
+           OR shared.expires_at IS DISTINCT FROM legacy.expires_at
+           OR shared.deleted_at IS DISTINCT FROM legacy.deleted_at
+           OR shared.created_at IS DISTINCT FROM legacy.created_at
+           OR shared.updated_at IS DISTINCT FROM legacy.updated_at
+    ) THEN
+        RAISE EXCEPTION 'campaign media asset backfill identity mismatch';
+    END IF;
+END $$;
+
+INSERT INTO media_asset_variants (
+    media_asset_id, instance_id, variant, object_key, mime_type,
+    size_bytes, width, height, sha256, created_at
+)
+SELECT
+    id, instance_id, 'canonical', object_key, mime_type,
+    size_bytes, width, height, sha256, COALESCE(ready_at, created_at)
+FROM campaign_media_assets
+WHERE status = 'ready' AND deleted_at IS NULL
+ON CONFLICT (media_asset_id, variant) DO NOTHING;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM campaign_media_assets AS legacy
+        LEFT JOIN media_asset_variants AS variant
+          ON variant.media_asset_id = legacy.id
+         AND variant.instance_id = legacy.instance_id
+         AND variant.variant = 'canonical'
+        WHERE legacy.status = 'ready'
+          AND legacy.deleted_at IS NULL
+          AND (
+              variant.media_asset_id IS NULL
+              OR variant.object_key <> legacy.object_key
+              OR variant.mime_type <> legacy.mime_type
+              OR variant.size_bytes <> legacy.size_bytes
+              OR variant.width <> legacy.width
+              OR variant.height <> legacy.height
+              OR variant.sha256 <> legacy.sha256
+              OR variant.created_at IS DISTINCT FROM COALESCE(legacy.ready_at, legacy.created_at)
+          )
+    ) THEN
+        RAISE EXCEPTION 'campaign media canonical variant backfill mismatch';
+    END IF;
+END $$;
+
+INSERT INTO media_asset_references (
+    instance_id, media_asset_id, owner_type, owner_id, retention_until, created_at
+)
+SELECT
+    instance_id, media_asset_id, 'campaign', id::text, NULL, created_at
+FROM campaigns
+WHERE media_asset_id IS NOT NULL
+ON CONFLICT (instance_id, media_asset_id, owner_type, owner_id) DO NOTHING;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM campaigns AS campaign
+        LEFT JOIN media_asset_references AS reference
+          ON reference.instance_id = campaign.instance_id
+         AND reference.media_asset_id = campaign.media_asset_id
+         AND reference.owner_type = 'campaign'
+         AND reference.owner_id = campaign.id::text
+        WHERE campaign.media_asset_id IS NOT NULL
+          AND (
+              reference.media_asset_id IS NULL
+              OR reference.retention_until IS NOT NULL
+              OR reference.created_at IS DISTINCT FROM campaign.created_at
+          )
+    ) THEN
+        RAISE EXCEPTION 'campaign media reference backfill mismatch';
+    END IF;
+END $$;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

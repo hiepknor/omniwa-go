@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
+	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -53,6 +54,28 @@ func applyCampaignContent(tx *gorm.DB, instanceID string, campaign *campaign_mod
 	default:
 		return errors.New("campaign content type is invalid")
 	}
+}
+
+func addSharedCampaignMediaReference(tx *gorm.DB, campaign *campaign_model.Campaign) error {
+	if tx == nil || campaign == nil || campaign.MediaAssetID == nil {
+		return nil
+	}
+	var sharedCount int64
+	if err := tx.Model(&media_model.Asset{}).
+		Where("instance_id = ? AND id = ? AND status = ? AND deleted_at IS NULL", campaign.InstanceID, *campaign.MediaAssetID, media_model.AssetStatusReady).
+		Count(&sharedCount).Error; err != nil {
+		return err
+	}
+	if sharedCount == 0 {
+		// The legacy campaign path remains valid during the rollback window.
+		return nil
+	}
+	reference := media_model.AssetReference{
+		InstanceID: campaign.InstanceID, MediaAssetID: *campaign.MediaAssetID,
+		OwnerType: media_model.ReferenceOwnerCampaign, OwnerID: campaign.ID,
+		CreatedAt: campaign.CreatedAt,
+	}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&reference).Error
 }
 
 func validateCampaignContentInput(contentType campaign_model.CampaignContentType, textBody, mediaAssetID string) error {

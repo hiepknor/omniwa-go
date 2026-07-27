@@ -8,7 +8,6 @@ import (
 
 	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -27,6 +26,11 @@ type CreateAssetInput struct {
 	ExpiresAt            *time.Time
 }
 
+type InstancePurgePlan struct {
+	AssetIDs []string
+	Variants []media_model.AssetVariant
+}
+
 type Repository interface {
 	Create(context.Context, CreateAssetInput) (*media_model.Asset, bool, error)
 	Get(context.Context, string, string) (*media_model.Asset, error)
@@ -36,9 +40,59 @@ type Repository interface {
 	MarkFailed(context.Context, string, string, string) error
 	AddReference(context.Context, media_model.AssetReference) error
 	RemoveReference(context.Context, string, string, media_model.ReferenceOwnerType, string) error
+	PlanInstancePurge(context.Context, string) (*InstancePurgePlan, error)
+	ClaimDelete(context.Context, string, string, time.Duration) (*media_model.Asset, error)
 	ClaimExpired(context.Context, int, time.Duration) ([]media_model.Asset, error)
 	CompleteCleanup(context.Context, *media_model.Asset) error
 	ReleaseCleanup(context.Context, *media_model.Asset) error
+}
+
+func (r *repository) PlanInstancePurge(ctx context.Context, instanceID string) (*InstancePurgePlan, error) {
+	if r == nil || r.db == nil || ctx == nil || uuid.Validate(instanceID) != nil {
+		return nil, errors.New("media repository and instance identity are required")
+	}
+	plan := &InstancePurgePlan{}
+	if err := r.db.WithContext(ctx).Model(&media_model.Asset{}).
+		Where("instance_id = ?", instanceID).Order("id ASC").Pluck("id", &plan.AssetIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(plan.AssetIDs) == 0 {
+		return plan, nil
+	}
+	if err := r.db.WithContext(ctx).Where("instance_id = ?", instanceID).
+		Order("media_asset_id ASC, variant ASC").Find(&plan.Variants).Error; err != nil {
+		return nil, err
+	}
+	// Migration 27 leaves non-ready legacy campaign objects without a canonical
+	// variant because their immutable image metadata is not available yet. Keep
+	// their exact bounded keys in the instance purge plan during the rollback
+	// window so a crashed upload cannot become an orphan.
+	var legacyObjects []struct {
+		MediaAssetID string `gorm:"column:media_asset_id"`
+		InstanceID   string `gorm:"column:instance_id"`
+		ObjectKey    string `gorm:"column:object_key"`
+	}
+	if err := r.db.WithContext(ctx).Raw(`SELECT legacy.id AS media_asset_id, legacy.instance_id, legacy.object_key
+FROM campaign_media_assets AS legacy
+INNER JOIN media_assets AS shared
+  ON shared.id = legacy.id AND shared.instance_id = legacy.instance_id
+WHERE legacy.instance_id = ?
+  AND NOT EXISTS (
+      SELECT 1 FROM media_asset_variants AS variant
+      WHERE variant.media_asset_id = legacy.id
+        AND variant.instance_id = legacy.instance_id
+        AND variant.object_key = legacy.object_key
+  )
+ORDER BY legacy.id ASC`, instanceID).Scan(&legacyObjects).Error; err != nil {
+		return nil, err
+	}
+	for _, legacy := range legacyObjects {
+		plan.Variants = append(plan.Variants, media_model.AssetVariant{
+			MediaAssetID: legacy.MediaAssetID, InstanceID: legacy.InstanceID,
+			Kind: media_model.VariantCanonical, ObjectKey: legacy.ObjectKey,
+		})
+	}
+	return plan, nil
 }
 
 type repository struct {
@@ -57,8 +111,12 @@ func (r *repository) Create(ctx context.Context, input CreateAssetInput) (*media
 		ID: input.ID, InstanceID: input.InstanceID, MediaType: "image", Origin: input.Origin, Status: input.Status,
 		RequestReferenceHash: input.RequestReferenceHash, ExpiresAt: utcPointer(input.ExpiresAt), CreatedAt: now, UpdatedAt: now,
 	}
-	if err := r.db.WithContext(ctx).Create(&asset).Error; err != nil {
-		if input.RequestReferenceHash != nil && isUniqueViolation(err) {
+	create := r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&asset)
+	if create.Error != nil {
+		return nil, false, create.Error
+	}
+	if create.RowsAffected == 0 {
+		if input.RequestReferenceHash != nil {
 			var existing media_model.Asset
 			lookup := r.db.WithContext(ctx).
 				Where("instance_id = ? AND request_reference_hash = ? AND deleted_at IS NULL", input.InstanceID, *input.RequestReferenceHash).
@@ -66,8 +124,11 @@ func (r *repository) Create(ctx context.Context, input CreateAssetInput) (*media
 			if lookup == nil {
 				return &existing, false, nil
 			}
+			if !errors.Is(lookup, gorm.ErrRecordNotFound) {
+				return nil, false, lookup
+			}
 		}
-		return nil, false, err
+		return nil, false, ErrAssetConflict
 	}
 	return &asset, true, nil
 }
@@ -125,11 +186,12 @@ func (r *repository) AddVariant(ctx context.Context, variant media_model.AssetVa
 			return ErrAssetConflict
 		}
 		variant.CreatedAt = r.now().UTC()
-		if err := tx.Create(&variant).Error; err != nil {
-			if isUniqueViolation(err) {
-				return ErrAssetConflict
-			}
-			return err
+		create := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&variant)
+		if create.Error != nil {
+			return create.Error
+		}
+		if create.RowsAffected != 1 {
+			return ErrAssetConflict
 		}
 		return nil
 	})
@@ -239,6 +301,58 @@ func (r *repository) RemoveReference(ctx context.Context, instanceID, assetID st
 	}
 	return r.db.WithContext(ctx).Where("instance_id = ? AND media_asset_id = ? AND owner_type = ? AND owner_id = ?", instanceID, assetID, ownerType, ownerID).
 		Delete(&media_model.AssetReference{}).Error
+}
+
+func (r *repository) ClaimDelete(ctx context.Context, instanceID, assetID string, lease time.Duration) (*media_model.Asset, error) {
+	if err := validateIdentity(r, ctx, instanceID, assetID); err != nil {
+		return nil, err
+	}
+	if lease <= 0 {
+		return nil, errors.New("positive media asset cleanup lease is required")
+	}
+	now := r.now().UTC()
+	token := uuid.NewString()
+	leaseUntil := now.Add(lease)
+	var asset media_model.Asset
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("instance_id = ? AND id = ? AND deleted_at IS NULL", instanceID, assetID).First(&asset).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAssetNotFound
+			}
+			return err
+		}
+		if asset.Status == media_model.AssetStatusPending || asset.Status == media_model.AssetStatusUploading ||
+			asset.Status == media_model.AssetStatusDownloading || asset.Status == media_model.AssetStatusProcessing ||
+			asset.Status == media_model.AssetStatusDeleting || asset.Status == media_model.AssetStatusDeleted ||
+			asset.CleanupClaimToken != nil && asset.CleanupLeaseUntil != nil && asset.CleanupLeaseUntil.After(now) {
+			return ErrAssetConflict
+		}
+		var references int64
+		if err := tx.Model(&media_model.AssetReference{}).
+			Where("instance_id = ? AND media_asset_id = ?", instanceID, assetID).Count(&references).Error; err != nil {
+			return err
+		}
+		if references != 0 {
+			return ErrAssetConflict
+		}
+		result := tx.Model(&media_model.Asset{}).Where("instance_id = ? AND id = ? AND deleted_at IS NULL", instanceID, assetID).
+			Updates(map[string]any{"status": media_model.AssetStatusDeleting, "cleanup_claim_token": token, "cleanup_lease_until": leaseUntil, "updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrAssetConflict
+		}
+		asset.Status = media_model.AssetStatusDeleting
+		asset.CleanupClaimToken = &token
+		asset.CleanupLeaseUntil = &leaseUntil
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &asset, nil
 }
 
 func (r *repository) ClaimExpired(ctx context.Context, limit int, lease time.Duration) ([]media_model.Asset, error) {
@@ -411,9 +525,4 @@ func utcPointer(value *time.Time) *time.Time {
 	}
 	result := value.UTC()
 	return &result
-}
-
-func isUniqueViolation(err error) bool {
-	var postgresError *pgconn.PgError
-	return errors.As(err, &postgresError) && postgresError.Code == "23505"
 }

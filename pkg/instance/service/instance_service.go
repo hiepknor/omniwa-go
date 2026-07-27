@@ -57,6 +57,15 @@ type instances struct {
 	loggerWrapper      *logger_wrapper.LoggerManager
 	queryGuard         waquery.Guard
 	identityResolver   waquery.IdentityResolver
+	mediaPurger        instanceMediaPurger
+}
+
+type instanceMediaPurger interface {
+	Purge(context.Context, string) ([]string, error)
+}
+
+type instanceRepositoryWithMediaPurge interface {
+	DeleteWithMediaAssets(string, []string) error
 }
 
 type ProxyConfig struct {
@@ -602,7 +611,21 @@ func (i instances) Delete(id string) error {
 		i.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Failed to clear instance cache: %v", instance.Id, err)
 	}
 
-	err = i.instanceRepository.Delete(id)
+	if i.mediaPurger != nil {
+		purgeCtx, cancelPurge := context.WithTimeout(context.Background(), 5*time.Minute)
+		assetIDs, purgeErr := i.mediaPurger.Purge(purgeCtx, instance.Id)
+		cancelPurge()
+		if purgeErr != nil {
+			return fmt.Errorf("purge private instance media: %w", purgeErr)
+		}
+		repository, ok := i.instanceRepository.(instanceRepositoryWithMediaPurge)
+		if !ok {
+			return errors.New("instance repository does not support fenced media deletion")
+		}
+		err = repository.DeleteWithMediaAssets(id, assetIDs)
+	} else {
+		err = i.instanceRepository.Delete(id)
+	}
 	if err != nil {
 		return err
 	}
@@ -875,6 +898,7 @@ func NewInstanceService(
 	config *config.Config,
 	queryGuard waquery.Guard,
 	identityResolver waquery.IdentityResolver,
+	mediaPurger instanceMediaPurger,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) InstanceService {
 	return &instances{
@@ -884,6 +908,7 @@ func NewInstanceService(
 		config:             config,
 		queryGuard:         queryGuard,
 		identityResolver:   identityResolver,
+		mediaPurger:        mediaPurger,
 		loggerWrapper:      loggerWrapper,
 	}
 }

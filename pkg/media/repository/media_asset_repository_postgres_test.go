@@ -85,6 +85,14 @@ func TestPostgresMediaAssetLifecycleIsInstanceScopedAndCleanupFenced(t *testing.
 	if err != nil || ready.Canonical == nil || ready.Canonical.ObjectKey != variant.ObjectKey {
 		t.Fatalf("ready asset = %+v, err=%v", ready, err)
 	}
+	plan, err := repository.PlanInstancePurge(ctx, instance.Id)
+	if err != nil || len(plan.AssetIDs) != 1 || plan.AssetIDs[0] != assetID || len(plan.Variants) != 1 || plan.Variants[0].ObjectKey != variant.ObjectKey {
+		t.Fatalf("instance purge plan = %+v, err=%v", plan, err)
+	}
+	otherPlan, err := repository.PlanInstancePurge(ctx, other.Id)
+	if err != nil || len(otherPlan.AssetIDs) != 0 || len(otherPlan.Variants) != 0 {
+		t.Fatalf("cross-instance purge plan = %+v, err=%v", otherPlan, err)
+	}
 	retention := time.Now().UTC().Add(90 * 24 * time.Hour)
 	if err := repository.AddReference(ctx, media_model.AssetReference{
 		InstanceID: instance.Id, MediaAssetID: assetID, OwnerType: media_model.ReferenceOwnerMessage,

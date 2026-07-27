@@ -13,11 +13,78 @@ import (
 	instance_credential "github.com/evolution-foundation/evolution-go/pkg/instance/credential"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
+	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
+	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
+	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestPostgresInstanceDeleteIsFencedByPurgedMediaAssetSet(t *testing.T) {
+	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("TEST_POSTGRES_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&instance_model.Instance{}, &label_model.Label{}, &message_model.Message{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrations.Run(db); err != nil {
+		t.Fatal(err)
+	}
+	repository := instance_repository.NewInstanceRepository(db)
+	mediaDelete, ok := repository.(interface {
+		DeleteWithMediaAssets(string, []string) error
+	})
+	if !ok {
+		t.Fatal("instance repository does not expose fenced media deletion")
+	}
+
+	instance := instance_model.Instance{Name: "instance-media-delete-" + uuid.NewString(), Token: "instance-media-delete-token-" + uuid.NewString()}
+	if err := db.Create(&instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	firstID, concurrentID := uuid.NewString(), uuid.NewString()
+	now := time.Now().UTC()
+	assets := []media_model.Asset{
+		{ID: firstID, InstanceID: instance.Id, MediaType: "image", Origin: media_model.AssetOriginDeviceUpload, Status: media_model.AssetStatusUploading, ExpiresAt: timePointer(now.Add(time.Hour)), CreatedAt: now, UpdatedAt: now},
+		{ID: concurrentID, InstanceID: instance.Id, MediaType: "image", Origin: media_model.AssetOriginDeviceUpload, Status: media_model.AssetStatusUploading, ExpiresAt: timePointer(now.Add(time.Hour)), CreatedAt: now, UpdatedAt: now},
+	}
+	if err := db.Create(&assets).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = db.Where("instance_id = ?", instance.Id).Delete(&media_model.AssetReference{}).Error
+		_ = db.Where("instance_id = ?", instance.Id).Delete(&media_model.AssetVariant{}).Error
+		_ = db.Where("instance_id = ?", instance.Id).Delete(&media_model.Asset{}).Error
+		_ = db.Delete(&instance_model.Instance{}, "id = ?", instance.Id).Error
+	})
+
+	if err := mediaDelete.DeleteWithMediaAssets(instance.Id, []string{firstID}); err == nil {
+		t.Fatal("instance deletion accepted an incomplete purged asset set")
+	}
+	var count int64
+	if err := db.Model(&instance_model.Instance{}).Where("id = ?", instance.Id).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("instance transaction was not rolled back: count=%d err=%v", count, err)
+	}
+	if err := db.Model(&media_model.Asset{}).Where("instance_id = ?", instance.Id).Count(&count).Error; err != nil || count != 2 {
+		t.Fatalf("asset transaction was not rolled back: count=%d err=%v", count, err)
+	}
+
+	if err := mediaDelete.DeleteWithMediaAssets(instance.Id, []string{firstID, concurrentID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&instance_model.Instance{}).Where("id = ?", instance.Id).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("instance remains after fenced delete: count=%d err=%v", count, err)
+	}
+}
+
+func timePointer(value time.Time) *time.Time { return &value }
 
 func TestPostgresTokenDigestDualReadWriteAndConcurrentBackfill(t *testing.T) {
 	dsn := os.Getenv("TEST_POSTGRES_DSN")
