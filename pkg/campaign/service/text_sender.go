@@ -65,8 +65,7 @@ func (s *TextSender) Send(ctx context.Context, campaign *campaign_model.Campaign
 		return "", err
 	}
 	if recipient.TargetType == campaign_model.RecipientTargetGroup {
-		jid, err := types.ParseJID(strings.TrimSpace(recipient.RecipientJID))
-		if err != nil || jid.User == "" || jid.Server != types.GroupServer || jid.ToNonAD().String() != recipient.RecipientJID {
+		if err := validateGroupDeliveryRecipient(recipient.RecipientJID); err != nil {
 			return "", &DeliveryError{Kind: DeliveryFailureTerminal, Code: "invalid_group_jid", Cause: err}
 		}
 	}
@@ -95,6 +94,14 @@ func (s *TextSender) Send(ctx context.Context, campaign *campaign_model.Campaign
 		return "", errors.New("campaign send returned no provider message identity")
 	}
 	return string(result.Info.ID), nil
+}
+
+func validateGroupDeliveryRecipient(value string) error {
+	jid, err := types.ParseJID(strings.TrimSpace(value))
+	if err != nil || jid.User == "" || jid.Server != types.GroupServer || jid.ToNonAD().String() != value {
+		return errors.New("campaign group recipient is invalid")
+	}
+	return nil
 }
 
 func classifyGroupDeliveryError(err error) error {

@@ -100,10 +100,10 @@ optional caption:
 }
 ```
 
-Do not send both legacy top-level `text` and `content`. Image campaign creation
-and lifecycle transitions return `409 campaign_image_content_disabled` until
-the complete delivery stage is enabled. The server does not advertise
-`campaign_image_content` during this contract-only stage.
+Do not send both legacy top-level `text` and `content`. Image campaigns require
+a Group List target; direct-recipient image creation is rejected. Creation and
+lifecycle transitions return `409 campaign_image_content_disabled` while
+`WA_CAMPAIGN_IMAGE_CONTENT_ENABLED=false`.
 
 Creation locks the ready media asset in the authenticated instance and
 snapshots its ID, decoded MIME type, normalized size, dimensions, SHA-256, and
@@ -111,11 +111,24 @@ caption in the same transaction as the target snapshot. Later cleanup or a
 delete request cannot remove referenced media. Object keys and URLs never
 appear in campaign responses or audit records.
 
+The image worker reloads and verifies the private object before every provider
+attempt. Storage reads and the provider media upload are transient, bounded
+retry points. The provider message-send call has no internal retry. A send that
+returns without a trustworthy acknowledgement becomes `unknown_send_outcome`,
+pauses the campaign, and requires operator review instead of risking a duplicate
+group message.
+
 Group target creation and execution are controlled by
 `WA_CAMPAIGN_GROUP_TARGETS_ENABLED`, which defaults to `false`. When the flag or
 Group Lists are disabled, creation returns
 `409 campaign_group_targets_disabled` and the server does not advertise
 `campaign_group_targets`.
+
+Image delivery additionally requires private MinIO storage and
+`WA_CAMPAIGN_IMAGE_CONTENT_ENABLED=true`. Enabling the image flag without both
+Group List flags fails startup. The `campaign_image_content` capability is
+advertised only when the flag is enabled and the groups projection is
+serving-ready.
 
 When enabled, creation locks the Group List, checks instance scope, version,
 non-empty membership, and backend eligibility, and snapshots the list ID, list

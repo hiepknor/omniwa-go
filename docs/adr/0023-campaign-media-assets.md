@@ -2,9 +2,10 @@
 
 ## Status
 
-Accepted for staged implementation. The media foundation is inert unless
-`WA_CAMPAIGN_IMAGE_CONTENT_ENABLED=true`; image campaign creation and delivery
-remain unavailable until later stages advertise `campaign_image_content`.
+Accepted and implemented. The complete image campaign stack is inert unless
+`WA_CAMPAIGN_IMAGE_CONTENT_ENABLED=true`. The flag requires Group Lists and
+group campaign targets and gates upload, creation, delivery, and capability
+advertisement together.
 
 ## Context
 
@@ -42,8 +43,8 @@ DELETE /campaign-media/{mediaId}
 ```
 
 Only an unreferenced asset may be deleted. Migration 25 adds the typed campaign
-content reference and immutable metadata snapshot. Creation and lifecycle
-transitions remain disabled until the delivery stage is wired.
+content reference and immutable metadata snapshot. Image creation and lifecycle
+transitions are available only while the complete image feature is enabled.
 
 ### Durable asset state
 
@@ -97,20 +98,20 @@ Until then, only the configured unbound TTL is relevant.
 
 ### Capability and rollout
 
-`WA_CAMPAIGN_IMAGE_CONTENT_ENABLED` defaults to `false`. In this foundation
-stage it controls route and storage initialization but does not advertise a new
-capability. `campaign_image_content` is advertised only after schema, campaign
-contract, storage, worker sender, safety behavior, and documentation are all
-available.
+`WA_CAMPAIGN_IMAGE_CONTENT_ENABLED` defaults to `false` and requires
+`WA_GROUP_LISTS_ENABLED=true`, `WA_CAMPAIGN_GROUP_TARGETS_ENABLED=true`, and
+private MinIO storage. Startup fails closed when the image flag is enabled
+without the Group List prerequisites. `campaign_image_content` is advertised
+only while the flag is enabled and the groups projection is serving-ready.
 
 Rollout order:
 
 1. Apply the additive asset migration while the flag is false.
 2. Provision and verify the private campaign bucket.
-3. Enable uploads in a canary environment after this foundation deploys.
-4. Deploy the content-contract and delivery stages while their send capability
-   remains disabled.
-5. Advertise and enable image campaigns only after end-to-end verification.
+3. Deploy the complete stack with the image flag disabled.
+4. Enable the flag in a canary environment and verify upload, draft creation,
+   group delivery, progress, cleanup, and provider error classification.
+5. Expand rollout only after storage and unknown-outcome metrics are healthy.
 
 ## Alternatives considered
 
@@ -156,9 +157,12 @@ the need; encrypted provider descriptors are not persisted in this decision.
 ## Rollback and recovery
 
 Set `WA_CAMPAIGN_IMAGE_CONTENT_ENABLED=false` before rolling back the
-application. This removes upload routes and prevents later stages from creating
-new image campaigns. Keep the additive table and private objects in place.
-Repair schema defects with a forward migration.
+application. This removes upload routes, prevents new image campaigns and their
+lifecycle transitions, removes the provider image sender after restart, and
+removes the capability. Pause active image campaigns before disabling the flag;
+otherwise already-claimed targets fail terminally without contacting the
+provider. Keep the additive table and private objects in place. Repair schema
+defects with a forward migration.
 
 If object storage is unavailable, leave ready metadata unchanged, reject new
 uploads with `503 media_storage_unavailable`, and defer future delivery before
