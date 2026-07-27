@@ -1,6 +1,6 @@
 # Campaign orchestration
 
-Campaigns are durable, instance-scoped text delivery jobs. Direct campaigns
+Campaigns are durable, instance-scoped text or image delivery jobs. Direct campaigns
 use persisted recipient consent. Group campaigns use a server-snapshotted Group
 List and one delivery target per group.
 Lifecycle controls, audit history, and progress are owned by the backend.
@@ -17,6 +17,9 @@ Lifecycle controls, audit history, and progress are owned by the backend.
 - OmniWA GO hashes evidence references before persistence. It does not verify
   that the caller's consent assertion is legally or operationally sufficient.
 - Drafts are limited to 10,000 recipients and request bodies to 8 MiB.
+- Image content references one ready private media asset and permits an optional
+  caption of at most 1,024 Unicode characters. The image bytes are never placed
+  in campaign JSON.
 - Pause or abort stops new claims. A recipient already leased by a worker may
   still finish.
 - Delivery is at-least-once across the external provider boundary. Stable
@@ -60,6 +63,53 @@ The additive Group List request shape is:
   }
 }
 ```
+
+New clients should use the typed content object. Text remains compatible:
+
+```json
+{
+  "name": "July campaign",
+  "content": {
+    "type": "text",
+    "text": "Campaign content"
+  },
+  "target": {
+    "type": "group_list",
+    "groupListId": "4cae2734-b8f4-4faa-8d09-5933ef3bf1b0",
+    "groupListVersion": 4
+  }
+}
+```
+
+For an image uploaded through `/campaign-media`, use its opaque ID and an
+optional caption:
+
+```json
+{
+  "name": "Branch image update",
+  "content": {
+    "type": "image",
+    "mediaId": "927beb51-46c2-4331-b3b4-d96f67280bd3",
+    "caption": "Campaign content"
+  },
+  "target": {
+    "type": "group_list",
+    "groupListId": "4cae2734-b8f4-4faa-8d09-5933ef3bf1b0",
+    "groupListVersion": 4
+  }
+}
+```
+
+Do not send both legacy top-level `text` and `content`. Image campaign creation
+and lifecycle transitions return `409 campaign_image_content_disabled` until
+the complete delivery stage is enabled. The server does not advertise
+`campaign_image_content` during this contract-only stage.
+
+Creation locks the ready media asset in the authenticated instance and
+snapshots its ID, decoded MIME type, normalized size, dimensions, SHA-256, and
+caption in the same transaction as the target snapshot. Later cleanup or a
+delete request cannot remove referenced media. Object keys and URLs never
+appear in campaign responses or audit records.
 
 Group target creation and execution are controlled by
 `WA_CAMPAIGN_GROUP_TARGETS_ENABLED`, which defaults to `false`. When the flag or
@@ -158,7 +208,7 @@ execution through `campaign_group_targets` in `GET /server/capabilities`.
 
 ## Staged rollout and rollback
 
-Migrations 22 and 23 are additive. Existing campaigns and recipients are backfilled by
+Migrations 22 through 25 are additive. Existing campaigns and recipients are backfilled by
 the database defaults as `targetType=direct`; older direct history remains
 readable and auditable. Migration 23 adds durable group delivery guards,
 instance circuit state, and aggregate safety counters. The default
@@ -170,7 +220,7 @@ campaign creation without affecting existing history.
 Keep `WA_CAMPAIGN_GROUP_TARGETS_ENABLED=false` through migration and image
 deployment, then enable it in a canary environment. Disabling the flag removes
 the capability, blocks new Group List campaigns, and stops new group claims;
-existing direct work remains compatible. Do not remove migration 22 or 23
+existing direct work remains compatible. Do not remove migrations 22 through 25
 structures during the rollback window. Before rolling back to a binary that is
 not group-aware, disable the flag, pause every non-terminal group campaign, and
 wait for or fence all active group leases. See

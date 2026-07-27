@@ -41,8 +41,9 @@ GET    /campaign-media/{mediaId}
 DELETE /campaign-media/{mediaId}
 ```
 
-Only an unreferenced asset may be deleted. Image campaign references are added
-in a later migration and API stage.
+Only an unreferenced asset may be deleted. Migration 25 adds the typed campaign
+content reference and immutable metadata snapshot. Creation and lifecycle
+transitions remain disabled until the delivery stage is wired.
 
 ### Durable asset state
 

@@ -93,6 +93,30 @@ func TestCreateAcceptsAdditiveGroupTargetContractAndMapsRolloutGate(t *testing.T
 	}
 }
 
+func TestCreateAcceptsImageContentAndRejectsAmbiguousLegacyText(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	instanceID, mediaID := uuid.NewString(), uuid.NewString()
+	service := &managementServiceFake{err: campaign_service.ErrImageCampaignContentDisabled}
+	handler := NewCampaignHandler(service)
+	body := `{"name":"Image campaign","content":{"type":"image","mediaId":"` + mediaID + `","caption":"Branch update"},"recipients":[{"jid":"15550001@s.whatsapp.net","optInSource":"checkout","optInEvidenceReference":"consent","optedInAt":"2026-01-01T00:00:00Z"}]}`
+	ctx, response := campaignContext(http.MethodPost, "/campaigns", body, instanceID, "instance-secret", "")
+	handler.Create(ctx)
+	if response.Code != http.StatusConflict || service.create.ContentType != campaign_model.CampaignContentImage ||
+		service.create.MediaAssetID != mediaID || service.create.TextBody != "Branch update" ||
+		!strings.Contains(response.Body.String(), `"code":"campaign_image_content_disabled"`) {
+		t.Fatalf("status=%d input=%+v body=%s", response.Code, service.create, response.Body.String())
+	}
+
+	service = &managementServiceFake{}
+	handler = NewCampaignHandler(service)
+	body = `{"name":"Ambiguous","text":"legacy","content":{"type":"image","mediaId":"` + mediaID + `"},"recipients":[]}`
+	ctx, response = campaignContext(http.MethodPost, "/campaigns", body, instanceID, "instance-secret", "")
+	handler.Create(ctx)
+	if response.Code != http.StatusBadRequest || service.calls != 0 {
+		t.Fatalf("ambiguous status=%d calls=%d body=%s", response.Code, service.calls, response.Body.String())
+	}
+}
+
 func TestCampaignReadsAreScopedPaginatedAndRejectForgedIdentity(t *testing.T) {
 	instanceID, campaignID := uuid.NewString(), uuid.NewString()
 	service := &managementServiceFake{recipients: &campaign_service.RecipientList{Items: []campaign_model.Recipient{}, NextCursor: "next"}}

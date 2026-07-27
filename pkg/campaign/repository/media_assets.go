@@ -154,6 +154,14 @@ func (r *mediaAssetRepository) ClaimDelete(ctx context.Context, instanceID, asse
 		if asset.Status == campaign_model.MediaAssetStatusUploading || asset.CleanupClaimToken != nil && asset.CleanupLeaseUntil != nil && asset.CleanupLeaseUntil.After(now) {
 			return ErrMediaAssetConflict
 		}
+		var references int64
+		if err := tx.Model(&campaign_model.Campaign{}).
+			Where("instance_id = ? AND media_asset_id = ?", instanceID, assetID).Count(&references).Error; err != nil {
+			return err
+		}
+		if references != 0 {
+			return ErrMediaAssetConflict
+		}
 		leaseUntil := now.Add(lease)
 		if err := tx.Model(&campaign_model.MediaAsset{}).Where("instance_id = ? AND id = ?", instanceID, assetID).
 			Updates(map[string]any{"cleanup_claim_token": token, "cleanup_lease_until": leaseUntil, "updated_at": now}).Error; err != nil {
@@ -181,6 +189,11 @@ func (r *mediaAssetRepository) ClaimExpired(ctx context.Context, limit int, leas
       AND status IN ('uploading', 'ready', 'failed')
       AND expires_at <= ?
       AND (cleanup_lease_until IS NULL OR cleanup_lease_until <= ?)
+      AND NOT EXISTS (
+          SELECT 1 FROM campaigns
+          WHERE campaigns.instance_id = campaign_media_assets.instance_id
+            AND campaigns.media_asset_id = campaign_media_assets.id
+      )
     ORDER BY expires_at ASC, id ASC
     FOR UPDATE SKIP LOCKED
     LIMIT ?
