@@ -64,9 +64,11 @@ func (r *campaignRepository) claimDirectReady(ctx context.Context, instanceID st
     FROM campaign_recipients AS recipients
     JOIN campaigns ON campaigns.id = recipients.campaign_id
         AND campaigns.instance_id = recipients.instance_id
+    LEFT JOIN campaign_instance_circuits AS circuits ON circuits.instance_id = recipients.instance_id
     WHERE campaigns.status = 'running'
 	  AND recipients.target_type = 'direct'
       AND (CAST(? AS uuid) IS NULL OR recipients.instance_id = CAST(? AS uuid))
+      AND (? = FALSE OR circuits.instance_id IS NULL OR circuits.open_until <= ?)
       AND ((recipients.status = 'pending' AND recipients.next_attempt_at <= ?)
         OR (recipients.status = 'processing' AND recipients.lease_until <= ?))
     ORDER BY recipients.next_attempt_at ASC, recipients.campaign_id ASC, recipients.id ASC
@@ -78,7 +80,7 @@ UPDATE campaign_recipients AS recipients
 SET status = 'processing', claim_token = ?, lease_until = ?, last_error_code = NULL, updated_at = ?
 FROM candidates
 WHERE recipients.id = candidates.id
-RETURNING recipients.*`, instanceFilter, instanceFilter, now, now, limit, claimToken, leaseUntil, now).Scan(&recipients).Error
+RETURNING recipients.*`, instanceFilter, instanceFilter, r.groupSafety.Enabled, now, now, now, limit, claimToken, leaseUntil, now).Scan(&recipients).Error
 	return recipients, err
 }
 

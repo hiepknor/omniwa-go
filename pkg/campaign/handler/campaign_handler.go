@@ -79,7 +79,7 @@ func NewCampaignHandler(service managementService) CampaignHandler {
 
 // Create creates a campaign draft.
 // @Summary Create campaign draft
-// @Description Creates a text campaign draft. Existing direct recipients remain available behind WA_CAMPAIGN_DIRECT_CREATE_ENABLED. The additive group-list target contract is rejected until group execution safety is enabled in a later rollout.
+// @Description Creates a text campaign draft. Group-list targets are available when WA_CAMPAIGN_GROUP_TARGETS_ENABLED is true. Existing direct recipients remain available behind WA_CAMPAIGN_DIRECT_CREATE_ENABLED during migration.
 // @Tags Campaigns
 // @Accept json
 // @Produce json

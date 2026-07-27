@@ -70,6 +70,25 @@ func TestTextSenderRejectsInvalidOrCancelledJobs(t *testing.T) {
 	}
 }
 
+func TestTextSenderRejectsInvalidGroupJIDBeforeProviderBoundary(t *testing.T) {
+	instanceID, campaignID := uuid.NewString(), uuid.NewString()
+	sends := &textSendServiceFake{}
+	sender := NewTextSender(instanceReaderFake{instance: &instance_model.Instance{Id: instanceID}}, sends)
+	_, err := sender.Send(context.Background(),
+		&campaign_model.Campaign{ID: campaignID, InstanceID: instanceID, ContentType: "text", TextBody: "hello"},
+		&campaign_model.Recipient{
+			ID: uuid.NewString(), CampaignID: campaignID, InstanceID: instanceID,
+			RecipientJID: "15550001@s.whatsapp.net", TargetType: campaign_model.RecipientTargetGroup,
+		})
+	var delivery *DeliveryError
+	if !errors.As(err, &delivery) || delivery.Kind != DeliveryFailureTerminal || delivery.Code != "invalid_group_jid" {
+		t.Fatalf("invalid group delivery error = %#v, %v", delivery, err)
+	}
+	if sends.input != nil {
+		t.Fatalf("invalid group reached provider boundary: %#v", sends.input)
+	}
+}
+
 func TestTextSenderClassifiesInstanceLookupAsDependencyDeferral(t *testing.T) {
 	sender := NewTextSender(instanceReaderFake{err: errors.New("database unavailable")}, &textSendServiceFake{})
 	instanceID, campaignID := uuid.NewString(), uuid.NewString()

@@ -180,13 +180,7 @@ WHERE instance_id = ? AND open_until > NOW()`, instanceID).Scan(&circuit).Error;
 		return nil, err
 	}
 	if !circuit.OpenUntil.IsZero() {
-		var groupCampaignIDs []string
-		if err := r.db.WithContext(ctx).Model(&campaign_model.Campaign{}).
-			Where("instance_id = ? AND id IN ? AND target_type = ?", instanceID, campaignIDs, campaign_model.CampaignTargetGroupList).
-			Pluck("id", &groupCampaignIDs).Error; err != nil {
-			return nil, err
-		}
-		for _, campaignID := range groupCampaignIDs {
+		for _, campaignID := range campaignIDs {
 			snapshot := result[campaignID]
 			if snapshot.RetryAt == nil || circuit.OpenUntil.After(*snapshot.RetryAt) {
 				retryAt := circuit.OpenUntil.UTC()

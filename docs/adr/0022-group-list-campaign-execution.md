@@ -175,12 +175,10 @@ even though the currently supported topology is one application replica.
   policy. Crossing a threshold atomically pauses the campaign and records a safe
   reason. Frontends display the result and never reproduce policy constants.
 
-expired guard, but an expired or lost claim cannot overwrite a newer outcome.
 Leases, guard ownership, cooldowns, and circuit transitions use normalized UTC
 timestamps, bounded durations, and fenced claim identities. Crash recovery may
 reclaim an expired guard, but an expired or lost claim cannot overwrite a newer
 outcome.
-expired guard, but an expired or lost claim cannot overwrite a newer outcome.
 
 ### Progress contract
 
