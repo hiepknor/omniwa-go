@@ -270,6 +270,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if config.ChatImageContentEnabled && !config.MediaAssetsEnabled {
 		logger.LogFatal("component=chat_image_content action=initialize result=failed error=media_assets_required")
 	}
+	if config.InboundImageContentEnabled && !config.MediaAssetsEnabled {
+		logger.LogFatal("component=inbound_image_content action=initialize result=failed error=media_assets_required")
+	}
+	if config.InboundImageContentEnabled && (len(config.MediaDescriptorKey) != 32 || config.MediaDescriptorKeyVersion < 1) {
+		logger.LogFatal("component=inbound_image_content action=initialize result=failed error=descriptor_key_required")
+	}
 
 	var tokenDigester instance_repository.TokenDigester
 	if len(config.InstanceTokenHMACKey) > 0 {
@@ -336,6 +342,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	if config.ChatImageContentEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("messages", projection_service.CapabilityChatImageContent))
+	}
+	if config.InboundImageContentEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("messages", projection_service.CapabilityInboundImageContent))
 	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(
 		projection_repository.NewStateRepository(db),
@@ -455,6 +464,23 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	)
 	startBackground(backgroundWorkers, "events.retention", durableEventRetentionWorker.Run)
 
+	mediaAssetRepository := media_repository.New(db)
+	var inboundMediaRepository media_repository.InboundRepository
+	var mediaDescriptorCipher *media_service.DescriptorCipher
+	var inboundMediaCapture *media_service.InboundCaptureService
+	if config.InboundImageContentEnabled {
+		inboundMediaRepository = media_repository.NewInbound(db)
+		mediaDescriptorCipher, err = media_service.NewDescriptorCipher(
+			map[int][]byte{config.MediaDescriptorKeyVersion: config.MediaDescriptorKey}, config.MediaDescriptorKeyVersion,
+		)
+		if err != nil {
+			logger.LogFatal("component=inbound_image_content action=initialize result=failed error=invalid_descriptor_key")
+		}
+		inboundMediaCapture = media_service.NewInboundCaptureService(inboundMediaRepository, mediaDescriptorCipher, media_service.InboundCaptureSettings{
+			MaxBytes: config.MediaAssetMaxBytes, MaxPixels: config.MediaAssetMaxPixels,
+			MaxAttempts: config.MediaDownloadMaxAttempts, Retention: config.MessageRetention,
+		})
+	}
 	whatsmeowService := whatsmeow_service.NewWhatsmeowService(
 		instanceRepository,
 		authDB,
@@ -472,6 +498,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		queryGuard,
 		outboundGuard,
 		projectionEventService,
+		inboundMediaCapture,
 		groupReconciler,
 		labelSyncer,
 		contactSyncer,
@@ -564,19 +591,23 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 	}
 	sendMessageService := send_service.NewSendService(runtimeRegistry, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, audioConverterRequester, loggerWrapper)
-	mediaAssetRepository := media_repository.New(db)
 	var mediaAssetHandler media_handler.Handler
 	var outboundImageService *media_service.OutboundImageService
-	if config.ChatImageContentEnabled {
+	if config.ChatImageContentEnabled || config.InboundImageContentEnabled {
 		assetSettings := media_service.AssetSettings{
 			MaxBytes: config.MediaAssetMaxBytes, MaxPixels: config.MediaAssetMaxPixels,
 			UnboundTTL: config.MediaAssetUnboundTTL, DeleteLease: 5 * time.Minute,
 		}
 		assetService := media_service.NewAssetService(mediaAssetRepository, mediaAssetStore, assetSettings)
-		mediaAssetHandler = media_handler.New(assetService, config.MediaAssetMaxBytes)
-		outboundImageService = media_service.NewOutboundImageService(
-			mediaAssetRepository, mediaAssetStore, sendMessageService, config.MediaAssetMaxBytes, config.MessageRetention,
+		mediaAssetHandler = media_handler.New(assetService, config.MediaAssetMaxBytes,
+			media_handler.WithDeviceUploads(config.ChatImageContentEnabled),
+			media_handler.WithContent(config.InboundImageContentEnabled),
 		)
+		if config.ChatImageContentEnabled {
+			outboundImageService = media_service.NewOutboundImageService(
+				mediaAssetRepository, mediaAssetStore, sendMessageService, config.MediaAssetMaxBytes, config.MessageRetention,
+			)
+		}
 		cleanupWorker := media_service.NewCleanupWorker(mediaAssetRepository, mediaAssetStore, 100, 5*time.Minute, 15*time.Minute,
 			func(cleaned int, err error) {
 				if err != nil {
@@ -587,6 +618,24 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			},
 		)
 		startBackground(backgroundWorkers, "media_assets.cleanup", cleanupWorker.Run)
+		if config.InboundImageContentEnabled {
+			inboundWorker := media_service.NewInboundWorker(
+				inboundMediaRepository, mediaDescriptorCipher, media_service.NewRuntimeInboundDownloader(runtimeRegistry), mediaAssetStore,
+				media_service.InboundWorkerSettings{
+					BatchSize: config.MediaDownloadBatch, Lease: config.MediaDownloadLease,
+					PollInterval: config.MediaDownloadPollInterval, Timeout: config.MediaDownloadTimeout,
+					RetryBase: config.MediaDownloadRetryBase, MaxBytes: config.MediaAssetMaxBytes, MaxPixels: config.MediaAssetMaxPixels,
+				},
+				func(result media_service.InboundWorkerResult, err error) {
+					if err != nil {
+						logger.LogError("component=media_assets action=download_inbound result=failed claimed=%d completed=%d retried=%d failed=%d", result.Claimed, result.Completed, result.Retried, result.Failed)
+					} else if result.Claimed > 0 {
+						logger.LogInfo("component=media_assets action=download_inbound result=success claimed=%d completed=%d retried=%d failed=%d", result.Claimed, result.Completed, result.Retried, result.Failed)
+					}
+				},
+			)
+			startBackground(backgroundWorkers, "media_assets.inbound_download", inboundWorker.Run)
+		}
 	}
 	campaignRepository := campaign_repository.NewCampaignRepository(db, campaign_repository.WithGroupEligibilityEvaluator(
 		func(ctx context.Context, tx *gorm.DB, instanceID, instanceJID string, groupJIDs []string) ([]campaign_repository.GroupEligibilityResult, error) {

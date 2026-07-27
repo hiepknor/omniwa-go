@@ -5,9 +5,9 @@
 Accepted. Migration 26 and the generic storage boundary are the additive,
 disabled-by-default foundation. Migration 27 backfills and cuts campaign
 metadata over behind feature flags while retaining a rollback shadow. The
-outbound chat cutover now uses the same shared identity behind an independent
-feature flag; inbound capture and authenticated content streaming remain later
-staged changes.
+outbound chat and live inbound chat stages now use the same shared identity
+behind independent feature flags. ADR 0025 defines inbound capture, encrypted
+download work, and authenticated content streaming.
 
 ## Context
 

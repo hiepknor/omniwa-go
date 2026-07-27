@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	"github.com/google/uuid"
 	waE2E "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -40,6 +41,7 @@ type messageEventPayload struct {
 	MediaDurationSeconds *uint32                            `json:"mediaDurationSeconds,omitempty"`
 	MediaWidth           *uint32                            `json:"mediaWidth,omitempty"`
 	MediaHeight          *uint32                            `json:"mediaHeight,omitempty"`
+	MediaAssetID         *string                            `json:"mediaAssetId,omitempty"`
 	ProviderTimestamp    time.Time                          `json:"providerTimestamp,omitempty"`
 	Provenance           projection_model.MessageProvenance `json:"provenance,omitempty"`
 	Status               *string                            `json:"status,omitempty"`
@@ -176,6 +178,26 @@ func newMessageProjectionEvent(instanceID, eventType, entityKey string, occurred
 		InstanceID: instanceID, Resource: messageResource, EventKey: hex.EncodeToString(sum[:]),
 		EntityKey: entityKey, EventType: eventType, OccurredAt: occurredAt, Payload: encoded,
 	}, true, nil
+}
+
+// AttachInboundMediaAsset adds only the opaque shared identity to an already
+// normalized live message. Provider paths and keys never enter the projection
+// inbox payload.
+func AttachInboundMediaAsset(event *projection_model.Event, assetID string) (*projection_model.Event, error) {
+	if event == nil || event.Resource != messageResource || event.EventType != "message" || uuid.Validate(assetID) != nil {
+		return nil, errors.New("live message event and media asset identity are required")
+	}
+	var payload messageEventPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return nil, err
+	}
+	if payload.Provenance != projection_model.MessageProvenanceLive || payload.Direction != projection_model.MessageDirectionIncoming ||
+		payload.MediaType == nil || *payload.MediaType != "image" || payload.MessageID != event.EntityKey {
+		return nil, errors.New("media asset can only be attached to a live incoming image")
+	}
+	payload.MediaAssetID = &assetID
+	attached, _, err := newMessageProjectionEvent(event.InstanceID, event.EventType, event.EntityKey, event.OccurredAt, payload)
+	return attached, err
 }
 
 func populateNormalizedMessage(payload *messageEventPayload, infoType string, message *waE2E.Message) {

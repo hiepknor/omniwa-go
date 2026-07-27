@@ -89,9 +89,14 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	if r.mediaHandler != nil {
 		routes := eng.Group("/media-assets")
 		routes.Use(r.authMiddleware.Auth)
-		routes.POST("", r.mediaHandler.Upload)
 		routes.GET("/:mediaId", r.mediaHandler.Get)
-		routes.DELETE("/:mediaId", r.mediaHandler.Delete)
+		if r.mediaHandler.DeviceUploadsEnabled() {
+			routes.POST("", r.mediaHandler.Upload)
+			routes.DELETE("/:mediaId", r.mediaHandler.Delete)
+		}
+		if r.mediaHandler.ContentEnabled() {
+			routes.GET("/:mediaId/content", r.mediaHandler.Content)
+		}
 	}
 
 	if r.groupListHandler != nil {

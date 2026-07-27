@@ -234,6 +234,25 @@ func TestOptionalResourceCapabilityRequiresReadyCurrentProjection(t *testing.T) 
 	}
 }
 
+func TestInboundImageCapabilityRequiresCurrentMessagesProjection(t *testing.T) {
+	repository := newMemoryRepository()
+	service := NewStateService(repository, WithResourceCapability("messages", CapabilityInboundImageContent))
+	repository.states[stateKey("instance-a", "messages")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "messages", SyncStatus: projection_model.SyncStatusReady, SchemaVersion: MessagesProjectionSchemaVersion - 1,
+	}
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityInboundImageContent) {
+		t.Fatalf("inbound capability advertised for old schema: %v/%v", capabilities, err)
+	}
+	repository.states[stateKey("instance-a", "messages")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "messages", SyncStatus: projection_model.SyncStatusReady, SchemaVersion: MessagesProjectionSchemaVersion,
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, CapabilityInboundImageContent) {
+		t.Fatalf("inbound capability missing for current ready schema: %v/%v", capabilities, err)
+	}
+}
+
 func TestProjectionHealthMetricsAreScopedAndTimestamped(t *testing.T) {
 	repository := newMemoryRepository()
 	now := time.Unix(1000, 0).UTC()

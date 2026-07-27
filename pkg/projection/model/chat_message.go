@@ -76,7 +76,8 @@ type ProjectedMessage struct {
 	MediaDuration      *uint32           `json:"mediaDurationSeconds,omitempty" gorm:"column:media_duration_seconds"`
 	MediaWidth         *uint32           `json:"mediaWidth,omitempty" gorm:"column:media_width"`
 	MediaHeight        *uint32           `json:"mediaHeight,omitempty" gorm:"column:media_height"`
-	MediaObjectKey     *string           `json:"mediaObjectKey,omitempty" gorm:"column:media_object_key"`
+	MediaObjectKey     *string           `json:"-" gorm:"column:media_object_key"`
+	MediaAssetID       *string           `json:"mediaAssetId,omitempty" gorm:"column:media_asset_id;type:uuid"`
 	Status             *string           `json:"status,omitempty" gorm:"column:status;size:32"`
 	ProviderTimestamp  time.Time         `json:"providerTimestamp" gorm:"column:provider_timestamp;not null"`
 	SentAt             *time.Time        `json:"sentAt,omitempty" gorm:"column:sent_at"`

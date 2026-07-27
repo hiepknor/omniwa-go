@@ -36,6 +36,15 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED, "")
 	t.Setenv(config_env.WA_MEDIA_ASSETS_ENABLED, "")
 	t.Setenv(config_env.WA_CHAT_IMAGE_CONTENT_ENABLED, "")
+	t.Setenv(config_env.WA_INBOUND_IMAGE_CONTENT_ENABLED, "")
+	t.Setenv(config_env.MEDIA_DESCRIPTOR_KEY, "")
+	t.Setenv(config_env.MEDIA_DESCRIPTOR_KEY_VERSION, "")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_BATCH, "")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_LEASE, "")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_POLL_INTERVAL, "")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_TIMEOUT, "")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_MAX_ATTEMPTS, "")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_RETRY_BASE, "")
 	t.Setenv(config_env.MEDIA_ASSET_BUCKET, "")
 	t.Setenv(config_env.MEDIA_ASSET_MAX_BYTES, "")
 	t.Setenv(config_env.MEDIA_ASSET_MAX_PIXELS, "")
@@ -111,6 +120,11 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.ChatImageContentEnabled {
 		t.Fatal("expected chat image content to be disabled by default")
 	}
+	if config.InboundImageContentEnabled || len(config.MediaDescriptorKey) != 0 || config.MediaDescriptorKeyVersion != 0 ||
+		config.MediaDownloadBatch != 4 || config.MediaDownloadLease != 3*time.Minute || config.MediaDownloadPollInterval != time.Second ||
+		config.MediaDownloadTimeout != 2*time.Minute || config.MediaDownloadMaxAttempts != 3 || config.MediaDownloadRetryBase != 30*time.Second {
+		t.Fatalf("inbound media defaults are invalid")
+	}
 	if config.RemoteMedia.Policy != "public_only" || config.RemoteMedia.Timeout != 15*time.Second || config.RemoteMedia.MaxBytes != 32*1024*1024 || len(config.RemoteMedia.AllowedHosts) != 0 {
 		t.Fatalf("remote media defaults = %+v", config.RemoteMedia)
 	}
@@ -148,6 +162,15 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED, "true")
 	t.Setenv(config_env.WA_MEDIA_ASSETS_ENABLED, "true")
 	t.Setenv(config_env.WA_CHAT_IMAGE_CONTENT_ENABLED, "true")
+	t.Setenv(config_env.WA_INBOUND_IMAGE_CONTENT_ENABLED, "true")
+	t.Setenv(config_env.MEDIA_DESCRIPTOR_KEY, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)))
+	t.Setenv(config_env.MEDIA_DESCRIPTOR_KEY_VERSION, "5")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_BATCH, "8")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_LEASE, "90s")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_POLL_INTERVAL, "2s")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_TIMEOUT, "45s")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_MAX_ATTEMPTS, "6")
+	t.Setenv(config_env.MEDIA_DOWNLOAD_RETRY_BASE, "10s")
 	t.Setenv(config_env.MEDIA_ASSET_BUCKET, "private-media-assets")
 	t.Setenv(config_env.MEDIA_ASSET_MAX_BYTES, "3145728")
 	t.Setenv(config_env.MEDIA_ASSET_MAX_PIXELS, "9000000")
@@ -222,6 +245,11 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if !config.ChatImageContentEnabled {
 		t.Fatal("expected chat image content override to be enabled")
+	}
+	if !config.InboundImageContentEnabled || len(config.MediaDescriptorKey) != 32 || config.MediaDescriptorKeyVersion != 5 ||
+		config.MediaDownloadBatch != 8 || config.MediaDownloadLease != 90*time.Second || config.MediaDownloadPollInterval != 2*time.Second ||
+		config.MediaDownloadTimeout != 45*time.Second || config.MediaDownloadMaxAttempts != 6 || config.MediaDownloadRetryBase != 10*time.Second {
+		t.Fatal("inbound media overrides are invalid")
 	}
 	if len(config.InstanceTokenHMACKey) != 32 || config.InstanceTokenHMACKeyVersion != 7 || config.InstanceTokenBackfillBatch != 25 || config.InstanceTokenBackfillMaxBatches != 4 {
 		t.Fatalf("instance token digest overrides are invalid")

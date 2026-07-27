@@ -11,6 +11,7 @@ Keep the feature disabled while applying the migration:
 ```env
 WA_MEDIA_ASSETS_ENABLED=false
 WA_CHAT_IMAGE_CONTENT_ENABLED=false
+WA_INBOUND_IMAGE_CONTENT_ENABLED=false
 MINIO_ENABLED=true
 MEDIA_ASSET_BUCKET=omniwa-media-assets
 MEDIA_ASSET_MAX_BYTES=8388608
@@ -111,6 +112,62 @@ When enabled and the messages projection is serving, the server advertises
 stage. The upload routes and `mediaAssetId` sender are removed, while legacy
 media sends and stored shared assets remain unchanged.
 
+## Live inbound chat images
+
+Inbound capture is a separate rollout gate. Generate a stable 32-byte key,
+store it in the deployment secret manager as standard base64, and enable the
+worker only after migration 28 is applied:
+
+```env
+WA_MEDIA_ASSETS_ENABLED=true
+WA_INBOUND_IMAGE_CONTENT_ENABLED=true
+MEDIA_DESCRIPTOR_KEY=<base64-encoded-32-byte-key>
+MEDIA_DESCRIPTOR_KEY_VERSION=1
+MEDIA_DOWNLOAD_BATCH=4
+MEDIA_DOWNLOAD_LEASE=3m
+MEDIA_DOWNLOAD_POLL_INTERVAL=1s
+MEDIA_DOWNLOAD_TIMEOUT=2m
+MEDIA_DOWNLOAD_MAX_ATTEMPTS=3
+MEDIA_DOWNLOAD_RETRY_BASE=30s
+```
+
+The live WhatsApp event path writes only an encrypted, authenticated provider
+descriptor and an opaque `mediaAssetId`. It does not download, decode, or store
+image bytes in the event handler. The projection inbox never contains the
+provider direct path, media key, encrypted-file hash, bucket, or object key.
+History sync does not enqueue media downloads in this stage.
+
+A leased worker downloads the encrypted provider object to a bounded temporary
+file, verifies the provider size and SHA-256, accepts only JPEG or PNG, enforces
+decoded dimensions and pixel limits, and writes immutable `provider_original`
+and normalized `canonical` variants to the private shared bucket. Transient
+failures use bounded exponential retry with stable jitter. Expired, invalid,
+oversized, or integrity-failed media becomes terminal. Terminal jobs erase the
+encrypted descriptor envelope from PostgreSQL.
+
+Projected image messages include `mediaAssetId`. Metadata may initially report
+`downloading` or `processing`; clients should poll until `ready` or `failed`.
+Ready canonical bytes are available only through the authenticated endpoint:
+
+```http
+GET /media-assets/{mediaId}/content
+apikey: <instance-token>
+Range: bytes=0-1048575
+```
+
+The endpoint is instance-scoped, supports at most one byte range, sets private
+immutable cache headers, and never redirects to a bucket or presigned URL. A
+cross-instance request is returned as not found. The messages capability is
+`chat_inbound_image_content`.
+
+Disable `WA_INBOUND_IMAGE_CONTENT_ENABLED` to stop new capture, the download
+worker, and content streaming. Existing projected metadata and private objects
+remain intact. Before rotating `MEDIA_DESCRIPTOR_KEY`, drain all jobs in
+`pending`, `processing`, and `retry_wait`; the current runtime intentionally
+loads one active key version. If the key is lost while jobs are nonterminal,
+those descriptors cannot be recovered and the affected jobs must be failed by
+a forward repair operation. Never log or return the key or descriptor columns.
+
 ## Campaign compatibility rollout
 
 Migration 27 preserves each legacy campaign asset ID, state, expiry, immutable
@@ -130,9 +187,8 @@ stage.
 Enable the shared path only after checking the migration counts, provisioning
 the private shared bucket, and verifying that representative legacy and new
 campaign images can be read. Metadata `/media-assets` and outbound chat assets
-are available only behind their independent chat flag. Inbound capture,
-download workers, and authenticated media content streaming remain later
-staged changes.
+are available behind their independent chat flag. Inbound capture and content
+streaming use their own independent inbound flag.
 
 Rollback by disabling `WA_MEDIA_ASSETS_ENABLED`; campaign traffic returns to
 the maintained legacy metadata and bucket. Keep both additive tables and both

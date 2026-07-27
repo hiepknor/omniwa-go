@@ -1482,6 +1482,8 @@ definitions:
         $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageDirection'
       historySyncId:
         type: string
+      mediaAssetId:
+        type: string
       mediaDurationSeconds:
         type: integer
       mediaFileName:
@@ -11640,6 +11642,51 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get shared image asset metadata
+      tags:
+      - Media Assets
+  /media-assets/{mediaId}/content:
+    get:
+      parameters:
+      - description: Media asset UUID
+        in: path
+        name: mediaId
+        required: true
+        type: string
+      - description: Single bytes range
+        in: header
+        name: Range
+        type: string
+      produces:
+      - image/jpeg
+      - image/png
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "206":
+          description: Partial Content
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "416":
+          description: Requested Range Not Satisfiable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Stream shared image asset content
       tags:
       - Media Assets
   /message/{messageId}:

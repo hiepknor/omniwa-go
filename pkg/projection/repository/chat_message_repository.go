@@ -409,7 +409,7 @@ func applyMessageAspect(stored, incoming *projection_model.ProjectedMessage, asp
 	case MessageAspectMedia:
 		stored.MediaType, stored.MediaMIMEType, stored.MediaFileName = incoming.MediaType, incoming.MediaMIMEType, incoming.MediaFileName
 		stored.MediaSize, stored.MediaDuration, stored.MediaWidth, stored.MediaHeight = incoming.MediaSize, incoming.MediaDuration, incoming.MediaWidth, incoming.MediaHeight
-		stored.MediaObjectKey = incoming.MediaObjectKey
+		stored.MediaObjectKey, stored.MediaAssetID = incoming.MediaObjectKey, incoming.MediaAssetID
 	case MessageAspectLifecycle:
 		stored.Status, stored.SentAt, stored.DeliveredAt = incoming.Status, incoming.SentAt, incoming.DeliveredAt
 		stored.ReadAt, stored.PlayedAt = incoming.ReadAt, incoming.PlayedAt

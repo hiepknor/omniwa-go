@@ -97,6 +97,15 @@ type Config struct {
 	CampaignImageContentEnabled   bool
 	MediaAssetsEnabled            bool
 	ChatImageContentEnabled       bool
+	InboundImageContentEnabled    bool
+	MediaDescriptorKey            []byte
+	MediaDescriptorKeyVersion     int
+	MediaDownloadBatch            int
+	MediaDownloadLease            time.Duration
+	MediaDownloadPollInterval     time.Duration
+	MediaDownloadTimeout          time.Duration
+	MediaDownloadMaxAttempts      int
+	MediaDownloadRetryBase        time.Duration
 	MediaAssetBucket              string
 	MediaAssetMaxBytes            int64
 	MediaAssetMaxPixels           int64
@@ -410,6 +419,7 @@ func Load() *Config {
 	campaignGroupTargetsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_GROUP_TARGETS_ENABLED)), "true")
 	campaignImageContentEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED)), "true")
 	chatImageContentEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CHAT_IMAGE_CONTENT_ENABLED)), "true")
+	inboundImageContentEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_INBOUND_IMAGE_CONTENT_ENABLED)), "true")
 
 	waInfoRateValue := os.Getenv(config_env.WA_INFO_RATE)
 	if waInfoRateValue == "" {
@@ -563,6 +573,44 @@ func Load() *Config {
 	mediaAssetUnboundTTL, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.MEDIA_ASSET_UNBOUND_TTL), "24h"))
 	if err != nil {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.MEDIA_ASSET_UNBOUND_TTL, err)
+	}
+	mediaDescriptorKey, err := parseOptionalBase64Key(strings.TrimSpace(os.Getenv(config_env.MEDIA_DESCRIPTOR_KEY)), 32)
+	if err != nil || len(mediaDescriptorKey) != 0 && len(mediaDescriptorKey) != 32 {
+		logger.LogFatal("[CONFIG] invalid %s: must be base64 for exactly 32 bytes", config_env.MEDIA_DESCRIPTOR_KEY)
+	}
+	mediaDescriptorKeyVersion := 0
+	if value := strings.TrimSpace(os.Getenv(config_env.MEDIA_DESCRIPTOR_KEY_VERSION)); value != "" {
+		mediaDescriptorKeyVersion, err = parsePositiveInt(value)
+		if err != nil {
+			logger.LogFatal("[CONFIG] invalid %s: %v", config_env.MEDIA_DESCRIPTOR_KEY_VERSION, err)
+		}
+	}
+	mediaDownloadBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.MEDIA_DOWNLOAD_BATCH), "4"))
+	if err != nil || mediaDownloadBatch > 100 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 100", config_env.MEDIA_DOWNLOAD_BATCH)
+	}
+	mediaDownloadLease, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.MEDIA_DOWNLOAD_LEASE), "3m"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.MEDIA_DOWNLOAD_LEASE, err)
+	}
+	mediaDownloadPollInterval, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.MEDIA_DOWNLOAD_POLL_INTERVAL), "1s"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.MEDIA_DOWNLOAD_POLL_INTERVAL, err)
+	}
+	mediaDownloadTimeout, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.MEDIA_DOWNLOAD_TIMEOUT), "2m"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.MEDIA_DOWNLOAD_TIMEOUT, err)
+	}
+	if mediaDownloadLease <= mediaDownloadTimeout+30*time.Second {
+		logger.LogFatal("[CONFIG] invalid %s: must exceed %s by more than 30s", config_env.MEDIA_DOWNLOAD_LEASE, config_env.MEDIA_DOWNLOAD_TIMEOUT)
+	}
+	mediaDownloadMaxAttempts, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.MEDIA_DOWNLOAD_MAX_ATTEMPTS), "3"))
+	if err != nil || mediaDownloadMaxAttempts > 20 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 20", config_env.MEDIA_DOWNLOAD_MAX_ATTEMPTS)
+	}
+	mediaDownloadRetryBase, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.MEDIA_DOWNLOAD_RETRY_BASE), "30s"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.MEDIA_DOWNLOAD_RETRY_BASE, err)
 	}
 
 	waGroupReconcileIntervalValue := os.Getenv(config_env.WA_GROUP_RECONCILE_INTERVAL)
@@ -773,6 +821,15 @@ func Load() *Config {
 		CampaignImageContentEnabled:   campaignImageContentEnabled,
 		MediaAssetsEnabled:            mediaAssetsEnabled,
 		ChatImageContentEnabled:       chatImageContentEnabled,
+		InboundImageContentEnabled:    inboundImageContentEnabled,
+		MediaDescriptorKey:            mediaDescriptorKey,
+		MediaDescriptorKeyVersion:     mediaDescriptorKeyVersion,
+		MediaDownloadBatch:            mediaDownloadBatch,
+		MediaDownloadLease:            mediaDownloadLease,
+		MediaDownloadPollInterval:     mediaDownloadPollInterval,
+		MediaDownloadTimeout:          mediaDownloadTimeout,
+		MediaDownloadMaxAttempts:      mediaDownloadMaxAttempts,
+		MediaDownloadRetryBase:        mediaDownloadRetryBase,
 		MediaAssetBucket:              mediaAssetBucket,
 		MediaAssetMaxBytes:            mediaAssetMaxBytes,
 		MediaAssetMaxPixels:           mediaAssetMaxPixels,

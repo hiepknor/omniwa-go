@@ -277,7 +277,9 @@ func (r *repository) AddReference(ctx context.Context, reference media_model.Ass
 			}
 			return err
 		}
-		if asset.Status != media_model.AssetStatusReady || asset.CleanupClaimToken != nil {
+		inboundDownloadReference := asset.Origin == media_model.AssetOriginWhatsAppInbound && reference.OwnerType == media_model.ReferenceOwnerMessage &&
+			(asset.Status == media_model.AssetStatusDownloading || asset.Status == media_model.AssetStatusProcessing)
+		if asset.Status != media_model.AssetStatusReady && !inboundDownloadReference || asset.CleanupClaimToken != nil {
 			return ErrAssetConflict
 		}
 		reference.CreatedAt = r.now().UTC()
@@ -395,6 +397,11 @@ func (r *repository) ClaimExpired(ctx context.Context, limit int, lease time.Dur
           SELECT 1 FROM campaign_media_assets AS legacy
           WHERE legacy.instance_id = assets.instance_id AND legacy.id = assets.id
       )
+      AND NOT EXISTS (
+          SELECT 1 FROM media_download_jobs AS downloads
+          WHERE downloads.instance_id = assets.instance_id AND downloads.media_asset_id = assets.id
+            AND downloads.status IN ('pending', 'processing', 'retry_wait')
+      )
     ORDER BY assets.expires_at ASC, assets.id ASC
     FOR UPDATE SKIP LOCKED
     LIMIT ?
@@ -468,7 +475,9 @@ func validateCreate(r *repository, ctx context.Context, input CreateAssetInput) 
 	if input.Origin != media_model.AssetOriginDeviceUpload && input.Origin != media_model.AssetOriginWhatsAppInbound {
 		return errors.New("supported media asset origin is required")
 	}
-	if input.Status != media_model.AssetStatusPending && input.Status != media_model.AssetStatusUploading {
+	validInitialStatus := input.Status == media_model.AssetStatusPending || input.Status == media_model.AssetStatusUploading ||
+		input.Origin == media_model.AssetOriginWhatsAppInbound && input.Status == media_model.AssetStatusDownloading
+	if !validInitialStatus {
 		return errors.New("initial media asset status is invalid")
 	}
 	if input.RequestReferenceHash != nil && !validSHA(*input.RequestReferenceHash) {

@@ -55,6 +55,31 @@ func TestNormalizeMessageEventStoresBoundedNormalizedMetadata(t *testing.T) {
 	}
 }
 
+func TestAttachInboundMediaAssetChangesOnlyOpaqueProjectionLink(t *testing.T) {
+	raw := &events.Message{
+		Info:    types.MessageInfo{MessageSource: types.MessageSource{Chat: types.NewJID("group", types.GroupServer)}, ID: "message-media", Timestamp: time.Now().UTC()},
+		Message: &waE2E.Message{ImageMessage: &waE2E.ImageMessage{DirectPath: proto.String("/provider/secret"), MediaKey: []byte("provider-secret")}},
+	}
+	event, relevant, err := NormalizeChatMessageEvent("instance-a", raw)
+	if err != nil || !relevant {
+		t.Fatalf("normalize=%+v/%t/%v", event, relevant, err)
+	}
+	beforeKey := event.EventKey
+	assetID := "927beb51-46c2-4331-b3b4-d96f67280bd3"
+	attached, err := AttachInboundMediaAsset(event, assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload messageEventPayload
+	if err := json.Unmarshal(attached.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.MediaAssetID == nil || *payload.MediaAssetID != assetID || attached.EventKey == beforeKey ||
+		bytes.Contains(attached.Payload, []byte("provider/secret")) || bytes.Contains(attached.Payload, []byte("provider-secret")) {
+		t.Fatalf("attached event=%+v payload=%s", attached, attached.Payload)
+	}
+}
+
 func TestNormalizeReceiptEventDeduplicatesAndSortsMessageIDs(t *testing.T) {
 	raw := &events.Receipt{
 		MessageSource: types.MessageSource{
