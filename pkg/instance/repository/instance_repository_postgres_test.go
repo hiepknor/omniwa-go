@@ -13,7 +13,9 @@ import (
 	instance_credential "github.com/evolution-foundation/evolution-go/pkg/instance/credential"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
+	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
 	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
+	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -29,7 +31,7 @@ func TestPostgresInstanceDeleteIsFencedByPurgedMediaAssetSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&instance_model.Instance{}); err != nil {
+	if err := db.AutoMigrate(&instance_model.Instance{}, &label_model.Label{}, &message_model.Message{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrations.Run(db); err != nil {
