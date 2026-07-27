@@ -1205,6 +1205,58 @@ BEGIN
     END IF;
 END $$;`,
 	},
+	{
+		Version: 28,
+		Name:    "link_inbound_media_assets",
+		SQL: `ALTER TABLE projected_messages
+    ADD COLUMN media_asset_id UUID NULL,
+    ADD CONSTRAINT projected_messages_media_asset_fk
+        FOREIGN KEY (media_asset_id, instance_id)
+        REFERENCES media_assets(id, instance_id)
+        ON DELETE SET NULL (media_asset_id),
+    ADD CONSTRAINT projected_messages_media_asset_shape_check
+        CHECK (media_asset_id IS NULL OR media_type = 'image');
+
+CREATE INDEX projected_messages_media_asset_idx
+ON projected_messages (instance_id, media_asset_id)
+WHERE media_asset_id IS NOT NULL AND deleted_at IS NULL;
+
+ALTER TABLE media_download_jobs
+    DROP CONSTRAINT media_download_jobs_descriptor_check,
+    ALTER COLUMN descriptor_ciphertext DROP NOT NULL,
+    ALTER COLUMN descriptor_nonce DROP NOT NULL,
+    ALTER COLUMN descriptor_key_version DROP NOT NULL;
+
+UPDATE media_download_jobs
+SET descriptor_ciphertext = NULL,
+    descriptor_nonce = NULL,
+    descriptor_key_version = NULL,
+    updated_at = NOW()
+WHERE status IN ('completed', 'failed');
+
+ALTER TABLE media_download_jobs
+    ADD CONSTRAINT media_download_jobs_descriptor_lifecycle_check CHECK (
+        (
+            status IN ('pending', 'processing', 'retry_wait')
+            AND descriptor_ciphertext IS NOT NULL
+            AND OCTET_LENGTH(descriptor_ciphertext) > 0
+            AND descriptor_nonce IS NOT NULL
+            AND OCTET_LENGTH(descriptor_nonce) = 12
+            AND descriptor_key_version IS NOT NULL
+            AND descriptor_key_version > 0
+        )
+        OR (
+            status IN ('completed', 'failed')
+            AND descriptor_ciphertext IS NULL
+            AND descriptor_nonce IS NULL
+            AND descriptor_key_version IS NULL
+        )
+    );
+
+UPDATE projection_states
+SET schema_version = 2, updated_at = NOW()
+WHERE resource = 'messages' AND schema_version < 2;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

@@ -4325,6 +4325,76 @@
                 }
             }
         },
+        "/media-assets/{mediaId}/content": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "image/jpeg",
+                    "image/png"
+                ],
+                "tags": [
+                    "Media Assets"
+                ],
+                "summary": "Stream shared image asset content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media asset UUID",
+                        "name": "mediaId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Single bytes range",
+                        "name": "Range",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "206": {
+                        "description": "Partial Content",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "416": {
+                        "description": "Requested Range Not Satisfiable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/message/delete": {
             "post": {
                 "security": [
@@ -9857,6 +9927,9 @@
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageDirection"
                 },
                 "historySyncId": {
+                    "type": "string"
+                },
+                "mediaAssetId": {
                     "type": "string"
                 },
                 "mediaDurationSeconds": {

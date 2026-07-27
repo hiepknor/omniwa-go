@@ -79,6 +79,10 @@ type WhatsmeowService interface {
 	ConfirmPasskey(instanceId string) error
 }
 
+type inboundMediaCapture interface {
+	Capture(context.Context, string, any) (string, bool, error)
+}
+
 type clientVersion struct {
 	Major int
 	Minor int
@@ -107,6 +111,7 @@ type whatsmeowService struct {
 	queryGuard         waquery.Guard
 	outboundGuard      outbound.Guard
 	projectionEvents   projection_service.EventService
+	inboundMedia       inboundMediaCapture
 	groupReconciler    *projection_service.GroupReconciler
 	labelSyncer        *projection_service.LabelSyncer
 	contactSyncer      *projection_service.ContactSyncer
@@ -156,6 +161,7 @@ type MyClient struct {
 	passkeyCeremony    *ceremony.Store
 	queryGuard         waquery.Guard
 	projectionEvents   projection_service.EventService
+	inboundMedia       inboundMediaCapture
 	groupReconciler    *projection_service.GroupReconciler
 	labelSyncer        *projection_service.LabelSyncer
 	contactSyncer      *projection_service.ContactSyncer
@@ -366,6 +372,17 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
 		mycli.triggerHistoryProjectionSync(historyEvent)
 		return
 	}
+	assetID := ""
+	if mycli.inboundMedia != nil {
+		captureCtx, captureCancel := context.WithTimeout(context.Background(), projectionIngestTimeout)
+		capturedID, relevant, captureErr := mycli.inboundMedia.Capture(captureCtx, mycli.userID, rawEvent)
+		captureCancel()
+		if captureErr != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=media_assets action=capture_inbound instance_id=%s result=failed error_code=inbound_capture_failed", mycli.userID)
+		} else if relevant {
+			assetID = capturedID
+		}
+	}
 	event, relevant, err := projection_service.NormalizeProjectionEvent(mycli.userID, rawEvent)
 	if err != nil {
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=projection action=normalize instance_id=%s result=failed error_code=invalid_projection_event", mycli.userID)
@@ -373,6 +390,14 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
 	}
 	if !relevant {
 		return
+	}
+	if assetID != "" {
+		attachedEvent, attachErr := projection_service.AttachInboundMediaAsset(event, assetID)
+		if attachErr != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=media_assets action=link_projection instance_id=%s result=failed error_code=inbound_projection_link_failed", mycli.userID)
+		} else {
+			event = attachedEvent
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), projectionIngestTimeout)
 	defer cancel()
@@ -813,6 +838,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		passkeyCeremony:    w.passkeyCeremony,
 		queryGuard:         w.queryGuard,
 		projectionEvents:   w.projectionEvents,
+		inboundMedia:       w.inboundMedia,
 		groupReconciler:    w.groupReconciler,
 		labelSyncer:        w.labelSyncer,
 		contactSyncer:      w.contactSyncer,
@@ -3163,6 +3189,7 @@ func NewWhatsmeowService(
 	queryGuard waquery.Guard,
 	outboundGuard outbound.Guard,
 	projectionEvents projection_service.EventService,
+	inboundMedia inboundMediaCapture,
 	groupReconciler *projection_service.GroupReconciler,
 	labelSyncer *projection_service.LabelSyncer,
 	contactSyncer *projection_service.ContactSyncer,
@@ -3194,6 +3221,7 @@ func NewWhatsmeowService(
 		queryGuard:         queryGuard,
 		outboundGuard:      outboundGuard,
 		projectionEvents:   projectionEvents,
+		inboundMedia:       inboundMedia,
 		groupReconciler:    groupReconciler,
 		labelSyncer:        labelSyncer,
 		contactSyncer:      contactSyncer,

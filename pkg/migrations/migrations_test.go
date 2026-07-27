@@ -379,3 +379,26 @@ func TestCampaignMediaBackfillPreservesRollbackAndSharedReferences(t *testing.T)
 		}
 	}
 }
+
+func TestInboundMediaLinkMigrationIsAdditiveAndClearsTerminalDescriptors(t *testing.T) {
+	migration := registeredMigration(t, 28)
+	if migration.Name != "link_inbound_media_assets" {
+		t.Fatalf("migration name = %q", migration.Name)
+	}
+	for _, required := range []string{
+		"ADD COLUMN media_asset_id UUID", "projected_messages_media_asset_fk",
+		"REFERENCES media_assets(id, instance_id)", "ON DELETE SET NULL (media_asset_id)",
+		"projected_messages_media_asset_shape_check", "projected_messages_media_asset_idx",
+		"media_download_jobs_descriptor_lifecycle_check", "descriptor_ciphertext IS NULL",
+		"WHERE status IN ('completed', 'failed')", "resource = 'messages'", "schema_version = 2",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("inbound media migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"public_url", "presigned_url", "original_filename", "media_key"} {
+		if strings.Contains(strings.ToLower(migration.SQL), forbidden) {
+			t.Fatalf("inbound media migration stores forbidden field %q", forbidden)
+		}
+	}
+}

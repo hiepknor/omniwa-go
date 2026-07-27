@@ -1,7 +1,9 @@
 package whatsmeow_service
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,13 +11,24 @@ import (
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
+	waE2E "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
 )
 
 type captureProjectionEventService struct {
 	event *projection_model.Event
 	calls int
+}
+
+type inboundCaptureFake struct {
+	assetID string
+	err     error
+}
+
+func (f *inboundCaptureFake) Capture(context.Context, string, any) (string, bool, error) {
+	return f.assetID, true, f.err
 }
 
 func (s *captureProjectionEventService) Ingest(_ context.Context, event *projection_model.Event) (bool, error) {
@@ -47,6 +60,33 @@ func TestMyClientIngestsRelevantGroupEvents(t *testing.T) {
 	client.ingestProjectionEvent(struct{}{})
 	if capture.calls != 1 {
 		t.Fatalf("unrelated event reached projection inbox: calls=%d", capture.calls)
+	}
+}
+
+func TestMyClientAttachesOpaqueInboundAssetAndFailsOpen(t *testing.T) {
+	loggerManager := logger_wrapper.NewLoggerManager(&config.Config{LogDirectory: t.TempDir(), LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1})
+	defer loggerManager.GetLogger("instance-a").Close()
+	raw := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: types.NewJID("15550001", types.DefaultUserServer)},
+			ID:            "message-image", Type: "image", Timestamp: time.Now().UTC(),
+		},
+		Message: &waE2E.Message{ImageMessage: &waE2E.ImageMessage{Mimetype: proto.String("image/png")}},
+	}
+	assetID := "927beb51-46c2-4331-b3b4-d96f67280bd3"
+	capture := &captureProjectionEventService{}
+	client := &MyClient{userID: "instance-a", projectionEvents: capture, inboundMedia: &inboundCaptureFake{assetID: assetID}, loggerWrapper: loggerManager}
+	client.ingestProjectionEvent(raw)
+	if capture.calls != 1 || capture.event == nil || !bytes.Contains(capture.event.Payload, []byte(assetID)) {
+		t.Fatalf("opaque asset was not attached: calls=%d event=%+v", capture.calls, capture.event)
+	}
+
+	capture = &captureProjectionEventService{}
+	client.projectionEvents = capture
+	client.inboundMedia = &inboundCaptureFake{err: errors.New("database unavailable")}
+	client.ingestProjectionEvent(raw)
+	if capture.calls != 1 || capture.event == nil || bytes.Contains(capture.event.Payload, []byte("mediaAssetId")) {
+		t.Fatalf("capture failure blocked or polluted projection: calls=%d event=%+v", capture.calls, capture.event)
 	}
 }
 

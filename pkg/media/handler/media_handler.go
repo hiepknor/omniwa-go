@@ -3,7 +3,11 @@ package media_handler
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -19,22 +23,44 @@ type assetService interface {
 	Upload(context.Context, media_service.AssetUploadInput) (*media_model.Asset, error)
 	Get(context.Context, string, string) (*media_model.Asset, error)
 	Delete(context.Context, string, string) error
+	OpenContent(context.Context, string, string, int64, int64) (*media_service.AssetContent, error)
 }
 
 type Handler interface {
 	Upload(*gin.Context)
 	Get(*gin.Context)
 	Delete(*gin.Context)
+	Content(*gin.Context)
+	DeviceUploadsEnabled() bool
+	ContentEnabled() bool
 }
 
 type handler struct {
-	service  assetService
-	maxBytes int64
+	service       assetService
+	maxBytes      int64
+	deviceUploads bool
+	content       bool
 }
 
-func New(service assetService, maxBytes int64) Handler {
-	return &handler{service: service, maxBytes: maxBytes}
+type Option func(*handler)
+
+func WithDeviceUploads(enabled bool) Option {
+	return func(handler *handler) { handler.deviceUploads = enabled }
 }
+func WithContent(enabled bool) Option { return func(handler *handler) { handler.content = enabled } }
+
+func New(service assetService, maxBytes int64, options ...Option) Handler {
+	handler := &handler{service: service, maxBytes: maxBytes, deviceUploads: true}
+	for _, option := range options {
+		if option != nil {
+			option(handler)
+		}
+	}
+	return handler
+}
+
+func (h *handler) DeviceUploadsEnabled() bool { return h != nil && h.deviceUploads }
+func (h *handler) ContentEnabled() bool       { return h != nil && h.content }
 
 // Upload stores one normalized private JPEG or PNG asset.
 // @Summary Upload shared image asset
@@ -58,6 +84,10 @@ func (h *handler) Upload(ctx *gin.Context) {
 	}
 	if h == nil || h.service == nil || h.maxBytes < 1 {
 		httpapi.WriteInternal(ctx, errors.New("media asset handler is unavailable"))
+		return
+	}
+	if !h.deviceUploads {
+		httpapi.WriteError(ctx, http.StatusNotImplemented, "media_asset_upload_disabled", "device media upload is disabled")
 		return
 	}
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, h.maxBytes+multipartEnvelopeAllowance)
@@ -128,11 +158,118 @@ func (h *handler) Delete(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	if !h.DeviceUploadsEnabled() {
+		httpapi.WriteError(ctx, http.StatusNotImplemented, "media_asset_delete_disabled", "device media deletion is disabled")
+		return
+	}
 	if err := h.service.Delete(ctx.Request.Context(), instance.Id, ctx.Param("mediaId")); err != nil {
 		writeError(ctx, err)
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success"})
+}
+
+// Content streams authenticated canonical image bytes with optional single-range support.
+// @Summary Stream shared image asset content
+// @Tags Media Assets
+// @Produce image/jpeg,image/png
+// @Param mediaId path string true "Media asset UUID"
+// @Param Range header string false "Single bytes range"
+// @Success 200 {file} binary
+// @Success 206 {file} binary
+// @Failure 404 {object} apidocs.ErrorResponse
+// @Failure 409 {object} apidocs.ErrorResponse
+// @Failure 416 {object} apidocs.ErrorResponse
+// @Failure 503 {object} apidocs.ErrorResponse
+// @Security ApiKeyAuth
+// @Router /media-assets/{mediaId}/content [get]
+func (h *handler) Content(ctx *gin.Context) {
+	instance, ok := authenticatedInstance(ctx)
+	if !ok {
+		return
+	}
+	if !h.ContentEnabled() {
+		httpapi.WriteError(ctx, http.StatusNotImplemented, "media_asset_content_disabled", "media content streaming is disabled")
+		return
+	}
+	asset, err := h.service.Get(ctx.Request.Context(), instance.Id, ctx.Param("mediaId"))
+	if err != nil {
+		writeError(ctx, err)
+		return
+	}
+	if asset.Status != media_model.AssetStatusReady || asset.Canonical == nil {
+		writeError(ctx, media_service.ErrMediaAssetNotReady)
+		return
+	}
+	offset, length, partial, err := parseRange(ctx.GetHeader("Range"), asset.Canonical.SizeBytes)
+	if err != nil {
+		ctx.Header("Content-Range", fmt.Sprintf("bytes */%d", asset.Canonical.SizeBytes))
+		httpapi.WriteError(ctx, http.StatusRequestedRangeNotSatisfiable, "invalid_media_range", "requested media byte range is not satisfiable")
+		return
+	}
+	content, err := h.service.OpenContent(ctx.Request.Context(), instance.Id, asset.ID, offset, length)
+	if err != nil {
+		writeError(ctx, err)
+		return
+	}
+	defer content.Reader.Close()
+	ctx.Header("Accept-Ranges", "bytes")
+	ctx.Header("Cache-Control", "private, max-age=31536000, immutable")
+	ctx.Header("ETag", `"`+content.SHA256+`"`)
+	ctx.Header("X-Content-Type-Options", "nosniff")
+	ctx.Header("Content-Length", strconv.FormatInt(content.Length, 10))
+	ctx.Header("Content-Type", content.MIMEType)
+	status := http.StatusOK
+	if partial {
+		status = http.StatusPartialContent
+		ctx.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", content.Offset, content.Offset+content.Length-1, content.Total))
+	}
+	ctx.Status(status)
+	if _, err := io.CopyN(ctx.Writer, content.Reader, content.Length); err != nil {
+		_ = ctx.Error(err)
+	}
+}
+
+func parseRange(value string, total int64) (offset, length int64, partial bool, err error) {
+	if total < 1 {
+		return 0, 0, false, errors.New("media content is empty")
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, total, false, nil
+	}
+	if !strings.HasPrefix(value, "bytes=") || strings.Contains(value, ",") {
+		return 0, 0, false, errors.New("only one bytes range is supported")
+	}
+	parts := strings.Split(strings.TrimPrefix(value, "bytes="), "-")
+	if len(parts) != 2 {
+		return 0, 0, false, errors.New("invalid bytes range")
+	}
+	if parts[0] == "" {
+		suffix, parseErr := strconv.ParseInt(parts[1], 10, 64)
+		if parseErr != nil || suffix < 1 {
+			return 0, 0, false, errors.New("invalid suffix range")
+		}
+		if suffix > total {
+			suffix = total
+		}
+		return total - suffix, suffix, true, nil
+	}
+	start, parseErr := strconv.ParseInt(parts[0], 10, 64)
+	if parseErr != nil || start < 0 || start >= total {
+		return 0, 0, false, errors.New("invalid range start")
+	}
+	end := total - 1
+	if parts[1] != "" {
+		end, parseErr = strconv.ParseInt(parts[1], 10, 64)
+		if parseErr != nil || end < start {
+			return 0, 0, false, errors.New("invalid range end")
+		}
+		if end >= total {
+			end = total - 1
+		}
+	}
+	return start, end - start + 1, true, nil
 }
 
 func authenticatedInstance(ctx *gin.Context) (*instance_model.Instance, bool) {
@@ -161,6 +298,8 @@ func writeError(ctx *gin.Context, err error) {
 		httpapi.WriteError(ctx, http.StatusNotFound, "media_asset_not_found", "media asset not found")
 	case errors.Is(err, media_repository.ErrAssetConflict):
 		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_conflict", "media asset state conflict")
+	case errors.Is(err, media_service.ErrMediaAssetNotReady):
+		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_not_ready", "media asset is not ready")
 	default:
 		httpapi.WriteInternal(ctx, err)
 	}

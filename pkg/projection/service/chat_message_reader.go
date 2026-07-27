@@ -72,6 +72,7 @@ type ProjectedMessage struct {
 	MediaDuration      *uint32                            `json:"mediaDurationSeconds,omitempty"`
 	MediaWidth         *uint32                            `json:"mediaWidth,omitempty"`
 	MediaHeight        *uint32                            `json:"mediaHeight,omitempty"`
+	MediaAssetID       *string                            `json:"mediaAssetId,omitempty"`
 	Status             *string                            `json:"status,omitempty"`
 	ProviderTimestamp  time.Time                          `json:"providerTimestamp"`
 	SentAt             *time.Time                         `json:"sentAt,omitempty"`
@@ -241,7 +242,7 @@ func projectedMessageView(message *projection_model.ProjectedMessage, retention 
 		ContentText: message.ContentText, Caption: message.Caption, ContentSummary: message.ContentSummary,
 		QuotedMessageID: message.QuotedMessageID, MediaType: message.MediaType, MediaMIMEType: message.MediaMIMEType,
 		MediaFileName: message.MediaFileName, MediaSize: message.MediaSize, MediaDuration: message.MediaDuration,
-		MediaWidth: message.MediaWidth, MediaHeight: message.MediaHeight, Status: message.Status,
+		MediaWidth: message.MediaWidth, MediaHeight: message.MediaHeight, MediaAssetID: message.MediaAssetID, Status: message.Status,
 		ProviderTimestamp: message.ProviderTimestamp, SentAt: message.SentAt, DeliveredAt: message.DeliveredAt,
 		ReadAt: message.ReadAt, PlayedAt: message.PlayedAt, Provenance: message.Provenance,
 		HistorySyncID: message.HistorySyncID, RetentionExpiresAt: &retentionExpiresAt,

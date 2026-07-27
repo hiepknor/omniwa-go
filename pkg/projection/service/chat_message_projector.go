@@ -13,7 +13,7 @@ import (
 
 const (
 	ChatsProjectionSchemaVersion    int64 = 1
-	MessagesProjectionSchemaVersion int64 = 1
+	MessagesProjectionSchemaVersion int64 = 2
 	DefaultMessageRetention               = 90 * 24 * time.Hour
 )
 
@@ -93,7 +93,8 @@ func (p *ChatMessageProjector) applyMessage(ctx context.Context, event *projecti
 		Caption: payload.Caption, ContentSummary: payload.ContentSummary, QuotedMessageID: payload.QuotedMessageID,
 		MediaType: payload.MediaType, MediaMIMEType: payload.MediaMIMEType, MediaFileName: payload.MediaFileName,
 		MediaSize: payload.MediaSize, MediaDuration: payload.MediaDurationSeconds, MediaWidth: payload.MediaWidth, MediaHeight: payload.MediaHeight,
-		Status: payload.Status, ProviderTimestamp: activityAt, SentAt: payload.SentAt, Provenance: payload.Provenance, HistorySyncID: payload.HistorySyncID,
+		MediaAssetID: payload.MediaAssetID,
+		Status:       payload.Status, ProviderTimestamp: activityAt, SentAt: payload.SentAt, Provenance: payload.Provenance, HistorySyncID: payload.HistorySyncID,
 		RetentionExpiresAt: &retentionExpiresAt,
 		SourceOccurredAt:   event.OccurredAt, SourceEventKey: event.EventKey,
 	}

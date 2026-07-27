@@ -3,6 +3,7 @@ package media_handler
 import (
 	"bytes"
 	"context"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -16,9 +17,10 @@ import (
 )
 
 type assetServiceFake struct {
-	asset  *media_model.Asset
-	upload media_service.AssetUploadInput
-	delete string
+	asset   *media_model.Asset
+	upload  media_service.AssetUploadInput
+	delete  string
+	content *media_service.AssetContent
 }
 
 func (f *assetServiceFake) Upload(_ context.Context, input media_service.AssetUploadInput) (*media_model.Asset, error) {
@@ -31,6 +33,9 @@ func (f *assetServiceFake) Get(context.Context, string, string) (*media_model.As
 func (f *assetServiceFake) Delete(_ context.Context, _, assetID string) error {
 	f.delete = assetID
 	return nil
+}
+func (f *assetServiceFake) OpenContent(context.Context, string, string, int64, int64) (*media_service.AssetContent, error) {
+	return f.content, nil
 }
 
 func TestUploadPassesAuthenticatedScopeAndIdempotencyWithoutFilename(t *testing.T) {
@@ -94,5 +99,70 @@ func TestMediaAssetsRequireAuthenticatedInstance(t *testing.T) {
 	handler.Get(ctx)
 	if recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "unauthorized") {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestContentStreamsAuthenticatedSingleRangeWithPrivateHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &assetServiceFake{
+		asset: &media_model.Asset{ID: "asset-id", Status: media_model.AssetStatusReady, Canonical: &media_model.AssetVariant{SizeBytes: 6}},
+		content: &media_service.AssetContent{
+			Reader: io.NopCloser(strings.NewReader("cde")), MIMEType: "image/png", SHA256: strings.Repeat("a", 64),
+			Total: 6, Offset: 2, Length: 3,
+		},
+	}
+	handler := New(service, 1024, WithContent(true))
+	request := httptest.NewRequest(http.MethodGet, "/media-assets/asset-id/content", nil)
+	request.Header.Set("Range", "bytes=2-4")
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = request
+	ctx.Params = gin.Params{{Key: "mediaId", Value: "asset-id"}}
+	ctx.Set("instance", &instance_model.Instance{Id: "instance-id"})
+
+	handler.Content(ctx)
+	if recorder.Code != http.StatusPartialContent || recorder.Body.String() != "cde" ||
+		recorder.Header().Get("Content-Range") != "bytes 2-4/6" || recorder.Header().Get("Cache-Control") != "private, max-age=31536000, immutable" ||
+		recorder.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("status=%d headers=%v body=%q", recorder.Code, recorder.Header(), recorder.Body.String())
+	}
+}
+
+func TestContentRejectsMultipleRangesBeforeOpeningStorage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &assetServiceFake{asset: &media_model.Asset{
+		ID: "asset-id", Status: media_model.AssetStatusReady, Canonical: &media_model.AssetVariant{SizeBytes: 6},
+	}}
+	handler := New(service, 1024, WithContent(true))
+	request := httptest.NewRequest(http.MethodGet, "/media-assets/asset-id/content", nil)
+	request.Header.Set("Range", "bytes=0-1,3-4")
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = request
+	ctx.Params = gin.Params{{Key: "mediaId", Value: "asset-id"}}
+	ctx.Set("instance", &instance_model.Instance{Id: "instance-id"})
+
+	handler.Content(ctx)
+	if recorder.Code != http.StatusRequestedRangeNotSatisfiable || recorder.Header().Get("Content-Range") != "bytes */6" {
+		t.Fatalf("status=%d headers=%v body=%q", recorder.Code, recorder.Header(), recorder.Body.String())
+	}
+}
+
+func TestParseRangeSupportsSuffixAndClampsEnd(t *testing.T) {
+	tests := []struct {
+		value                  string
+		offset, length         int64
+		partial, shouldSucceed bool
+	}{
+		{value: "", offset: 0, length: 10, partial: false, shouldSucceed: true},
+		{value: "bytes=-3", offset: 7, length: 3, partial: true, shouldSucceed: true},
+		{value: "bytes=7-99", offset: 7, length: 3, partial: true, shouldSucceed: true},
+		{value: "bytes=10-", shouldSucceed: false},
+	}
+	for _, test := range tests {
+		offset, length, partial, err := parseRange(test.value, 10)
+		if (err == nil) != test.shouldSucceed || offset != test.offset || length != test.length || partial != test.partial {
+			t.Fatalf("parseRange(%q) = %d/%d/%t/%v", test.value, offset, length, partial, err)
+		}
 	}
 }

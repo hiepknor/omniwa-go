@@ -13,3 +13,9 @@ type MediaAssetStore interface {
 	Delete(context.Context, string) error
 	Health(context.Context) error
 }
+
+// MediaAssetRangeStore is the optional bounded-read extension used by the
+// authenticated content endpoint. Length must be positive.
+type MediaAssetRangeStore interface {
+	OpenRange(context.Context, string, int64, int64) (io.ReadCloser, error)
+}

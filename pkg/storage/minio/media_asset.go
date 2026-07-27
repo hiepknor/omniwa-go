@@ -70,6 +70,28 @@ func (s *MediaAssetStorage) Open(ctx context.Context, key string) (io.ReadCloser
 	return object, nil
 }
 
+func (s *MediaAssetStorage) OpenRange(ctx context.Context, key string, offset, length int64) (io.ReadCloser, error) {
+	if err := s.validate(ctx, key); err != nil || offset < 0 || length < 1 || offset > maxStoredMediaAssetBytes || length > maxStoredMediaAssetBytes || offset > maxStoredMediaAssetBytes-length {
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("bounded media asset byte range is required")
+	}
+	options := minio.GetObjectOptions{}
+	if err := options.SetRange(offset, offset+length-1); err != nil {
+		return nil, fmt.Errorf("set media asset byte range: %w", err)
+	}
+	object, err := s.client.GetObject(ctx, s.bucketName, key, options)
+	if err != nil {
+		return nil, fmt.Errorf("open media asset byte range: %w", err)
+	}
+	if _, err := object.Stat(); err != nil {
+		_ = object.Close()
+		return nil, fmt.Errorf("stat media asset byte range: %w", err)
+	}
+	return object, nil
+}
+
 func (s *MediaAssetStorage) Delete(ctx context.Context, key string) error {
 	if err := s.validate(ctx, key); err != nil {
 		return err
