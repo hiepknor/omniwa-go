@@ -95,6 +95,8 @@ type Config struct {
 	CampaignRatePauseThreshold    int
 	CampaignFailurePauseThreshold int
 	CampaignImageContentEnabled   bool
+	MediaAssetsEnabled            bool
+	MediaAssetBucket              string
 	CampaignMediaBucket           string
 	CampaignMediaMaxBytes         int64
 	CampaignMediaMaxPixels        int64
@@ -523,7 +525,16 @@ func Load() *Config {
 	if err != nil {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, err)
 	}
-	campaignMediaBucket := defaultIfEmpty(strings.TrimSpace(os.Getenv(config_env.CAMPAIGN_MEDIA_BUCKET)), "omniwa-campaign-media")
+	campaignMediaBucketValue := strings.TrimSpace(os.Getenv(config_env.CAMPAIGN_MEDIA_BUCKET))
+	campaignMediaBucket := defaultIfEmpty(campaignMediaBucketValue, "omniwa-campaign-media")
+	mediaAssetsEnabled := os.Getenv(config_env.WA_MEDIA_ASSETS_ENABLED) == "true"
+	mediaAssetBucket := strings.TrimSpace(os.Getenv(config_env.MEDIA_ASSET_BUCKET))
+	if mediaAssetBucket == "" {
+		mediaAssetBucket = "omniwa-media-assets"
+		if campaignMediaBucketValue != "" {
+			mediaAssetBucket = campaignMediaBucket
+		}
+	}
 	campaignMediaMaxBytes := parsePositiveInt64OrFatal(config_env.CAMPAIGN_MEDIA_MAX_BYTES, "8388608")
 	if campaignMediaMaxBytes > 64*1024*1024 {
 		logger.LogFatal("[CONFIG] invalid %s: must be no greater than 67108864", config_env.CAMPAIGN_MEDIA_MAX_BYTES)
@@ -743,6 +754,8 @@ func Load() *Config {
 		CampaignRatePauseThreshold:    campaignRatePauseThreshold,
 		CampaignFailurePauseThreshold: campaignFailurePauseThreshold,
 		CampaignImageContentEnabled:   campaignImageContentEnabled,
+		MediaAssetsEnabled:            mediaAssetsEnabled,
+		MediaAssetBucket:              mediaAssetBucket,
 		CampaignMediaBucket:           campaignMediaBucket,
 		CampaignMediaMaxBytes:         campaignMediaMaxBytes,
 		CampaignMediaMaxPixels:        campaignMediaMaxPixels,

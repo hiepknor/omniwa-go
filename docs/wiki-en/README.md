@@ -32,6 +32,8 @@ OmniWA GO HTTP API (a WhatsApp API built on [whatsmeow](https://github.com/tulir
    authoritative eligibility, versioned updates, and immutable audit history.
 8. **[Campaign Media Assets](campaign-media.md)** — private device uploads,
    validation limits, lifecycle cleanup, and staged rollout boundaries.
+9. **[Shared Media Assets](media-assets.md)** — private shared schema, bucket
+   isolation, and the staged campaign/chat migration.
 
 ## The API in one paragraph
 

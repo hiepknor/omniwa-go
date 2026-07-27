@@ -332,3 +332,27 @@ func TestCampaignImageContentMigrationSnapshotsPrivateAssetMetadata(t *testing.T
 		}
 	}
 }
+
+func TestSharedMediaAssetFoundationMigrationIsPrivateScopedAndFenced(t *testing.T) {
+	migration := registeredMigration(t, 26)
+	if migration.Name != "create_shared_media_asset_foundation" {
+		t.Fatalf("migration name = %q", migration.Name)
+	}
+	for _, required := range []string{
+		"CREATE TABLE media_assets", "media_assets_instance_identity_unique", "ON DELETE RESTRICT",
+		"CREATE TABLE media_asset_variants", "provider_original", "canonical", "media_asset_variants_object_key_unique",
+		"CREATE TABLE media_asset_references", "owner_type IN ('campaign', 'message')", "media_asset_references_retention_idx",
+		"CREATE TABLE media_download_jobs", "descriptor_ciphertext BYTEA", "OCTET_LENGTH(descriptor_nonce) = 12",
+		"media_download_jobs_message_unique", "media_download_jobs_claim_check", "CREATE TABLE media_asset_audit_events",
+		"actor_reference_hash", "jsonb_typeof(details) = 'object'", "media_assets_cleanup_idx",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("shared media foundation migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"public_url", "presigned_url", "original_filename", "file_bytes", "caption", "media_key"} {
+		if strings.Contains(strings.ToLower(migration.SQL), forbidden) {
+			t.Fatalf("shared media foundation stores forbidden public or content field %q", forbidden)
+		}
+	}
+}

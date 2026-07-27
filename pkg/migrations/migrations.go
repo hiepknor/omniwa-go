@@ -955,6 +955,148 @@ CREATE INDEX campaigns_media_asset_idx
 ON campaigns (instance_id, media_asset_id)
 WHERE media_asset_id IS NOT NULL;`,
 	},
+	{
+		Version: 26,
+		Name:    "create_shared_media_asset_foundation",
+		SQL: `CREATE TABLE media_assets (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    media_type VARCHAR(32) NOT NULL,
+    origin VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    failure_code VARCHAR(64) NULL,
+    request_reference_hash VARCHAR(64) NULL,
+    cleanup_claim_token UUID NULL,
+    cleanup_lease_until TIMESTAMPTZ NULL,
+    ready_at TIMESTAMPTZ NULL,
+    expires_at TIMESTAMPTZ NULL,
+    deleted_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT media_assets_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE RESTRICT,
+    CONSTRAINT media_assets_instance_identity_unique UNIQUE (id, instance_id),
+    CONSTRAINT media_assets_type_check CHECK (media_type = 'image'),
+    CONSTRAINT media_assets_origin_check CHECK (origin IN ('device_upload', 'whatsapp_inbound')),
+    CONSTRAINT media_assets_status_check CHECK (status IN ('pending', 'uploading', 'downloading', 'processing', 'ready', 'failed', 'deleting', 'deleted')),
+    CONSTRAINT media_assets_failure_code_check CHECK (failure_code IS NULL OR failure_code ~ '^[a-z0-9_]{1,64}$'),
+    CONSTRAINT media_assets_request_hash_check CHECK (request_reference_hash IS NULL OR request_reference_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT media_assets_cleanup_claim_check CHECK (
+        (cleanup_claim_token IS NULL AND cleanup_lease_until IS NULL)
+        OR (cleanup_claim_token IS NOT NULL AND cleanup_lease_until IS NOT NULL)
+    ),
+    CONSTRAINT media_assets_ready_check CHECK (status <> 'ready' OR (ready_at IS NOT NULL AND deleted_at IS NULL)),
+    CONSTRAINT media_assets_deleted_check CHECK ((status = 'deleted') = (deleted_at IS NOT NULL)),
+    CONSTRAINT media_assets_expiry_check CHECK (expires_at IS NULL OR expires_at > created_at)
+);
+CREATE UNIQUE INDEX media_assets_request_unique_idx
+ON media_assets (instance_id, request_reference_hash)
+WHERE request_reference_hash IS NOT NULL AND deleted_at IS NULL;
+CREATE INDEX media_assets_cleanup_idx
+ON media_assets (expires_at, id)
+WHERE expires_at IS NOT NULL AND status IN ('pending', 'uploading', 'downloading', 'processing', 'ready', 'failed', 'deleting') AND deleted_at IS NULL;
+CREATE INDEX media_assets_instance_page_idx
+ON media_assets (instance_id, created_at DESC, id DESC)
+WHERE deleted_at IS NULL;
+
+CREATE TABLE media_asset_variants (
+    media_asset_id UUID NOT NULL,
+    instance_id UUID NOT NULL,
+    variant VARCHAR(32) NOT NULL,
+    object_key TEXT NOT NULL,
+    mime_type VARCHAR(128) NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    sha256 VARCHAR(64) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (media_asset_id, variant),
+    CONSTRAINT media_asset_variants_asset_fk FOREIGN KEY (media_asset_id, instance_id)
+        REFERENCES media_assets(id, instance_id) ON DELETE CASCADE,
+    CONSTRAINT media_asset_variants_object_key_unique UNIQUE (object_key),
+    CONSTRAINT media_asset_variants_kind_check CHECK (variant IN ('provider_original', 'canonical')),
+    CONSTRAINT media_asset_variants_mime_check CHECK (mime_type IN ('image/jpeg', 'image/png')),
+    CONSTRAINT media_asset_variants_size_check CHECK (size_bytes BETWEEN 1 AND 67108864),
+    CONSTRAINT media_asset_variants_dimensions_check CHECK (width BETWEEN 1 AND 32768 AND height BETWEEN 1 AND 32768),
+    CONSTRAINT media_asset_variants_sha_check CHECK (sha256 ~ '^[0-9a-f]{64}$')
+);
+CREATE INDEX media_asset_variants_instance_idx
+ON media_asset_variants (instance_id, media_asset_id);
+
+CREATE TABLE media_asset_references (
+    instance_id UUID NOT NULL,
+    media_asset_id UUID NOT NULL,
+    owner_type VARCHAR(32) NOT NULL,
+    owner_id VARCHAR(255) NOT NULL,
+    retention_until TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, media_asset_id, owner_type, owner_id),
+    CONSTRAINT media_asset_references_asset_fk FOREIGN KEY (media_asset_id, instance_id)
+        REFERENCES media_assets(id, instance_id) ON DELETE RESTRICT,
+    CONSTRAINT media_asset_references_owner_check CHECK (owner_type IN ('campaign', 'message')),
+    CONSTRAINT media_asset_references_owner_id_check CHECK (BTRIM(owner_id) <> '')
+);
+CREATE INDEX media_asset_references_owner_idx
+ON media_asset_references (instance_id, owner_type, owner_id);
+CREATE INDEX media_asset_references_retention_idx
+ON media_asset_references (retention_until, media_asset_id)
+WHERE retention_until IS NOT NULL;
+
+CREATE TABLE media_download_jobs (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    media_asset_id UUID NOT NULL,
+    message_id VARCHAR(255) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    descriptor_ciphertext BYTEA NOT NULL,
+    descriptor_nonce BYTEA NOT NULL,
+    descriptor_key_version INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 3,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    claim_token UUID NULL,
+    lease_until TIMESTAMPTZ NULL,
+    provider_expires_at TIMESTAMPTZ NULL,
+    last_error_code VARCHAR(64) NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ NULL,
+    CONSTRAINT media_download_jobs_asset_fk FOREIGN KEY (media_asset_id, instance_id)
+        REFERENCES media_assets(id, instance_id) ON DELETE CASCADE,
+    CONSTRAINT media_download_jobs_message_unique UNIQUE (instance_id, message_id),
+    CONSTRAINT media_download_jobs_asset_unique UNIQUE (media_asset_id, instance_id),
+    CONSTRAINT media_download_jobs_status_check CHECK (status IN ('pending', 'processing', 'retry_wait', 'completed', 'failed')),
+    CONSTRAINT media_download_jobs_attempt_check CHECK (attempt_count BETWEEN 0 AND max_attempts AND max_attempts BETWEEN 1 AND 20),
+    CONSTRAINT media_download_jobs_descriptor_check CHECK (OCTET_LENGTH(descriptor_ciphertext) > 0 AND OCTET_LENGTH(descriptor_nonce) = 12 AND descriptor_key_version > 0),
+    CONSTRAINT media_download_jobs_claim_check CHECK ((claim_token IS NULL AND lease_until IS NULL) OR (claim_token IS NOT NULL AND lease_until IS NOT NULL)),
+    CONSTRAINT media_download_jobs_error_check CHECK (last_error_code IS NULL OR last_error_code ~ '^[a-z0-9_]{1,64}$'),
+    CONSTRAINT media_download_jobs_completed_check CHECK ((status = 'completed') = (completed_at IS NOT NULL))
+);
+CREATE INDEX media_download_jobs_claim_idx
+ON media_download_jobs (next_attempt_at, id)
+WHERE status IN ('pending', 'retry_wait');
+
+CREATE TABLE media_asset_audit_events (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    media_asset_id UUID NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    actor_type VARCHAR(32) NOT NULL,
+    actor_reference_hash VARCHAR(64) NULL,
+    request_id VARCHAR(64) NULL,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT media_asset_audit_events_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT media_asset_audit_events_asset_fk FOREIGN KEY (media_asset_id, instance_id)
+        REFERENCES media_assets(id, instance_id) ON DELETE CASCADE,
+    CONSTRAINT media_asset_audit_events_type_check CHECK (event_type ~ '^[a-z0-9_]{1,64}$'),
+    CONSTRAINT media_asset_audit_events_actor_check CHECK (actor_type IN ('operator', 'system', 'provider')),
+    CONSTRAINT media_asset_audit_events_actor_hash_check CHECK (actor_reference_hash IS NULL OR actor_reference_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT media_asset_audit_events_request_check CHECK (request_id IS NULL OR CHAR_LENGTH(request_id) BETWEEN 1 AND 64),
+    CONSTRAINT media_asset_audit_events_details_object_check CHECK (jsonb_typeof(details) = 'object')
+);
+CREATE INDEX media_asset_audit_events_page_idx
+ON media_asset_audit_events (instance_id, media_asset_id, occurred_at DESC, id DESC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

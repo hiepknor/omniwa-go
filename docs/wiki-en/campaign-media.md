@@ -24,7 +24,8 @@ WA_CAMPAIGN_IMAGE_CONTENT_ENABLED=true
 ```
 
 Provision the bucket as private before enabling the flag. Do not reuse a bucket
-whose objects are publicly readable. Keep the flag disabled during migration
+whose objects are publicly readable. Startup rejects a campaign media bucket
+that is the same as the legacy `MINIO_BUCKET`. Keep the flag disabled during migration
 and rollback. When the flag is disabled, `/campaign-media` routes are not
 registered, image drafts and transitions are rejected, image delivery is not
 wired, the cleanup worker is not started, and `campaign_image_content` is not
