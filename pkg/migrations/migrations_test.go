@@ -356,3 +356,26 @@ func TestSharedMediaAssetFoundationMigrationIsPrivateScopedAndFenced(t *testing.
 		}
 	}
 }
+
+func TestCampaignMediaBackfillPreservesRollbackAndSharedReferences(t *testing.T) {
+	migration := registeredMigration(t, 27)
+	if migration.Name != "backfill_campaign_media_assets" {
+		t.Fatalf("migration name = %q", migration.Name)
+	}
+	for _, required := range []string{
+		"INSERT INTO media_assets", "FROM campaign_media_assets", "ON CONFLICT (id) DO NOTHING",
+		"campaign media asset backfill identity mismatch", "INSERT INTO media_asset_variants", "'canonical'",
+		"campaign media canonical variant backfill mismatch", "INSERT INTO media_asset_references",
+		"'campaign'", "ON CONFLICT (instance_id, media_asset_id, owner_type, owner_id) DO NOTHING",
+		"campaign media reference backfill mismatch", "IS DISTINCT FROM",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("campaign media backfill migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP TABLE campaign_media_assets", "DROP CONSTRAINT campaigns_media_asset_fk", "DELETE FROM campaign_media_assets", "campaigns_shared_media_asset_fk"} {
+		if strings.Contains(migration.SQL, forbidden) {
+			t.Fatalf("campaign media backfill destroys rollback state with %q", forbidden)
+		}
+	}
+}

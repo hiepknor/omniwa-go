@@ -1,8 +1,8 @@
 # Shared media asset foundation
 
-OmniWA GO is introducing one private, instance-scoped media asset domain for
-campaign and chat images. Migration 26 is only the additive storage foundation;
-it does not switch existing campaign or chat behavior.
+OmniWA GO uses one private, instance-scoped media asset domain for campaign and
+chat images. Migration 26 creates the additive storage foundation. Migration 27
+backfills campaign metadata and references without moving existing objects.
 
 ## Configuration
 
@@ -35,13 +35,36 @@ The legacy MinIO bucket may be public for compatibility. Never configure the
 shared media bucket to use that bucket. Verify anonymous `GetObject` is denied
 as part of provisioning and deployment acceptance.
 
-## Rollout state
+## Campaign compatibility rollout
 
-With the feature disabled, migration 26 is inert and existing campaign image
-behavior remains on `campaign_media_assets`. Enabling the foundation performs a
-fail-closed bucket health check only. Public `/media-assets`, outbound chat
-assets, inbound capture, download workers, and media streaming are delivered in
-later staged changes.
+Migration 27 preserves each legacy campaign asset ID, state, expiry, immutable
+metadata, and object key. Ready assets gain a canonical variant and campaigns
+gain retention references. The migration is replay-safe and deliberately does
+not add a campaign foreign key to the shared table, so the previous binary can
+still run during the rollback window.
 
-Rollback by disabling `WA_MEDIA_ASSETS_ENABLED`. Keep the additive tables and
-private bucket intact; use a forward migration for schema corrections.
+When both `WA_MEDIA_ASSETS_ENABLED` and
+`WA_CAMPAIGN_IMAGE_CONTENT_ENABLED` are enabled, new campaign uploads write the
+shared record and a transactional `campaign_media_assets` rollback shadow. New
+objects use the shared bucket and namespace. A routed storage adapter continues
+to read and delete backfilled `campaign-media/.../image` objects from
+`CAMPAIGN_MEDIA_BUCKET`; operators do not copy or rename objects during this
+stage.
+
+Enable the shared path only after checking the migration counts, provisioning
+the private shared bucket, and verifying that representative legacy and new
+campaign images can be read. Public `/media-assets`, outbound chat assets,
+inbound capture, download workers, and media streaming are delivered in later
+staged changes.
+
+Rollback by disabling `WA_MEDIA_ASSETS_ENABLED`; campaign traffic returns to
+the maintained legacy metadata and bucket. Keep both additive tables and both
+buckets intact. Do not remove migration 27 rows or move objects during rollback;
+use a forward migration for schema corrections.
+
+Instance deletion is fail-closed. The service deletes every planned private
+variant before deleting the corresponding fenced metadata set and instance in
+one database transaction. If storage is unavailable or a concurrent asset is
+created, deletion fails and can be retried safely. Keep MinIO and both private
+buckets reachable when deleting an instance that has media, even during a
+feature rollback.

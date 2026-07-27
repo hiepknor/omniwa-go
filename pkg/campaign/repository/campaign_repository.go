@@ -146,6 +146,9 @@ func (r *campaignRepository) CreateDraft(ctx context.Context, instanceID string,
 		if err := tx.Create(campaign).Error; err != nil {
 			return err
 		}
+		if err := addSharedCampaignMediaReference(tx, campaign); err != nil {
+			return err
+		}
 		if err := tx.Create(&recipients).Error; err != nil {
 			return err
 		}

@@ -16,6 +16,8 @@ access policy.
 MINIO_ENABLED=true
 WA_GROUP_LISTS_ENABLED=true
 WA_CAMPAIGN_GROUP_TARGETS_ENABLED=true
+WA_MEDIA_ASSETS_ENABLED=true
+MEDIA_ASSET_BUCKET=omniwa-media-assets
 CAMPAIGN_MEDIA_BUCKET=omniwa-campaign-media
 CAMPAIGN_MEDIA_MAX_BYTES=8388608
 CAMPAIGN_MEDIA_MAX_PIXELS=16000000
@@ -31,6 +33,13 @@ registered, image drafts and transitions are rejected, image delivery is not
 wired, the cleanup worker is not started, and `campaign_image_content` is not
 advertised. Startup fails closed if the image flag is enabled without Group
 Lists and group campaign targets.
+
+With shared media enabled, new uploads are authoritative in `media_assets` and
+write `campaign_media_assets` as a transactional rollback shadow. Migration 27
+backfills legacy assets and campaign references without copying their objects.
+The application routes backfilled keys to `CAMPAIGN_MEDIA_BUCKET` and new keys
+to `MEDIA_ASSET_BUCKET`, so both private buckets must remain available during
+the compatibility window.
 
 ## Upload flow
 
@@ -113,3 +122,9 @@ after storage is restored. Pause active image campaigns before disabling the
 flag. If an image target is nevertheless claimed while the provider sender is
 disabled, it fails terminally with `campaign_image_content_disabled` before any
 provider call.
+
+To roll back the shared campaign cutover, disable
+`WA_MEDIA_ASSETS_ENABLED` while keeping campaign image content enabled. The
+legacy shadow remains readable by the previous path. Do not delete shared rows,
+legacy rows, or either bucket until the later contract-migration release closes
+the rollback window.

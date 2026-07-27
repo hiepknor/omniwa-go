@@ -18,6 +18,7 @@ import (
 	gorm_logger "gorm.io/gorm/logger"
 
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
+	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 )
 
@@ -426,7 +427,42 @@ func (i *instanceRepository) GetAll(clientName string) ([]*instance_model.Instan
 }
 
 func (i *instanceRepository) Delete(instanceId string) error {
+	return i.delete(instanceId, nil)
+}
+
+// DeleteWithMediaAssets deletes only the shared assets whose private objects
+// were already purged. Any concurrently-created asset remains protected by the
+// instance FK and rolls the whole transaction back.
+func (i *instanceRepository) DeleteWithMediaAssets(instanceId string, mediaAssetIDs []string) error {
+	seen := make(map[string]struct{}, len(mediaAssetIDs))
+	for _, assetID := range mediaAssetIDs {
+		if uuid.Validate(assetID) != nil {
+			return errors.New("invalid media asset identity for instance deletion")
+		}
+		seen[assetID] = struct{}{}
+	}
+	uniqueIDs := make([]string, 0, len(seen))
+	for assetID := range seen {
+		uniqueIDs = append(uniqueIDs, assetID)
+	}
+	return i.delete(instanceId, uniqueIDs)
+}
+
+func (i *instanceRepository) delete(instanceId string, mediaAssetIDs []string) error {
 	return i.db.Transaction(func(tx *gorm.DB) error {
+		if len(mediaAssetIDs) > 0 {
+			if err := tx.Where("instance_id = ? AND media_asset_id IN ?", instanceId, mediaAssetIDs).
+				Delete(&media_model.AssetReference{}).Error; err != nil {
+				return fmt.Errorf("delete media asset references: %w", err)
+			}
+			result := tx.Where("instance_id = ? AND id IN ?", instanceId, mediaAssetIDs).Delete(&media_model.Asset{})
+			if result.Error != nil {
+				return fmt.Errorf("delete media assets: %w", result.Error)
+			}
+			if result.RowsAffected != int64(len(mediaAssetIDs)) {
+				return errors.New("media asset set changed during instance deletion")
+			}
+		}
 		// Deleta todas as labels associadas à instância
 		if err := tx.Where("instance_id = ?", instanceId).Delete(&label_model.Label{}).Error; err != nil {
 			return fmt.Errorf("erro ao deletar labels: %v", err)

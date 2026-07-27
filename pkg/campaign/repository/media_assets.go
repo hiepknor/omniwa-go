@@ -66,15 +66,22 @@ func (r *mediaAssetRepository) CreateUploading(ctx context.Context, input Create
 		Status: campaign_model.MediaAssetStatusUploading, RequestReferenceHash: input.RequestReferenceHash,
 		ExpiresAt: input.ExpiresAt.UTC(), CreatedAt: now, UpdatedAt: now,
 	}
-	if err := r.db.WithContext(ctx).Create(asset).Error; err != nil {
-		if input.RequestReferenceHash != nil && uniqueViolationMedia(err) {
+	create := r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(asset)
+	if create.Error != nil {
+		return nil, false, create.Error
+	}
+	if create.RowsAffected == 0 {
+		if input.RequestReferenceHash != nil {
 			var existing campaign_model.MediaAsset
 			lookup := r.db.WithContext(ctx).Where("instance_id = ? AND request_reference_hash = ? AND deleted_at IS NULL", input.InstanceID, *input.RequestReferenceHash).First(&existing).Error
 			if lookup == nil {
 				return &existing, false, nil
 			}
+			if !errors.Is(lookup, gorm.ErrRecordNotFound) {
+				return nil, false, lookup
+			}
 		}
-		return nil, false, err
+		return nil, false, ErrMediaAssetConflict
 	}
 	return asset, true, nil
 }
@@ -255,9 +262,4 @@ func validateMediaCleanupMutation(r *mediaAssetRepository, ctx context.Context, 
 		return errors.New("claimed campaign media cleanup identity is required")
 	}
 	return nil
-}
-
-func uniqueViolationMedia(err error) bool {
-	var state interface{ SQLState() string }
-	return errors.As(err, &state) && state.SQLState() == "23505"
 }

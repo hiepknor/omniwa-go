@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -55,6 +56,9 @@ import (
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 	label_service "github.com/evolution-foundation/evolution-go/pkg/label/service"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
+	media_repository "github.com/evolution-foundation/evolution-go/pkg/media/repository"
+	media_service "github.com/evolution-foundation/evolution-go/pkg/media/service"
 	message_handler "github.com/evolution-foundation/evolution-go/pkg/message/handler"
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
@@ -228,6 +232,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 
 	var mediaStorage storage_interfaces.MediaStorage
+	var mediaAssetStore storage_interfaces.MediaAssetStore
+	var mediaAssetErr error
 	if config.MinioEnabled {
 		mediaStorage, err = minio_storage.NewMinioMediaStorage(
 			config.MinioEndpoint,
@@ -248,7 +254,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		if err := config.ValidateMediaAssetBucketIsolation(); err != nil {
 			logger.LogFatal("component=media_assets action=initialize result=failed error=bucket_isolation_required detail=%v", err)
 		}
-		mediaAssetStore, mediaAssetErr := minio_storage.NewMediaAssetStorage(
+		mediaAssetStore, mediaAssetErr = minio_storage.NewMediaAssetStorage(
 			appCtx, config.MinioEndpoint, config.MinioAccessKey, config.MinioSecretKey,
 			config.MediaAssetBucket, config.MinioRegion, config.MinioUseSSL,
 		)
@@ -467,6 +473,48 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		appCtx,
 		loggerWrapper,
 	)
+	instanceMediaPurger := media_service.NewInstancePurger(media_repository.New(db), func(ctx context.Context, variants []media_model.AssetVariant) (storage_interfaces.MediaAssetStore, error) {
+		if !config.MinioEnabled {
+			return nil, errors.New("MinIO is required to purge instance media")
+		}
+		needShared, needLegacy := false, false
+		for _, variant := range variants {
+			switch {
+			case strings.HasPrefix(variant.ObjectKey, "media-assets/"):
+				needShared = true
+			case strings.HasPrefix(variant.ObjectKey, "campaign-media/"):
+				needLegacy = true
+			default:
+				return nil, errors.New("unsupported media object namespace in instance purge")
+			}
+		}
+		var sharedStore storage_interfaces.MediaAssetStore
+		if needShared {
+			sharedStore = mediaAssetStore
+		}
+		if needShared && sharedStore == nil {
+			createdStore, storeErr := minio_storage.NewMediaAssetStorage(
+				ctx, config.MinioEndpoint, config.MinioAccessKey, config.MinioSecretKey,
+				config.MediaAssetBucket, config.MinioRegion, config.MinioUseSSL,
+			)
+			if storeErr != nil {
+				return nil, storeErr
+			}
+			sharedStore = createdStore
+		}
+		var legacyStore storage_interfaces.CampaignMediaStore
+		if needLegacy {
+			var storeErr error
+			legacyStore, storeErr = minio_storage.NewCampaignMediaStorage(
+				ctx, config.MinioEndpoint, config.MinioAccessKey, config.MinioSecretKey,
+				config.CampaignMediaBucket, config.MinioRegion, config.MinioUseSSL,
+			)
+			if storeErr != nil {
+				return nil, storeErr
+			}
+		}
+		return minio_storage.NewRoutedMediaAssetPurgeStorage(sharedStore, legacyStore)
+	})
 	instanceService := instance_service.NewInstanceService(
 		instanceRepository,
 		runtimeRegistry,
@@ -474,6 +522,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		config,
 		queryGuard,
 		identityResolver,
+		instanceMediaPurger,
 		loggerWrapper,
 	)
 	var tokenRotationService *instance_credential.RotationService
@@ -550,15 +599,30 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		if !config.MinioEnabled {
 			logger.LogFatal("component=campaign_media action=initialize result=failed error=minio_required")
 		}
-		var mediaStoreErr error
-		campaignMediaStore, mediaStoreErr = minio_storage.NewCampaignMediaStorage(
-			appCtx, config.MinioEndpoint, config.MinioAccessKey, config.MinioSecretKey,
-			config.CampaignMediaBucket, config.MinioRegion, config.MinioUseSSL,
-		)
-		if mediaStoreErr != nil {
-			logger.LogFatal("component=campaign_media action=initialize result=failed error=%v", mediaStoreErr)
+		if config.MediaAssetsEnabled {
+			legacyCampaignStore, mediaStoreErr := minio_storage.NewCampaignMediaStorage(
+				appCtx, config.MinioEndpoint, config.MinioAccessKey, config.MinioSecretKey,
+				config.CampaignMediaBucket, config.MinioRegion, config.MinioUseSSL,
+			)
+			if mediaStoreErr != nil {
+				logger.LogFatal("component=campaign_media action=initialize_legacy_store result=failed error=%v", mediaStoreErr)
+			}
+			campaignMediaStore, mediaStoreErr = minio_storage.NewRoutedMediaAssetStorage(mediaAssetStore, legacyCampaignStore)
+			if mediaStoreErr != nil {
+				logger.LogFatal("component=campaign_media action=initialize_routed_store result=failed error=%v", mediaStoreErr)
+			}
+			campaignMediaRepository = campaign_repository.NewSharedMediaAssetRepository(db)
+		} else {
+			var mediaStoreErr error
+			campaignMediaStore, mediaStoreErr = minio_storage.NewCampaignMediaStorage(
+				appCtx, config.MinioEndpoint, config.MinioAccessKey, config.MinioSecretKey,
+				config.CampaignMediaBucket, config.MinioRegion, config.MinioUseSSL,
+			)
+			if mediaStoreErr != nil {
+				logger.LogFatal("component=campaign_media action=initialize result=failed error=%v", mediaStoreErr)
+			}
+			campaignMediaRepository = campaign_repository.NewMediaAssetRepository(db)
 		}
-		campaignMediaRepository = campaign_repository.NewMediaAssetRepository(db)
 		campaignMediaService := campaign_service.NewMediaAssetService(
 			campaignMediaRepository,
 			campaignMediaStore,
