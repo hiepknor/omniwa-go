@@ -134,7 +134,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Creates a text campaign draft. Every recipient requires instance-scoped opt-in evidence; raw evidence references are hashed before persistence.",
+                "description": "Creates a text campaign draft. Existing direct recipients remain available behind WA_CAMPAIGN_DIRECT_CREATE_ENABLED. The additive group-list target contract is rejected until group execution safety is enabled in a later rollout.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7393,7 +7393,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign"
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignSummary"
                     }
                 },
                 "message": {
@@ -8059,11 +8059,26 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "needsAttention": {
+                    "type": "boolean"
+                },
+                "pauseReason": {
+                    "type": "string"
+                },
+                "retryAt": {
+                    "type": "string"
+                },
                 "startsAt": {
                     "type": "string"
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignStatus"
+                },
+                "statusReason": {
+                    "type": "string"
+                },
+                "targetType": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignTargetType"
                 },
                 "textBody": {
                     "type": "string"
@@ -8095,6 +8110,17 @@ const docTemplate = `{
                 "CampaignStatusCompleted",
                 "CampaignStatusAborted",
                 "CampaignStatusFailed"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignTargetType": {
+            "type": "string",
+            "enum": [
+                "direct",
+                "group_list"
+            ],
+            "x-enum-varnames": [
+                "CampaignTargetDirect",
+                "CampaignTargetGroupList"
             ]
         },
         "github_com_evolution-foundation_evolution-go_pkg_campaign_model.Recipient": {
@@ -8145,6 +8171,12 @@ const docTemplate = `{
                 "status": {
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.RecipientStatus"
                 },
+                "targetLabel": {
+                    "type": "string"
+                },
+                "targetType": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.RecipientTargetType"
+                },
                 "updatedAt": {
                     "type": "string"
                 }
@@ -8173,6 +8205,17 @@ const docTemplate = `{
                 "RecipientStatusAborted"
             ]
         },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_model.RecipientTargetType": {
+            "type": "string",
+            "enum": [
+                "direct",
+                "group"
+            ],
+            "x-enum-varnames": [
+                "RecipientTargetDirect",
+                "RecipientTargetGroup"
+            ]
+        },
         "github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignDetail": {
             "type": "object",
             "properties": {
@@ -8185,8 +8228,143 @@ const docTemplate = `{
                 "campaign": {
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.Campaign"
                 },
+                "needsAttention": {
+                    "type": "boolean"
+                },
+                "pauseReason": {
+                    "type": "string"
+                },
+                "progress": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.Progress"
+                },
                 "recipientCount": {
                     "type": "integer"
+                },
+                "retryAt": {
+                    "type": "string"
+                },
+                "statusReason": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignTarget"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignSummary": {
+            "type": "object",
+            "properties": {
+                "contentType": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "finishedAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "needsAttention": {
+                    "type": "boolean"
+                },
+                "pauseReason": {
+                    "type": "string"
+                },
+                "progress": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.Progress"
+                },
+                "retryAt": {
+                    "type": "string"
+                },
+                "startsAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignStatus"
+                },
+                "statusReason": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignTarget"
+                },
+                "targetType": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignTargetType"
+                },
+                "textBody": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_service.CampaignTarget": {
+            "type": "object",
+            "properties": {
+                "groupListId": {
+                    "type": "string"
+                },
+                "groupListName": {
+                    "type": "string"
+                },
+                "groupListVersion": {
+                    "type": "integer"
+                },
+                "targetCount": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignTargetType"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_campaign_service.Progress": {
+            "type": "object",
+            "properties": {
+                "aborted": {
+                    "type": "integer"
+                },
+                "delivered": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "processed": {
+                    "type": "integer"
+                },
+                "processing": {
+                    "type": "integer"
+                },
+                "read": {
+                    "type": "integer"
+                },
+                "sent": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "updatedAt": {
+                    "type": "string"
                 }
             }
         },
@@ -10310,11 +10488,29 @@ const docTemplate = `{
                 }
             }
         },
+        "pkg_campaign_handler.CampaignTargetRequest": {
+            "type": "object",
+            "required": [
+                "groupListId",
+                "groupListVersion",
+                "type"
+            ],
+            "properties": {
+                "groupListId": {
+                    "type": "string"
+                },
+                "groupListVersion": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_campaign_model.CampaignTargetType"
+                }
+            }
+        },
         "pkg_campaign_handler.CreateCampaignRequest": {
             "type": "object",
             "required": [
                 "name",
-                "recipients",
                 "text"
             ],
             "properties": {
@@ -10326,6 +10522,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/pkg_campaign_handler.CampaignRecipientConsent"
                     }
+                },
+                "target": {
+                    "$ref": "#/definitions/pkg_campaign_handler.CampaignTargetRequest"
                 },
                 "text": {
                     "type": "string"

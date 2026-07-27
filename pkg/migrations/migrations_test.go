@@ -254,3 +254,19 @@ func TestGroupListsMigrationIsInstanceScopedAuditedAndGroupOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupCampaignContractMigrationIsAdditiveAndBackfillsDirectTargets(t *testing.T) {
+	migration := registeredMigration(t, 22)
+	if migration.Name != "add_group_campaign_contract" {
+		t.Fatalf("group campaign migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"ADD COLUMN target_type", "DEFAULT 'direct'", "group_list_name_snapshot", "group_list_version",
+		"needs_attention", "campaigns_target_snapshot_check", "ADD COLUMN target_label",
+		"campaign_recipients_target_check", "campaign_recipients_group_target_idx",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("group campaign migration does not contain %q", expected)
+		}
+	}
+}

@@ -41,6 +41,12 @@ type AuditPage struct {
 	NextCursor *AuditCursor
 }
 
+type RecipientProgress struct {
+	Counts    map[campaign_model.RecipientStatus]int64
+	UpdatedAt time.Time
+	RetryAt   *time.Time
+}
+
 func (r *campaignRepository) ListCampaigns(ctx context.Context, instanceID string, status campaign_model.CampaignStatus, limit int, cursor *CampaignCursor) (*CampaignPage, error) {
 	if r == nil || r.db == nil || ctx == nil || uuid.Validate(instanceID) != nil || limit < 1 || limit > maxCampaignPageSize ||
 		(status != "" && !validCampaignStatus(status)) || (cursor != nil && (cursor.CreatedAt.IsZero() || uuid.Validate(cursor.ID) != nil)) {
@@ -117,19 +123,58 @@ func (r *campaignRepository) RecipientCounts(ctx context.Context, instanceID, ca
 	if r == nil || r.db == nil || ctx == nil || uuid.Validate(instanceID) != nil || uuid.Validate(campaignID) != nil {
 		return nil, errors.New("campaign repository and identities are required")
 	}
-	var rows []struct {
-		Status campaign_model.RecipientStatus
-		Count  int64
-	}
-	if err := r.db.WithContext(ctx).Model(&campaign_model.Recipient{}).Select("status, count(*) AS count").
-		Where("instance_id = ? AND campaign_id = ?", instanceID, campaignID).Group("status").Scan(&rows).Error; err != nil {
+	snapshots, err := r.ProgressSnapshots(ctx, instanceID, []string{campaignID})
+	if err != nil {
 		return nil, err
 	}
-	counts := make(map[campaign_model.RecipientStatus]int64, len(rows))
-	for _, row := range rows {
-		counts[row.Status] = row.Count
+	if snapshot, exists := snapshots[campaignID]; exists {
+		return snapshot.Counts, nil
 	}
-	return counts, nil
+	return map[campaign_model.RecipientStatus]int64{}, nil
+}
+
+func (r *campaignRepository) ProgressSnapshots(ctx context.Context, instanceID string, campaignIDs []string) (map[string]RecipientProgress, error) {
+	if r == nil || r.db == nil || ctx == nil || uuid.Validate(instanceID) != nil || len(campaignIDs) == 0 || len(campaignIDs) > maxCampaignPageSize {
+		return nil, errors.New("bounded campaign progress identities are required")
+	}
+	for _, campaignID := range campaignIDs {
+		if uuid.Validate(campaignID) != nil {
+			return nil, errors.New("valid campaign progress identities are required")
+		}
+	}
+	type progressRow struct {
+		CampaignID string
+		Status     campaign_model.RecipientStatus
+		Count      int64
+		UpdatedAt  time.Time
+		RetryAt    *time.Time
+	}
+	var rows []progressRow
+	if err := r.db.WithContext(ctx).Raw(`SELECT campaign_id, status, COUNT(*) AS count,
+MAX(updated_at) AS updated_at,
+MIN(next_attempt_at) FILTER (WHERE status = 'pending' AND next_attempt_at > NOW()) AS retry_at
+FROM campaign_recipients
+WHERE instance_id = ? AND campaign_id IN ?
+GROUP BY campaign_id, status`, instanceID, campaignIDs).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]RecipientProgress, len(campaignIDs))
+	for _, row := range rows {
+		snapshot := result[row.CampaignID]
+		if snapshot.Counts == nil {
+			snapshot.Counts = make(map[campaign_model.RecipientStatus]int64)
+		}
+		snapshot.Counts[row.Status] = row.Count
+		if row.UpdatedAt.After(snapshot.UpdatedAt) {
+			snapshot.UpdatedAt = row.UpdatedAt.UTC()
+		}
+		if row.RetryAt != nil && (snapshot.RetryAt == nil || row.RetryAt.Before(*snapshot.RetryAt)) {
+			retryAt := row.RetryAt.UTC()
+			snapshot.RetryAt = &retryAt
+		}
+		result[row.CampaignID] = snapshot
+	}
+	return result, nil
 }
 
 func validCampaignStatus(status campaign_model.CampaignStatus) bool {

@@ -52,6 +52,9 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+	if campaign.TargetType != campaign_model.CampaignTargetDirect {
+		t.Fatalf("legacy campaign target type = %q", campaign.TargetType)
+	}
 	loaded, err := repository.GetCampaign(context.Background(), instance.Id, campaign.ID)
 	if err != nil || loaded.ID != campaign.ID || loaded.InstanceID != instance.Id {
 		t.Fatalf("scoped campaign lookup = %#v, %v", loaded, err)
@@ -63,6 +66,11 @@ func TestCampaignRepositoryPostgresSerializesTransitionsAndEnforcesConsent(t *te
 	recipientPage, err := repository.ListRecipients(context.Background(), instance.Id, campaign.ID, 2, nil)
 	if err != nil || len(recipientPage.Items) != 2 || recipientPage.NextCursor == nil {
 		t.Fatalf("first recipient page = %#v, %v", recipientPage, err)
+	}
+	for _, recipient := range recipientPage.Items {
+		if recipient.TargetType != campaign_model.RecipientTargetDirect || recipient.TargetLabel != nil {
+			t.Fatalf("legacy recipient target = %#v", recipient)
+		}
 	}
 	secondRecipientPage, err := repository.ListRecipients(context.Background(), instance.Id, campaign.ID, 2, recipientPage.NextCursor)
 	if err != nil || len(secondRecipientPage.Items) != 2 || secondRecipientPage.NextCursor != nil || secondRecipientPage.Items[0].ID == recipientPage.Items[0].ID {

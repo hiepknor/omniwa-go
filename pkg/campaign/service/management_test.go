@@ -1,13 +1,49 @@
 package campaign_service
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
+	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
 	"github.com/google/uuid"
 )
+
+type managementRepositoryStub struct {
+	campaign_repository.CampaignRepository
+	directCalls int
+	groupCalls  int
+	campaigns   []campaign_model.Campaign
+	snapshots   map[string]campaign_repository.RecipientProgress
+}
+
+func (stub *managementRepositoryStub) CreateDraft(_ context.Context, instanceID string, input campaign_repository.DraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error) {
+	stub.directCalls++
+	campaign := &campaign_model.Campaign{ID: uuid.NewString(), InstanceID: instanceID, TargetType: campaign_model.CampaignTargetDirect, UpdatedAt: time.Unix(100, 0)}
+	return campaign, []campaign_model.Recipient{{Status: campaign_model.RecipientStatusPending}}, nil
+}
+
+func (stub *managementRepositoryStub) CreateGroupDraft(_ context.Context, instanceID string, input campaign_repository.GroupDraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error) {
+	stub.groupCalls++
+	name, version := "Branches", input.GroupListVersion
+	campaign := &campaign_model.Campaign{
+		ID: uuid.NewString(), InstanceID: instanceID, TargetType: campaign_model.CampaignTargetGroupList,
+		GroupListID: &input.GroupListID, GroupListNameSnapshot: &name, GroupListVersion: &version, UpdatedAt: time.Unix(100, 0),
+	}
+	return campaign, []campaign_model.Recipient{{Status: campaign_model.RecipientStatusPending}}, nil
+}
+
+func (stub *managementRepositoryStub) ListCampaigns(_ context.Context, _ string, _ campaign_model.CampaignStatus, _ int, _ *campaign_repository.CampaignCursor) (*campaign_repository.CampaignPage, error) {
+	return &campaign_repository.CampaignPage{Items: stub.campaigns}, nil
+}
+
+func (stub *managementRepositoryStub) ProgressSnapshots(_ context.Context, _ string, _ []string) (map[string]campaign_repository.RecipientProgress, error) {
+	return stub.snapshots, nil
+}
 
 func TestCampaignCursorRoundTripIsTypedAndOpaque(t *testing.T) {
 	at, id := time.Unix(100, 0).UTC(), uuid.NewString()
@@ -42,5 +78,67 @@ func TestManagementCampaignStatusIsStrict(t *testing.T) {
 	}
 	if managementCampaignStatus("unknown") {
 		t.Fatal("unknown status accepted")
+	}
+}
+
+func TestCampaignCreateGatesDirectAndGroupContracts(t *testing.T) {
+	instanceID, groupListID := uuid.NewString(), uuid.NewString()
+	actor := campaign_repository.Actor{Type: "system"}
+	directInput := CreateCampaignInput{Name: "Direct", TextBody: "hello", Recipients: []campaign_repository.RecipientConsent{{JID: "1@s.whatsapp.net"}}, Actor: actor}
+	groupInput := CreateCampaignInput{Name: "Groups", TextBody: "hello", Target: &GroupListTargetInput{Type: campaign_model.CampaignTargetGroupList, GroupListID: groupListID, GroupListVersion: 2}, InstanceJID: "1@s.whatsapp.net", Actor: actor}
+
+	repository := &managementRepositoryStub{}
+	service := NewManagementService(repository)
+	if _, err := service.Create(context.Background(), instanceID, groupInput); !errors.Is(err, ErrGroupCampaignTargetsDisabled) || repository.groupCalls != 0 {
+		t.Fatalf("disabled group create = %v calls=%d", err, repository.groupCalls)
+	}
+	if _, err := service.Create(context.Background(), instanceID, directInput); err != nil || repository.directCalls != 1 {
+		t.Fatalf("compatible direct create = %v calls=%d", err, repository.directCalls)
+	}
+
+	repository = &managementRepositoryStub{}
+	service = NewManagementService(repository, WithDirectCreateEnabled(false), WithGroupTargetsEnabled(true))
+	if _, err := service.Create(context.Background(), instanceID, directInput); !errors.Is(err, ErrDirectCampaignCreateDisabled) || repository.directCalls != 0 {
+		t.Fatalf("disabled direct create = %v calls=%d", err, repository.directCalls)
+	}
+	detail, err := service.Create(context.Background(), instanceID, groupInput)
+	if err != nil || repository.groupCalls != 1 || detail.Target.Type != campaign_model.CampaignTargetGroupList || detail.Target.TargetCount != 1 {
+		t.Fatalf("enabled group create = %#v, %v calls=%d", detail, err, repository.groupCalls)
+	}
+	if _, err := service.Create(context.Background(), instanceID, CreateCampaignInput{Name: "ambiguous", TextBody: "hello", Target: groupInput.Target, Recipients: directInput.Recipients}); !errors.Is(err, campaign_repository.ErrInvalidCampaignInput) {
+		t.Fatalf("ambiguous create error = %v", err)
+	}
+}
+
+func TestCampaignListUsesTerminalProgressDefinition(t *testing.T) {
+	campaignID := uuid.NewString()
+	updatedAt := time.Unix(200, 0).UTC()
+	repository := &managementRepositoryStub{
+		campaigns: []campaign_model.Campaign{{ID: campaignID, TargetType: campaign_model.CampaignTargetDirect, UpdatedAt: time.Unix(100, 0).UTC()}},
+		snapshots: map[string]campaign_repository.RecipientProgress{campaignID: {
+			Counts: map[campaign_model.RecipientStatus]int64{
+				campaign_model.RecipientStatusPending: 2, campaign_model.RecipientStatusProcessing: 1,
+				campaign_model.RecipientStatusSent: 3, campaign_model.RecipientStatusDelivered: 4,
+				campaign_model.RecipientStatusRead: 5, campaign_model.RecipientStatusFailed: 6,
+				campaign_model.RecipientStatusSkipped: 7, campaign_model.RecipientStatusAborted: 8,
+			}, UpdatedAt: updatedAt,
+		}},
+	}
+	result, err := NewManagementService(repository).List(context.Background(), uuid.NewString(), "", 10, "")
+	if err != nil || len(result.Items) != 1 {
+		t.Fatalf("List() = %#v, %v", result, err)
+	}
+	progress := result.Items[0].Progress
+	if progress.Total != 36 || progress.Processed != 33 || progress.Pending != 2 || progress.Processing != 1 || !progress.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("progress = %#v", progress)
+	}
+	payload, err := json.Marshal(result.Items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"statusReason":null`, `"pauseReason":null`, `"retryAt":null`, `"needsAttention":false`, `"progress":`, `"target":`} {
+		if !strings.Contains(string(payload), field) {
+			t.Fatalf("campaign summary omitted %s: %s", field, payload)
+		}
 	}
 }
