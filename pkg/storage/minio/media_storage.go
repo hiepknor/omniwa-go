@@ -3,8 +3,10 @@ package minio_storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -16,42 +18,28 @@ import (
 type MinioMediaStorage struct {
 	client     *minio.Client
 	bucketName string
-	baseURL    string
 }
 
-func setBucketPolicy(client *minio.Client, bucketName string) error {
-	policy := `{
-		"Version": "2012-10-17",
-		"Statement": [
-			{
-				"Effect": "Allow",
-				"Principal": "*",
-				"Action": ["s3:GetObject"],
-				"Resource": ["arn:aws:s3:::` + bucketName + `/*"]
-			}
-		]
-	}`
+const legacyMediaPrefix = "evolution-go-medias/"
 
-	return client.SetBucketPolicy(context.Background(), bucketName, policy)
-}
+var legacyMediaNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$`)
 
 // generateFilePath creates a simple media folder structure
 // Format: evolution-go-medias/{filename}
-func generateFilePath(fileName string) string {
-	return fmt.Sprintf("evolution-go-medias/%s", fileName)
+func generateFilePath(fileName string) (string, error) {
+	if !legacyMediaNamePattern.MatchString(fileName) || fileName == "." || fileName == ".." {
+		return "", errors.New("invalid legacy media object name")
+	}
+	return legacyMediaPrefix + fileName, nil
 }
 
-// resolveFilePath determines if the input is a full path or just a filename
-// If it's just a filename, it assumes it's in the evolution-go-medias folder
-// If it's a full path, it returns it as-is
-func (m *MinioMediaStorage) resolveFilePath(ctx context.Context, fileNameOrPath string) (string, error) {
-	// If the input already contains path separators, assume it's a full path
-	if strings.Contains(fileNameOrPath, "/") {
-		return fileNameOrPath, nil
+// resolveFilePath accepts either a validated legacy filename or the same name
+// under the fixed compatibility prefix. Other namespaces are rejected.
+func (m *MinioMediaStorage) resolveFilePath(_ context.Context, fileNameOrPath string) (string, error) {
+	if strings.HasPrefix(fileNameOrPath, legacyMediaPrefix) {
+		return generateFilePath(strings.TrimPrefix(fileNameOrPath, legacyMediaPrefix))
 	}
-
-	// If it's just a filename, assume it's in the evolution-go-medias folder
-	return fmt.Sprintf("evolution-go-medias/%s", fileNameOrPath), nil
+	return generateFilePath(fileNameOrPath)
 }
 
 func NewMinioMediaStorage(
@@ -71,32 +59,21 @@ func NewMinioMediaStorage(
 		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
 	}
 
-	// Try to set bucket policy to allow public access (optional for some providers)
-	err = setBucketPolicy(client, bucketName)
-	if err != nil {
-		// Some providers (like Backblaze B2) don't support SetBucketPolicy
-		// Log warning but continue - files can still be accessed via presigned URLs
-		fmt.Printf("Warning: Failed to set bucket policy (provider may not support it): %v\n", err)
-	}
-
-	baseURL := fmt.Sprintf("https://%s/%s", endpoint, bucketName)
-	if !useSSL {
-		baseURL = fmt.Sprintf("http://%s/%s", endpoint, bucketName)
-	}
-
 	return &MinioMediaStorage{
 		client:     client,
 		bucketName: bucketName,
-		baseURL:    baseURL,
 	}, nil
 }
 
 func (m *MinioMediaStorage) Store(ctx context.Context, data []byte, fileName string, contentType string) (string, error) {
 	// Generate organized file path
-	filePath := generateFilePath(fileName)
+	filePath, err := generateFilePath(fileName)
+	if err != nil {
+		return "", err
+	}
 	reader := bytes.NewReader(data)
 
-	_, err := m.client.PutObject(ctx, m.bucketName, filePath, reader, int64(len(data)), minio.PutObjectOptions{
+	_, err = m.client.PutObject(ctx, m.bucketName, filePath, reader, int64(len(data)), minio.PutObjectOptions{
 		ContentType: contentType,
 	})
 	if err != nil {
@@ -109,8 +86,6 @@ func (m *MinioMediaStorage) Store(ctx context.Context, data []byte, fileName str
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
 	}
-
-	fmt.Println(presignedURL.String())
 
 	return presignedURL.String(), nil
 }
@@ -148,8 +123,6 @@ func (m *MinioMediaStorage) GetURL(ctx context.Context, fileName string) (string
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
 	}
-
-	fmt.Println(presignedURL.String())
 
 	return presignedURL.String(), nil
 }

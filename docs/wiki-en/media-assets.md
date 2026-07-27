@@ -40,6 +40,13 @@ The legacy MinIO bucket may be public for compatibility. Never configure the
 shared media bucket to use that bucket. Verify anonymous `GetObject` is denied
 as part of provisioning and deployment acceptance.
 
+The legacy storage adapter no longer creates or changes bucket policies and
+never logs signed URLs. Existing `MINIO_BUCKET` policies are external state and
+are not changed automatically during upgrade. Operators must inspect that
+bucket and explicitly remove anonymous access when legacy consumers no longer
+require it. Legacy object access is restricted to validated names under the
+`evolution-go-medias/` compatibility prefix.
+
 ## Device upload and outbound chat image
 
 Enable the outbound chat stage only after the shared bucket is provisioned:
@@ -137,6 +144,14 @@ image bytes in the event handler. The projection inbox never contains the
 provider direct path, media key, encrypted-file hash, bucket, or object key.
 History sync does not enqueue media downloads in this stage.
 
+When inbound image capture is enabled, the legacy webhook, WebSocket, RabbitMQ,
+NATS, and durable-event fan-out also carries the opaque `mediaAssetId` and
+removes image provider descriptors recursively, including quoted messages. The
+legacy `WEBHOOK_FILES` path does not synchronously download the same direct
+inbound image. Audio, video, document, sticker, associated-child media, and
+outbound compatibility behavior remain unchanged. Capture failure still emits
+safe message metadata without provider credentials or inline image bytes.
+
 A leased worker downloads the encrypted provider object to a bounded temporary
 file, verifies the provider size and SHA-256, accepts only JPEG or PNG, enforces
 decoded dimensions and pixel limits, and writes immutable `provider_original`
@@ -168,6 +183,14 @@ loads one active key version. If the key is lost while jobs are nonterminal,
 those descriptors cannot be recovered and the affected jobs must be failed by
 a forward repair operation. Never log or return the key or descriptor columns.
 
+`POST /message/downloadmedia` remains available for compatibility with clients
+that still submit a WhatsApp media message descriptor. Downloads now inherit
+`REMOTE_MEDIA_MAX_BYTES` as a hard byte ceiling and `MEDIA_DOWNLOAD_TIMEOUT` as
+their deadline (with an absolute 64 MiB safety cap), use a bounded temporary
+file, honor request cancellation, and
+return stable `invalid_media`, `media_too_large`, or `media_download_timeout`
+errors. New chat clients should use authenticated media-asset content instead.
+
 ## Campaign compatibility rollout
 
 Migration 27 preserves each legacy campaign asset ID, state, expiry, immutable
@@ -194,6 +217,12 @@ Rollback by disabling `WA_MEDIA_ASSETS_ENABLED`; campaign traffic returns to
 the maintained legacy metadata and bucket. Keep both additive tables and both
 buckets intact. Do not remove migration 27 rows or move objects during rollback;
 use a forward migration for schema corrections.
+
+Keep the `campaign_media_assets` rollback shadow until a separately approved
+contract-removal migration has observed a complete rollback window and shown
+that no deployed binary or operational tool reads it. The shared cutover does
+not authorize destructive removal of the compatibility table or legacy
+objects.
 
 Instance deletion is fail-closed. The service deletes every planned private
 variant before deleting the corresponding fenced metadata set and instance in

@@ -4521,8 +4521,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "413": {
+                        "description": "Media exceeds the configured limit",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Media download timed out",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
