@@ -742,7 +742,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	)
 	startBackground(backgroundWorkers, "campaign.delivery", campaignWorker.Run)
 	userService := user_service.NewUserService(runtimeRegistry, whatsmeowService, queryGuard, identityResolver, contactReader, remoteMediaFetcher, loggerWrapper)
-	messageService := message_service.NewMessageService(runtimeRegistry, messageRepository, whatsmeowService, loggerWrapper)
+	messageService := message_service.NewMessageService(runtimeRegistry, messageRepository, whatsmeowService, message_service.LegacyMediaSettings{
+		MaxBytes: config.RemoteMedia.MaxBytes,
+		Timeout:  config.MediaDownloadTimeout,
+	}, loggerWrapper)
 	chatService := chat_service.NewChatService(runtimeRegistry, whatsmeowService, loggerWrapper)
 	groupService := group_service.NewGroupService(runtimeRegistry, whatsmeowService, queryGuard, groupReader, groupWriter, remoteMediaFetcher, loggerWrapper)
 	callService := call_service.NewCallService(runtimeRegistry, whatsmeowService, loggerWrapper)

@@ -3,9 +3,8 @@ package message_service
 import (
 	"context"
 	"errors"
-	"fmt"
+	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -40,7 +39,21 @@ type messageService struct {
 	messageRepository message_repository.MessageRepository
 	whatsmeowService  whatsmeow_service.WhatsmeowService
 	loggerWrapper     *logger_wrapper.LoggerManager
+	legacyMedia       LegacyMediaSettings
 }
+
+var (
+	ErrLegacyMediaInvalid  = errors.New("invalid legacy media request")
+	ErrLegacyMediaTooLarge = errors.New("legacy media exceeds the configured size limit")
+	ErrLegacyMediaTimeout  = errors.New("legacy media download timed out")
+)
+
+type LegacyMediaSettings struct {
+	MaxBytes int64
+	Timeout  time.Duration
+}
+
+const legacyMediaHardMaxBytes int64 = 64 * 1024 * 1024
 
 type ReactStruct struct {
 	Number      string `json:"number"`
@@ -365,6 +378,9 @@ func (m *messageService) MarkPlayed(data *MarkPlayedStruct, instance *instance_m
 }
 
 func (m *messageService) DownloadMedia(data *DownloadMediaStruct, instance *instance_model.Instance, request *http.Request) (*dataurl.DataURL, string, error) {
+	if data == nil || data.Message == nil || instance == nil || request == nil {
+		return nil, "", ErrLegacyMediaInvalid
+	}
 	client, err := m.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, "", err
@@ -372,79 +388,36 @@ func (m *messageService) DownloadMedia(data *DownloadMediaStruct, instance *inst
 
 	var ts time.Time
 
-	msg := data.Message
-
-	mimetype := ""
-	var mediaData []byte
-
-	img := msg.GetImageMessage()
-	audio := msg.GetAudioMessage()
-	document := msg.GetDocumentMessage()
-	video := msg.GetVideoMessage()
-	sticker := msg.GetStickerMessage()
-
-	if img == nil && audio == nil && document == nil && video == nil && sticker == nil {
-		return nil, "", errors.New("invalid media type")
+	media, mimetype := legacyDownloadable(data.Message)
+	if media == nil {
+		return nil, "", ErrLegacyMediaInvalid
 	}
-
-	userDirectory := fmt.Sprintf(`files/user_%s`, instance.Id)
-	_, err = os.Stat(userDirectory)
-	if os.IsNotExist(err) {
-		errDir := os.MkdirAll(userDirectory, 0751)
-		if errDir != nil {
-			m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Could not create user directory (%s)", instance.Id, userDirectory)
-			return nil, "", errDir
-		}
+	download, err := newLegacyBoundedFile(m.legacyMedia.MaxBytes + 64*1024)
+	if err != nil {
+		return nil, "", err
 	}
-
-	if img != nil {
-		mediaData, err = client.Download(context.Background(), img)
-		if err != nil {
-			m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to download image", instance.Id)
-			msg := fmt.Sprintf("Failed to download image %v", err)
-			return nil, "", errors.New(msg)
+	defer download.Close()
+	downloadCtx, cancel := context.WithTimeout(request.Context(), m.legacyMedia.Timeout)
+	defer cancel()
+	if err = client.DownloadToFile(downloadCtx, media, download); err != nil {
+		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Legacy media download failed", instance.Id)
+		if errors.Is(err, errLegacyBoundExceeded) {
+			return nil, "", ErrLegacyMediaTooLarge
 		}
-		mimetype = img.GetMimetype()
+		if errors.Is(downloadCtx.Err(), context.DeadlineExceeded) {
+			return nil, "", ErrLegacyMediaTimeout
+		}
+		return nil, "", errors.New("legacy media download failed")
 	}
-
-	if audio != nil {
-		mediaData, err = client.Download(context.Background(), audio)
-		if err != nil {
-			m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to download audio", instance.Id)
-			msg := fmt.Sprintf("Failed to download audio %v", err)
-			return nil, "", errors.New(msg)
-		}
-		mimetype = audio.GetMimetype()
+	if _, err = download.Seek(0, io.SeekStart); err != nil {
+		return nil, "", err
 	}
-
-	if document != nil {
-		mediaData, err = client.Download(context.Background(), document)
-		if err != nil {
-			m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to download document", instance.Id)
-			msg := fmt.Sprintf("Failed to download document %v", err)
-			return nil, "", errors.New(msg)
-		}
-		mimetype = document.GetMimetype()
+	mediaData, err := io.ReadAll(io.LimitReader(download, m.legacyMedia.MaxBytes+1))
+	if err != nil {
+		return nil, "", err
 	}
-
-	if video != nil {
-		mediaData, err = client.Download(context.Background(), video)
-		if err != nil {
-			m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to download video", instance.Id)
-			msg := fmt.Sprintf("Failed to download video %v", err)
-			return nil, "", errors.New(msg)
-		}
-		mimetype = video.GetMimetype()
-	}
-
-	if sticker != nil {
-		mediaData, err = client.Download(context.Background(), sticker)
-		if err != nil {
-			m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to download sticker", instance.Id)
-			msg := fmt.Sprintf("Failed to download sticker %v", err)
-			return nil, "", errors.New(msg)
-		}
-		mimetype = sticker.GetMimetype()
+	if int64(len(mediaData)) > m.legacyMedia.MaxBytes {
+		return nil, "", ErrLegacyMediaTooLarge
 	}
 
 	dataURL := dataurl.New(mediaData, mimetype)
@@ -539,12 +512,42 @@ func NewMessageService(
 	clients instance_runtime.ClientProvider,
 	messageRepository message_repository.MessageRepository,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
+	legacyMedia LegacyMediaSettings,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) MessageService {
+	if legacyMedia.MaxBytes <= 0 {
+		legacyMedia.MaxBytes = 32 * 1024 * 1024
+	}
+	if legacyMedia.MaxBytes > legacyMediaHardMaxBytes {
+		legacyMedia.MaxBytes = legacyMediaHardMaxBytes
+	}
+	if legacyMedia.Timeout <= 0 {
+		legacyMedia.Timeout = 2 * time.Minute
+	}
 	return &messageService{
 		clients:           clients,
 		messageRepository: messageRepository,
 		whatsmeowService:  whatsmeowService,
+		legacyMedia:       legacyMedia,
 		loggerWrapper:     loggerWrapper,
 	}
+}
+
+func legacyDownloadable(msg *waE2E.Message) (whatsmeow.DownloadableMessage, string) {
+	if media := msg.GetImageMessage(); media != nil {
+		return media, media.GetMimetype()
+	}
+	if media := msg.GetAudioMessage(); media != nil {
+		return media, media.GetMimetype()
+	}
+	if media := msg.GetDocumentMessage(); media != nil {
+		return media, media.GetMimetype()
+	}
+	if media := msg.GetVideoMessage(); media != nil {
+		return media, media.GetMimetype()
+	}
+	if media := msg.GetStickerMessage(); media != nil {
+		return media, media.GetMimetype()
+	}
+	return nil, ""
 }

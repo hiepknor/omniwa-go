@@ -364,7 +364,7 @@ func stableGroupReconciliationInterval(instanceID string, base time.Duration) ti
 	return base + (base/10000)*time.Duration(basisPoints)
 }
 
-func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
+func (mycli *MyClient) ingestProjectionEvent(rawEvent any) (assetID string) {
 	if mycli == nil || mycli.projectionEvents == nil {
 		return
 	}
@@ -372,7 +372,6 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
 		mycli.triggerHistoryProjectionSync(historyEvent)
 		return
 	}
-	assetID := ""
 	if mycli.inboundMedia != nil {
 		captureCtx, captureCancel := context.WithTimeout(context.Background(), projectionIngestTimeout)
 		capturedID, relevant, captureErr := mycli.inboundMedia.Capture(captureCtx, mycli.userID, rawEvent)
@@ -411,6 +410,7 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) {
 		result = "inserted"
 	}
 	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=ingest instance_id=%s resource=%s event_type=%s result=%s", mycli.userID, event.Resource, event.EventType, result)
+	return assetID
 }
 
 func (mycli *MyClient) triggerHistoryProjectionSync(event *events.HistorySync) {
@@ -1191,7 +1191,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	defer mycli.stateMu.Unlock()
 	// Projection ingestion is synchronous and bounded so relevant changes reach
 	// the durable inbox before best-effort webhook/queue fan-out.
-	mycli.ingestProjectionEvent(rawEvt)
+	inboundMediaAssetID := mycli.ingestProjectionEvent(rawEvt)
 	if mycli.handleFullSyncAppStateEvent(rawEvt) {
 		return
 	}
@@ -1614,6 +1614,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if !ok {
 			dataMap = make(map[string]interface{})
 		}
+		sharedInboundImage := mycli.config.InboundImageContentEnabled && !evt.Info.IsFromMe && evt.Message.GetImageMessage() != nil
+		if sharedInboundImage && inboundMediaAssetID != "" {
+			attachLegacyMediaAssetID(dataMap, inboundMediaAssetID)
+		}
 
 		referral := extractReferralFromMessage(evt.Message)
 
@@ -1724,6 +1728,11 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			document := evt.Message.GetDocumentMessage()
 			video := evt.Message.GetVideoMessage()
 			sticker := evt.Message.GetStickerMessage()
+			if sharedInboundImage {
+				// The shared media worker owns direct inbound image downloads. Keep
+				// legacy processing for every other media type and associated media.
+				img = nil
+			}
 
 			// Check for associated child messages (like media in replies)
 			var associatedImg *waE2E.ImageMessage
@@ -1953,6 +1962,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 
 		delete(dataMap, "RawMessage")
+		if sharedInboundImage {
+			sanitizeProviderMediaDescriptors(dataMap)
+		}
 
 		if message, ok := dataMap["Message"].(map[string]interface{}); ok {
 			if imageMessage, ok := message["imageMessage"].(map[string]interface{}); ok {

@@ -310,7 +310,9 @@ func (m *messageHandler) MarkPlayed(ctx *gin.Context) {
 // @Param message body message_service.DownloadMediaStruct true "Download media"
 // @Success 200 {object} apidocs.SuccessResponse{data=apidocs.DownloadMediaData} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 413 {object} apidocs.ErrorResponse "Media exceeds the configured limit"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 504 {object} apidocs.ErrorResponse "Media download timed out"
 // @Security ApiKeyAuth
 // @Router /message/downloadmedia [post]
 func (m *messageHandler) DownloadMedia(ctx *gin.Context) {
@@ -331,7 +333,16 @@ func (m *messageHandler) DownloadMedia(ctx *gin.Context) {
 
 	dataUrl, ts, err := m.messageService.DownloadMedia(data, instance, ctx.Request)
 	if err != nil {
-		httpapi.WriteInternal(ctx, err)
+		switch {
+		case errors.Is(err, message_service.ErrLegacyMediaInvalid):
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_media", "invalid media message")
+		case errors.Is(err, message_service.ErrLegacyMediaTooLarge):
+			httpapi.WriteError(ctx, http.StatusRequestEntityTooLarge, "media_too_large", "media exceeds the configured size limit")
+		case errors.Is(err, message_service.ErrLegacyMediaTimeout):
+			httpapi.WriteError(ctx, http.StatusGatewayTimeout, "media_download_timeout", "media download timed out")
+		default:
+			httpapi.WriteInternal(ctx, err)
+		}
 		return
 	}
 
