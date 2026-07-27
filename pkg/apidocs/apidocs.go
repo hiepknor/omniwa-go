@@ -56,9 +56,9 @@ type CampaignDetailResponse struct {
 }
 
 type CampaignListResponse struct {
-	Message string                    `json:"message" example:"success"`
-	Data    []campaign_model.Campaign `json:"data"`
-	Meta    ProjectionMeta            `json:"meta"`
+	Message string                             `json:"message" example:"success"`
+	Data    []campaign_service.CampaignSummary `json:"data"`
+	Meta    ProjectionMeta                     `json:"meta"`
 }
 
 type CampaignRecipientListResponse struct {

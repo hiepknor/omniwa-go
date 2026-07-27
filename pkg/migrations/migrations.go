@@ -762,6 +762,49 @@ CREATE TABLE group_list_audit_events (
 CREATE INDEX group_list_audit_history_idx
 ON group_list_audit_events (instance_id, group_list_id, occurred_at ASC, id ASC);`,
 	},
+	{
+		Version: 22,
+		Name:    "add_group_campaign_contract",
+		SQL: `ALTER TABLE campaigns
+    ADD COLUMN target_type VARCHAR(32) NOT NULL DEFAULT 'direct',
+    ADD COLUMN group_list_id UUID NULL,
+    ADD COLUMN group_list_name_snapshot VARCHAR(255) NULL,
+    ADD COLUMN group_list_version BIGINT NULL,
+    ADD COLUMN status_reason VARCHAR(64) NULL,
+    ADD COLUMN pause_reason VARCHAR(64) NULL,
+    ADD COLUMN retry_at TIMESTAMPTZ NULL,
+    ADD COLUMN needs_attention BOOLEAN NOT NULL DEFAULT FALSE;
+
+UPDATE campaigns SET target_type = 'direct' WHERE target_type IS NULL;
+
+ALTER TABLE campaigns
+    ADD CONSTRAINT campaigns_target_snapshot_check CHECK (
+        (target_type = 'direct' AND group_list_id IS NULL AND group_list_name_snapshot IS NULL AND group_list_version IS NULL)
+        OR (target_type = 'group_list' AND group_list_id IS NOT NULL AND group_list_name_snapshot IS NOT NULL AND group_list_version >= 1)
+    ),
+    ADD CONSTRAINT campaigns_status_reason_check CHECK (status_reason IS NULL OR status_reason ~ '^[a-z0-9_]{1,64}$'),
+    ADD CONSTRAINT campaigns_pause_reason_check CHECK (pause_reason IS NULL OR pause_reason ~ '^[a-z0-9_]{1,64}$');
+
+CREATE INDEX campaigns_group_list_snapshot_idx
+ON campaigns (instance_id, group_list_id, created_at DESC, id DESC)
+WHERE target_type = 'group_list';
+
+ALTER TABLE campaign_recipients
+    ADD COLUMN target_type VARCHAR(32) NOT NULL DEFAULT 'direct',
+    ADD COLUMN target_label VARCHAR(255) NULL;
+
+UPDATE campaign_recipients SET target_type = 'direct' WHERE target_type IS NULL;
+
+ALTER TABLE campaign_recipients
+    ADD CONSTRAINT campaign_recipients_target_check CHECK (
+        (target_type = 'direct' AND target_label IS NULL)
+        OR (target_type = 'group' AND target_label IS NOT NULL AND char_length(target_label) BETWEEN 1 AND 255)
+    );
+
+CREATE INDEX campaign_recipients_group_target_idx
+ON campaign_recipients (instance_id, recipient_jid, campaign_id)
+WHERE target_type = 'group';`,
+	},
 }
 
 func Run(db *gorm.DB) error {

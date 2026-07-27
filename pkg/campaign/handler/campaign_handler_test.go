@@ -78,6 +78,21 @@ func TestCreateIsInstanceScopedAndDoesNotEchoConsentEvidence(t *testing.T) {
 	}
 }
 
+func TestCreateAcceptsAdditiveGroupTargetContractAndMapsRolloutGate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	instanceID, groupListID := uuid.NewString(), uuid.NewString()
+	service := &managementServiceFake{err: campaign_service.ErrGroupCampaignTargetsDisabled}
+	handler := NewCampaignHandler(service)
+	body := `{"name":"Branches","text":"Hello","target":{"type":"group_list","groupListId":"` + groupListID + `","groupListVersion":4}}`
+	ctx, response := campaignContext(http.MethodPost, "/campaigns", body, instanceID, "instance-secret", "")
+	handler.Create(ctx)
+	if response.Code != http.StatusConflict || service.create.Target == nil || service.create.Target.GroupListID != groupListID ||
+		service.create.Target.GroupListVersion != 4 || service.create.InstanceJID != "15550001@s.whatsapp.net" ||
+		!strings.Contains(response.Body.String(), `"code":"campaign_group_targets_disabled"`) {
+		t.Fatalf("group create status=%d input=%#v body=%s", response.Code, service.create, response.Body.String())
+	}
+}
+
 func TestCampaignReadsAreScopedPaginatedAndRejectForgedIdentity(t *testing.T) {
 	instanceID, campaignID := uuid.NewString(), uuid.NewString()
 	service := &managementServiceFake{recipients: &campaign_service.RecipientList{Items: []campaign_model.Recipient{}, NextCursor: "next"}}
@@ -137,7 +152,7 @@ func campaignContext(method, target, body, instanceID, token, campaignID string)
 	ctx.Request = httptest.NewRequest(method, target, strings.NewReader(body))
 	ctx.Request.Header.Set("Content-Type", "application/json")
 	ctx.Request.Header.Set("apikey", token)
-	ctx.Set("instance", &instance_model.Instance{Id: instanceID})
+	ctx.Set("instance", &instance_model.Instance{Id: instanceID, Jid: "15550001@s.whatsapp.net"})
 	if campaignID != "" {
 		ctx.Params = gin.Params{{Key: "campaignId", Value: campaignID}}
 	}

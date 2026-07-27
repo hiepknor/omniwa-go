@@ -80,14 +80,15 @@ type Config struct {
 	EventRetention                  time.Duration
 	RemoteMedia                     RemoteMediaConfig
 
-	WAOutboundRatePerSecond float64
-	WAOutboundBurst         int
-	WAOutboundMaxWait       time.Duration
-	CampaignBatchSize       int
-	CampaignLease           time.Duration
-	CampaignPollInterval    time.Duration
-	CampaignMaxAttempts     int
-	CampaignRetryBase       time.Duration
+	WAOutboundRatePerSecond     float64
+	WAOutboundBurst             int
+	WAOutboundMaxWait           time.Duration
+	CampaignBatchSize           int
+	CampaignLease               time.Duration
+	CampaignPollInterval        time.Duration
+	CampaignMaxAttempts         int
+	CampaignRetryBase           time.Duration
+	CampaignDirectCreateEnabled bool
 
 	// Logger configurations
 	LogMaxSize    int
@@ -389,6 +390,7 @@ func Load() *Config {
 	// the associated remote heartbeat.
 	licenseGateEnabled := os.Getenv(config_env.LICENSE_GATE_ENABLED) != "false"
 	groupListsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LISTS_ENABLED)), "true")
+	campaignDirectCreateEnabled := !strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED)), "false")
 
 	waInfoRateValue := os.Getenv(config_env.WA_INFO_RATE)
 	if waInfoRateValue == "" {
@@ -683,14 +685,15 @@ func Load() *Config {
 		LogDirectory:       logDirectory,
 		LogCompress:        logCompress,
 
-		WAOutboundRatePerSecond: waOutboundRatePerSecond,
-		WAOutboundBurst:         waOutboundBurst,
-		WAOutboundMaxWait:       waOutboundMaxWait,
-		CampaignBatchSize:       campaignBatchSize,
-		CampaignLease:           campaignLease,
-		CampaignPollInterval:    campaignPollInterval,
-		CampaignMaxAttempts:     campaignMaxAttempts,
-		CampaignRetryBase:       campaignRetryBase,
+		WAOutboundRatePerSecond:     waOutboundRatePerSecond,
+		WAOutboundBurst:             waOutboundBurst,
+		WAOutboundMaxWait:           waOutboundMaxWait,
+		CampaignBatchSize:           campaignBatchSize,
+		CampaignLease:               campaignLease,
+		CampaignPollInterval:        campaignPollInterval,
+		CampaignMaxAttempts:         campaignMaxAttempts,
+		CampaignRetryBase:           campaignRetryBase,
+		CampaignDirectCreateEnabled: campaignDirectCreateEnabled,
 	}
 
 	minioEnabled := os.Getenv(config_env.MINIO_ENABLED) == "true"

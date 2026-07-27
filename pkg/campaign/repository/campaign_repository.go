@@ -23,6 +23,7 @@ var (
 	ErrInvalidCampaignTransition = errors.New("invalid campaign status transition")
 	ErrInvalidCampaignInput      = errors.New("invalid campaign input")
 	ErrRecipientClaimLost        = errors.New("campaign recipient claim is no longer active")
+	ErrGroupListEmpty            = errors.New("group list is empty")
 )
 
 const maxCampaignRecipients = 10_000
@@ -46,13 +47,37 @@ type DraftInput struct {
 	Actor      Actor
 }
 
+type GroupDraftInput struct {
+	Name             string
+	TextBody         string
+	GroupListID      string
+	GroupListVersion int64
+	InstanceJID      string
+	Actor            Actor
+}
+
+type GroupTargetSnapshot struct {
+	GroupJID    string
+	TargetLabel string
+}
+
+type GroupEligibilityEvaluator func(context.Context, *gorm.DB, string, string, []string) ([]GroupTargetSnapshot, error)
+
+type RepositoryOption func(*campaignRepository)
+
+func WithGroupEligibilityEvaluator(evaluator GroupEligibilityEvaluator) RepositoryOption {
+	return func(repository *campaignRepository) { repository.groupEligibility = evaluator }
+}
+
 type CampaignRepository interface {
 	CreateDraft(context.Context, string, DraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error)
+	CreateGroupDraft(context.Context, string, GroupDraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error)
 	Get(context.Context, string, string) (*campaign_model.Campaign, []campaign_model.Recipient, error)
 	GetCampaign(context.Context, string, string) (*campaign_model.Campaign, error)
 	ListCampaigns(context.Context, string, campaign_model.CampaignStatus, int, *CampaignCursor) (*CampaignPage, error)
 	ListRecipients(context.Context, string, string, int, *RecipientCursor) (*RecipientPage, error)
 	ListAuditPage(context.Context, string, string, int, *AuditCursor) (*AuditPage, error)
+	ProgressSnapshots(context.Context, string, []string) (map[string]RecipientProgress, error)
 	RecipientCounts(context.Context, string, string) (map[campaign_model.RecipientStatus]int64, error)
 	Transition(context.Context, string, string, campaign_model.CampaignStatus, *time.Time, Actor) (*campaign_model.Campaign, error)
 	ListAudit(context.Context, string, string) ([]campaign_model.AuditEvent, error)
@@ -65,12 +90,17 @@ type CampaignRepository interface {
 }
 
 type campaignRepository struct {
-	db  *gorm.DB
-	now func() time.Time
+	db               *gorm.DB
+	now              func() time.Time
+	groupEligibility GroupEligibilityEvaluator
 }
 
-func NewCampaignRepository(db *gorm.DB) CampaignRepository {
-	return &campaignRepository{db: db, now: time.Now}
+func NewCampaignRepository(db *gorm.DB, options ...RepositoryOption) CampaignRepository {
+	repository := &campaignRepository{db: db, now: time.Now}
+	for _, option := range options {
+		option(repository)
+	}
+	return repository
 }
 
 func (r *campaignRepository) CreateDraft(ctx context.Context, instanceID string, input DraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error) {
@@ -78,6 +108,7 @@ func (r *campaignRepository) CreateDraft(ctx context.Context, instanceID string,
 		return nil, nil, errors.New("campaign repository and instance identity are required")
 	}
 	campaignID := uuid.NewString()
+	input.Actor.Type = strings.TrimSpace(input.Actor.Type)
 	name, actorHash, err := validateDraftInput(&input, campaignID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", ErrInvalidCampaignInput, err)
@@ -85,7 +116,7 @@ func (r *campaignRepository) CreateDraft(ctx context.Context, instanceID string,
 	now := r.now().UTC()
 	campaign := &campaign_model.Campaign{
 		ID: campaignID, InstanceID: instanceID, Name: name, Status: campaign_model.CampaignStatusDraft,
-		ContentType: "text", TextBody: input.TextBody, Version: 1, CreatedAt: now, UpdatedAt: now,
+		ContentType: "text", TextBody: input.TextBody, TargetType: campaign_model.CampaignTargetDirect, Version: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	recipients, err := buildRecipients(campaign, input.Recipients, now)
 	if err != nil {
@@ -234,7 +265,7 @@ func buildRecipients(campaign *campaign_model.Campaign, inputs []RecipientConsen
 		}
 		result = append(result, campaign_model.Recipient{
 			ID: uuid.NewString(), CampaignID: campaign.ID, InstanceID: campaign.InstanceID, RecipientJID: jid,
-			Status: campaign_model.RecipientStatusPending, OptInSource: source,
+			Status: campaign_model.RecipientStatusPending, TargetType: campaign_model.RecipientTargetDirect, OptInSource: source,
 			OptInReferenceHash: hashReference(campaign.ID, input.EvidenceReference), OptedInAt: input.OptedInAt.UTC(),
 			NextAttemptAt: now, AttemptCount: 0, CreatedAt: now, UpdatedAt: now,
 		})
@@ -272,13 +303,10 @@ func validateDraftInput(input *DraftInput, scope string) (string, *string, error
 	if input == nil {
 		return "", nil, errors.New("campaign draft is required")
 	}
-	name := strings.TrimSpace(input.Name)
-	if name == "" || len([]rune(name)) > 255 || strings.TrimSpace(input.TextBody) == "" || len([]rune(input.TextBody)) > 4096 || len(input.Recipients) == 0 || len(input.Recipients) > maxCampaignRecipients {
+	if len(input.Recipients) == 0 || len(input.Recipients) > maxCampaignRecipients {
 		return "", nil, errors.New("campaign name, bounded text, and recipients are required")
 	}
-	input.Actor.Type = strings.TrimSpace(input.Actor.Type)
-	actorHash, err := validateActor(input.Actor, scope)
-	return name, actorHash, err
+	return validateCampaignContent(input.Name, input.TextBody, input.Actor, scope)
 }
 
 func hashReference(scope, value string) string {

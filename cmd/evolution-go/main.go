@@ -474,7 +474,34 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 	}
 	sendMessageService := send_service.NewSendService(runtimeRegistry, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, audioConverterRequester, loggerWrapper)
-	campaignRepository := campaign_repository.NewCampaignRepository(db)
+	campaignRepository := campaign_repository.NewCampaignRepository(db, campaign_repository.WithGroupEligibilityEvaluator(
+		func(ctx context.Context, tx *gorm.DB, instanceID, instanceJID string, groupJIDs []string) ([]campaign_repository.GroupTargetSnapshot, error) {
+			state := projection_service.NewStateServiceWithHealth(
+				projection_repository.NewStateRepository(tx),
+				projection_repository.NewWorkHealthRepository(tx),
+				projectionHealthPolicy,
+			)
+			results, err := group_list_service.NewEligibilityService(projection_repository.NewGroupRepository(tx), state).
+				Evaluate(ctx, instanceID, instanceJID, groupJIDs)
+			if err != nil {
+				return nil, err
+			}
+			targets := make([]campaign_repository.GroupTargetSnapshot, len(results))
+			for index, result := range results {
+				switch result.Eligibility {
+				case group_list_service.EligibilityUnknown:
+					return nil, group_list_service.ErrProjectionNotReady
+				case group_list_service.EligibilityUnavailable:
+					return nil, group_list_service.ErrGroupUnavailable
+				case group_list_service.EligibilityEligible:
+					targets[index] = campaign_repository.GroupTargetSnapshot{GroupJID: result.GroupJID, TargetLabel: result.CurrentName}
+				default:
+					return nil, group_list_service.ErrProjectionNotReady
+				}
+			}
+			return targets, nil
+		},
+	))
 	campaignWorker := campaign_service.NewWorker(
 		campaignRepository,
 		campaign_service.NewTextSender(instanceRepository, sendMessageService),
@@ -549,7 +576,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		group_handler.NewGroupHandler(groupService),
 		groupListHandler,
 		call_handler.NewCallHandler(callService),
-		campaign_handler.NewCampaignHandler(campaign_service.NewManagementService(campaignRepository)),
+		campaign_handler.NewCampaignHandler(campaign_service.NewManagementService(
+			campaignRepository,
+			campaign_service.WithDirectCreateEnabled(config.CampaignDirectCreateEnabled),
+		)),
 		community_handler.NewCommunityHandler(communityService),
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),

@@ -11,6 +11,8 @@ import (
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
 	campaign_service "github.com/evolution-foundation/evolution-go/pkg/campaign/service"
+	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
+	group_list_service "github.com/evolution-foundation/evolution-go/pkg/groupList/service"
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
@@ -50,7 +52,14 @@ type campaignHandler struct{ service managementService }
 type CreateCampaignRequest struct {
 	Name       string                     `json:"name" binding:"required"`
 	Text       string                     `json:"text" binding:"required"`
-	Recipients []CampaignRecipientConsent `json:"recipients" binding:"required"`
+	Target     *CampaignTargetRequest     `json:"target,omitempty"`
+	Recipients []CampaignRecipientConsent `json:"recipients,omitempty"`
+}
+
+type CampaignTargetRequest struct {
+	Type             campaign_model.CampaignTargetType `json:"type" binding:"required"`
+	GroupListID      string                            `json:"groupListId" binding:"required"`
+	GroupListVersion int64                             `json:"groupListVersion" binding:"required"`
 }
 
 type CampaignRecipientConsent struct {
@@ -68,9 +77,9 @@ func NewCampaignHandler(service managementService) CampaignHandler {
 	return &campaignHandler{service: service}
 }
 
-// Create creates a consent-backed campaign draft.
+// Create creates a campaign draft.
 // @Summary Create campaign draft
-// @Description Creates a text campaign draft. Every recipient requires instance-scoped opt-in evidence; raw evidence references are hashed before persistence.
+// @Description Creates a text campaign draft. Existing direct recipients remain available behind WA_CAMPAIGN_DIRECT_CREATE_ENABLED. The additive group-list target contract is rejected until group execution safety is enabled in a later rollout.
 // @Tags Campaigns
 // @Accept json
 // @Produce json
@@ -98,8 +107,14 @@ func (h *campaignHandler) Create(ctx *gin.Context) {
 			JID: recipient.JID, OptInSource: recipient.OptInSource, EvidenceReference: recipient.OptInEvidenceReference, OptedInAt: recipient.OptedInAt,
 		}
 	}
+	var target *campaign_service.GroupListTargetInput
+	if request.Target != nil {
+		target = &campaign_service.GroupListTargetInput{
+			Type: request.Target.Type, GroupListID: request.Target.GroupListID, GroupListVersion: request.Target.GroupListVersion,
+		}
+	}
 	detail, err := h.service.Create(ctx.Request.Context(), instance.Id, campaign_service.CreateCampaignInput{
-		Name: request.Name, TextBody: request.Text, Recipients: recipients, Actor: instanceActor(ctx),
+		Name: request.Name, TextBody: request.Text, Target: target, Recipients: recipients, InstanceJID: instance.Jid, Actor: instanceActor(ctx),
 	})
 	if err != nil {
 		writeCampaignError(ctx, err)
@@ -368,6 +383,20 @@ func writeCampaignError(ctx *gin.Context, err error) {
 	switch {
 	case errors.Is(err, campaign_service.ErrInvalidCampaignCursor):
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid cursor", "code": "invalid_cursor"})
+	case errors.Is(err, campaign_service.ErrDirectCampaignCreateDisabled):
+		ctx.JSON(http.StatusConflict, gin.H{"error": "direct campaign creation is disabled", "code": "campaign_direct_create_disabled"})
+	case errors.Is(err, campaign_service.ErrGroupCampaignTargetsDisabled):
+		ctx.JSON(http.StatusConflict, gin.H{"error": "group campaign targets are not enabled", "code": "campaign_group_targets_disabled"})
+	case errors.Is(err, group_list_repository.ErrNotFound):
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "group list not found", "code": "group_list_not_found"})
+	case errors.Is(err, group_list_repository.ErrVersionConflict):
+		ctx.JSON(http.StatusConflict, gin.H{"error": "group list version changed", "code": "group_list_version_conflict"})
+	case errors.Is(err, campaign_repository.ErrGroupListEmpty), errors.Is(err, group_list_service.ErrEmpty):
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "group list is empty", "code": "group_list_empty"})
+	case errors.Is(err, group_list_service.ErrGroupUnavailable):
+		ctx.JSON(http.StatusConflict, gin.H{"error": "group list contains an unavailable group", "code": "group_list_group_unavailable"})
+	case errors.Is(err, group_list_service.ErrProjectionNotReady):
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "group projection is not ready", "code": "projection_not_ready"})
 	case errors.Is(err, campaign_repository.ErrInvalidCampaignInput):
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid campaign input", "code": "invalid_campaign_input"})
 	case errors.Is(err, gorm.ErrRecordNotFound):
