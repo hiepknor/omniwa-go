@@ -115,7 +115,7 @@ type GroupListAuditEvent struct {
 type CapabilitiesData struct {
 	Version      string   `json:"version" example:"1.2.3"`
 	Revision     string   `json:"revision" example:"0123456789abcdef0123456789abcdef01234567"`
-	Capabilities []string `json:"capabilities" example:"campaign_orchestration,rate_limit_retry_after,groups_projection,instance_metadata_views,instance_credential_health,instance_token_rotation"`
+	Capabilities []string `json:"capabilities" example:"campaign_orchestration,rate_limit_retry_after,groups_projection,group_lists,campaign_group_targets,campaign_image_content,instance_metadata_views,instance_credential_health,instance_token_rotation"`
 }
 
 type CapabilitiesResponse struct {

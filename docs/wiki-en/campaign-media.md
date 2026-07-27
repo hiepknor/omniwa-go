@@ -2,18 +2,20 @@
 
 Campaign media assets are immutable, instance-scoped images uploaded from a
 device before an image campaign is created. The campaign API accepts their IDs
-through the typed image content contract, but creation and transitions remain
-disabled until the delivery stage is enabled. Upload availability alone does
-not advertise `campaign_image_content`.
+through the typed image content contract. Upload, creation, transitions,
+delivery, cleanup, and capability advertisement share one feature gate.
 
 ## Deployment prerequisites
 
-The feature requires PostgreSQL migration 24 and a dedicated private
-S3-compatible bucket. The application verifies that the bucket exists at
-startup but never creates it or changes its access policy.
+The feature requires PostgreSQL migrations 24 and 25, Group Lists, group
+campaign targets, and a dedicated private S3-compatible bucket. The application
+verifies that the bucket exists at startup but never creates it or changes its
+access policy.
 
 ```env
 MINIO_ENABLED=true
+WA_GROUP_LISTS_ENABLED=true
+WA_CAMPAIGN_GROUP_TARGETS_ENABLED=true
 CAMPAIGN_MEDIA_BUCKET=omniwa-campaign-media
 CAMPAIGN_MEDIA_MAX_BYTES=8388608
 CAMPAIGN_MEDIA_MAX_PIXELS=16000000
@@ -24,7 +26,10 @@ WA_CAMPAIGN_IMAGE_CONTENT_ENABLED=true
 Provision the bucket as private before enabling the flag. Do not reuse a bucket
 whose objects are publicly readable. Keep the flag disabled during migration
 and rollback. When the flag is disabled, `/campaign-media` routes are not
-registered and the cleanup worker is not started.
+registered, image drafts and transitions are rejected, image delivery is not
+wired, the cleanup worker is not started, and `campaign_image_content` is not
+advertised. Startup fails closed if the image flag is enabled without Group
+Lists and group campaign targets.
 
 ## Upload flow
 
@@ -75,6 +80,14 @@ Use `DELETE /campaign-media/{mediaId}` to remove an unbound asset. An asset
 referenced by a campaign returns `campaign_media_conflict`. Cross-instance
 reads return `campaign_media_not_found`.
 
+At delivery time, the worker reloads the instance-scoped asset, verifies its
+immutable metadata and SHA-256 snapshot, and reads normalized bytes from the
+private bucket before contacting WhatsApp. Object reads and provider media
+uploads are safe, bounded retry points. The message send itself is attempted
+exactly once per worker attempt. A missing acknowledgement becomes
+`unknown_send_outcome`, pauses the campaign, and requires review instead of an
+automatic resend.
+
 ## Lifecycle and operations
 
 Uploads begin in `uploading` and become `ready` only after private object storage
@@ -95,4 +108,7 @@ Important error codes are:
 If object storage is unhealthy, disable the feature flag and investigate the
 private bucket. Do not delete database rows or make the bucket public. The
 additive table should remain during application rollback; cleanup can resume
-after storage is restored.
+after storage is restored. Pause active image campaigns before disabling the
+flag. If an image target is nevertheless claimed while the provider sender is
+disabled, it fails terminally with `campaign_image_content_disabled` before any
+provider call.

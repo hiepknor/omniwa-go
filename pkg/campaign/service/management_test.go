@@ -21,6 +21,11 @@ type managementRepositoryStub struct {
 	groupInput  campaign_repository.GroupDraftInput
 	campaigns   []campaign_model.Campaign
 	snapshots   map[string]campaign_repository.RecipientProgress
+	stored      *campaign_model.Campaign
+}
+
+func (stub *managementRepositoryStub) GetCampaign(context.Context, string, string) (*campaign_model.Campaign, error) {
+	return stub.stored, nil
 }
 
 func (stub *managementRepositoryStub) CreateDraft(_ context.Context, instanceID string, input campaign_repository.DraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error) {
@@ -38,8 +43,11 @@ func (stub *managementRepositoryStub) CreateGroupDraft(_ context.Context, instan
 	stub.groupInput = input
 	name, version := "Branches", input.GroupListVersion
 	campaign := &campaign_model.Campaign{
-		ID: uuid.NewString(), InstanceID: instanceID, TargetType: campaign_model.CampaignTargetGroupList,
+		ID: uuid.NewString(), InstanceID: instanceID, ContentType: input.ContentType, TextBody: input.TextBody, TargetType: campaign_model.CampaignTargetGroupList,
 		GroupListID: &input.GroupListID, GroupListNameSnapshot: &name, GroupListVersion: &version, UpdatedAt: time.Unix(100, 0),
+	}
+	if input.ContentType == campaign_model.CampaignContentImage {
+		campaign.MediaAssetID = &input.MediaAssetID
 	}
 	return campaign, []campaign_model.Recipient{{Status: campaign_model.RecipientStatusPending}}, nil
 }
@@ -48,17 +56,34 @@ func TestImageCampaignCreateIsGatedAndPreservesMediaReferenceAndCaption(t *testi
 	instanceID, mediaID := uuid.NewString(), uuid.NewString()
 	input := CreateCampaignInput{
 		Name: "Image", ContentType: campaign_model.CampaignContentImage, MediaAssetID: mediaID, TextBody: "Optional caption",
-		Recipients: []campaign_repository.RecipientConsent{{JID: "1@s.whatsapp.net"}}, Actor: campaign_repository.Actor{Type: "system"},
+		Target:      &GroupListTargetInput{Type: campaign_model.CampaignTargetGroupList, GroupListID: uuid.NewString(), GroupListVersion: 1},
+		InstanceJID: "1@s.whatsapp.net", Actor: campaign_repository.Actor{Type: "system"},
 	}
 	repository := &managementRepositoryStub{}
-	if _, err := NewManagementService(repository).Create(context.Background(), instanceID, input); !errors.Is(err, ErrImageCampaignContentDisabled) || repository.directCalls != 0 {
-		t.Fatalf("disabled image create err=%v calls=%d", err, repository.directCalls)
+	if _, err := NewManagementService(repository, WithGroupTargetsEnabled(true)).Create(context.Background(), instanceID, input); !errors.Is(err, ErrImageCampaignContentDisabled) || repository.groupCalls != 0 {
+		t.Fatalf("disabled image create err=%v calls=%d", err, repository.groupCalls)
 	}
-	detail, err := NewManagementService(repository, WithImageContentEnabled(true)).Create(context.Background(), instanceID, input)
-	if err != nil || repository.directInput.MediaAssetID != mediaID || repository.directInput.TextBody != "Optional caption" ||
+	detail, err := NewManagementService(repository, WithGroupTargetsEnabled(true), WithImageContentEnabled(true)).Create(context.Background(), instanceID, input)
+	if err != nil || repository.groupInput.MediaAssetID != mediaID || repository.groupInput.TextBody != "Optional caption" ||
 		detail.Content.Type != campaign_model.CampaignContentImage || detail.Content.MediaID == nil || *detail.Content.MediaID != mediaID ||
 		detail.Content.Caption == nil || *detail.Content.Caption != "Optional caption" {
-		t.Fatalf("detail=%+v input=%+v err=%v", detail, repository.directInput, err)
+		t.Fatalf("detail=%+v input=%+v err=%v", detail, repository.groupInput, err)
+	}
+	direct := input
+	direct.Target = nil
+	direct.Recipients = []campaign_repository.RecipientConsent{{JID: "1@s.whatsapp.net"}}
+	if _, err := NewManagementService(repository, WithImageContentEnabled(true)).Create(context.Background(), instanceID, direct); !errors.Is(err, campaign_repository.ErrInvalidCampaignInput) {
+		t.Fatalf("direct image create error=%v", err)
+	}
+}
+
+func TestImageCampaignTransitionIsGatedBeforeRepositoryMutation(t *testing.T) {
+	repository := &managementRepositoryStub{stored: &campaign_model.Campaign{ContentType: campaign_model.CampaignContentImage}}
+	_, err := NewManagementService(repository).Transition(
+		context.Background(), uuid.NewString(), uuid.NewString(), "1@s.whatsapp.net", campaign_model.CampaignStatusRunning, nil, campaign_repository.Actor{Type: "system"},
+	)
+	if !errors.Is(err, ErrImageCampaignContentDisabled) {
+		t.Fatalf("disabled image transition error=%v", err)
 	}
 }
 

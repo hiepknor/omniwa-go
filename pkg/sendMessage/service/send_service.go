@@ -44,6 +44,7 @@ type SendService interface {
 	SendLink(data *LinkStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendMediaUrl(data *MediaStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendMediaFile(data *MediaStruct, fileData []byte, instance *instance_model.Instance) (*MessageSendStruct, error)
+	SendImageOnce(context.Context, *MediaStruct, []byte, *instance_model.Instance) (*MessageSendStruct, error)
 	SendPoll(data *PollStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendSticker(data *StickerStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendLocation(data *LocationStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
@@ -971,6 +972,46 @@ func convertAudioToOpusWithDuration(inputData []byte) ([]byte, int, error) {
 
 func (s *sendService) SendMediaFile(data *MediaStruct, fileData []byte, instance *instance_model.Instance) (*MessageSendStruct, error) {
 	return s.sendMediaFileWithRetry(data, fileData, instance, 3)
+}
+
+// ProviderMediaUploadError is safe to retry because no message send was
+// admitted. The campaign worker owns the retry schedule.
+type ProviderMediaUploadError struct{ Cause error }
+
+func (e *ProviderMediaUploadError) Error() string { return "provider media upload failed" }
+func (e *ProviderMediaUploadError) Unwrap() error { return e.Cause }
+
+// SendImageOnce uploads one already-normalized image and performs exactly one
+// provider message-send attempt. It contains no reconnect or message retry
+// loop; a send error is returned as ProviderSendError by sendMessageContext.
+func (s *sendService) SendImageOnce(ctx context.Context, data *MediaStruct, fileData []byte, instance *instance_model.Instance) (*MessageSendStruct, error) {
+	if s == nil || ctx == nil || data == nil || data.Type != "image" || len(fileData) == 0 || instance == nil || instance.Id == "" {
+		return nil, errors.New("send context, image payload, and instance are required")
+	}
+	client, err := s.ensureClientConnected(instance.Id)
+	if err != nil {
+		return nil, err
+	}
+	detected, err := mimetype.DetectReader(bytes.NewReader(fileData))
+	if err != nil {
+		return nil, fmt.Errorf("detect normalized campaign image: %w", err)
+	}
+	mimeType := detected.String()
+	if mimeType != "image/jpeg" && mimeType != "image/png" {
+		return nil, errors.New("campaign image must be normalized JPEG or PNG")
+	}
+	uploaded, err := client.Upload(ctx, fileData, whatsmeow.MediaImage)
+	if err != nil {
+		return nil, &ProviderMediaUploadError{Cause: err}
+	}
+	message := &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
+		Caption: proto.String(data.Caption), URL: proto.String(uploaded.URL), DirectPath: proto.String(uploaded.DirectPath),
+		MediaKey: uploaded.MediaKey, Mimetype: proto.String(mimeType), FileEncSHA256: uploaded.FileEncSHA256,
+		FileSHA256: uploaded.FileSHA256, FileLength: proto.Uint64(uint64(len(fileData))), JPEGThumbnail: makeJPEGThumbnail(fileData, 72),
+	}}
+	return s.sendMessageContext(ctx, instance, message, "ImageMessage", &SendDataStruct{
+		Id: data.Id, Number: data.Number, FormatJid: data.FormatJid, MediaHandle: uploaded.Handle,
+	}, true)
 }
 
 func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte, instance *instance_model.Instance, maxRetries int) (*MessageSendStruct, error) {

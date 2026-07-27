@@ -87,7 +87,7 @@ func NewCampaignHandler(service managementService) CampaignHandler {
 
 // Create creates a campaign draft.
 // @Summary Create campaign draft
-// @Description Creates a text or image campaign draft. Legacy top-level text remains readable for compatibility. Image creation stays disabled until the complete delivery stack is enabled.
+// @Description Creates a text or image campaign draft. Legacy top-level text remains readable for compatibility. Image campaigns require a Group List target and WA_CAMPAIGN_IMAGE_CONTENT_ENABLED.
 // @Tags Campaigns
 // @Accept json
 // @Produce json

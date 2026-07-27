@@ -161,6 +161,9 @@ func (s *ManagementService) Create(ctx context.Context, instanceID string, input
 	if input.ContentType == campaign_model.CampaignContentImage && !s.imageContentEnabled {
 		return nil, ErrImageCampaignContentDisabled
 	}
+	if input.ContentType == campaign_model.CampaignContentImage && input.Target == nil {
+		return nil, campaign_repository.ErrInvalidCampaignInput
+	}
 	var campaign *campaign_model.Campaign
 	var recipients []campaign_model.Recipient
 	var err error

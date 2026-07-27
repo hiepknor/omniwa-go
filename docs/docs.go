@@ -307,7 +307,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Creates a text or image campaign draft. Legacy top-level text remains readable for compatibility. Image creation stays disabled until the complete delivery stack is enabled.",
+                "description": "Creates a text or image campaign draft. Legacy top-level text remains readable for compatibility. Image campaigns require a Group List target and WA_CAMPAIGN_IMAGE_CONTENT_ENABLED.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7620,6 +7620,9 @@ const docTemplate = `{
                         "campaign_orchestration",
                         "rate_limit_retry_after",
                         "groups_projection",
+                        "group_lists",
+                        "campaign_group_targets",
+                        "campaign_image_content",
                         "instance_metadata_views",
                         "instance_credential_health",
                         "instance_token_rotation"

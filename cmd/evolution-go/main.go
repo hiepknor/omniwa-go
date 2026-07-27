@@ -288,11 +288,17 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	var projectionStateOptions []projection_service.StateServiceOption
 	groupCampaignsEnabled := config.GroupListsEnabled && config.CampaignGroupTargetsEnabled
+	if config.CampaignImageContentEnabled && !groupCampaignsEnabled {
+		logger.LogFatal("component=campaign_media action=initialize result=failed error=group_campaign_targets_required")
+	}
 	if config.GroupListsEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupLists))
 	}
 	if groupCampaignsEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityCampaignGroupTargets))
+	}
+	if config.CampaignImageContentEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityCampaignImageContent))
 	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(
 		projection_repository.NewStateRepository(db),
@@ -514,19 +520,23 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		RatePauseThreshold: config.CampaignRatePauseThreshold, FailurePauseThreshold: config.CampaignFailurePauseThreshold,
 	}))
 	var campaignMediaHandler campaign_handler.MediaHandler
+	var campaignMediaRepository campaign_repository.MediaAssetRepository
+	var campaignMediaStore storage_interfaces.CampaignMediaStore
 	if config.CampaignImageContentEnabled {
 		if !config.MinioEnabled {
 			logger.LogFatal("component=campaign_media action=initialize result=failed error=minio_required")
 		}
-		campaignMediaStore, mediaStoreErr := minio_storage.NewCampaignMediaStorage(
+		var mediaStoreErr error
+		campaignMediaStore, mediaStoreErr = minio_storage.NewCampaignMediaStorage(
 			appCtx, config.MinioEndpoint, config.MinioAccessKey, config.MinioSecretKey,
 			config.CampaignMediaBucket, config.MinioRegion, config.MinioUseSSL,
 		)
 		if mediaStoreErr != nil {
 			logger.LogFatal("component=campaign_media action=initialize result=failed error=%v", mediaStoreErr)
 		}
+		campaignMediaRepository = campaign_repository.NewMediaAssetRepository(db)
 		campaignMediaService := campaign_service.NewMediaAssetService(
-			campaign_repository.NewMediaAssetRepository(db),
+			campaignMediaRepository,
 			campaignMediaStore,
 			campaign_service.MediaSettings{
 				MaxBytes: config.CampaignMediaMaxBytes, MaxPixels: config.CampaignMediaMaxPixels,
@@ -537,9 +547,19 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		campaignMediaHandler = campaign_handler.NewMediaHandler(campaignMediaService, config.CampaignMediaMaxBytes)
 		startBackground(backgroundWorkers, "campaign_media.cleanup", campaignMediaService.RunCleanup)
 	}
+	var imageCampaignSender campaign_service.Sender
+	if config.CampaignImageContentEnabled {
+		imageCampaignSender = campaign_service.NewImageSender(
+			instanceRepository, campaignMediaRepository, campaignMediaStore, sendMessageService, config.CampaignMediaMaxBytes,
+		)
+	}
+	campaignSender := campaign_service.NewContentSender(
+		campaign_service.NewTextSender(instanceRepository, sendMessageService),
+		imageCampaignSender,
+	)
 	campaignWorker := campaign_service.NewWorker(
 		campaignRepository,
-		campaign_service.NewTextSender(instanceRepository, sendMessageService),
+		campaignSender,
 		campaign_service.WorkerSettings{
 			BatchSize: config.CampaignBatchSize, Lease: config.CampaignLease, PollInterval: config.CampaignPollInterval,
 			MaxAttempts: config.CampaignMaxAttempts, RetryBase: config.CampaignRetryBase,
@@ -615,6 +635,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			campaignRepository,
 			campaign_service.WithDirectCreateEnabled(config.CampaignDirectCreateEnabled),
 			campaign_service.WithGroupTargetsEnabled(groupCampaignsEnabled),
+			campaign_service.WithImageContentEnabled(config.CampaignImageContentEnabled),
 		)),
 		campaignMediaHandler,
 		community_handler.NewCommunityHandler(communityService),
