@@ -270,3 +270,20 @@ func TestGroupCampaignContractMigrationIsAdditiveAndBackfillsDirectTargets(t *te
 		}
 	}
 }
+
+func TestGroupCampaignSafetyMigrationIsDurableScopedAndFenced(t *testing.T) {
+	migration := registeredMigration(t, 23)
+	if migration.Name != "add_group_campaign_delivery_safety" {
+		t.Fatalf("group campaign safety migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"CREATE TABLE campaign_group_delivery_guards", "PRIMARY KEY (instance_id, group_jid)",
+		"owner_recipient_id", "claim_token", "lease_until", "last_acknowledged_at",
+		"campaign_group_delivery_guards_claim_check", "CREATE TABLE campaign_instance_circuits",
+		"open_until", "rate_limit_signal_count", "failure_signal_count", "ON CONFLICT (instance_id, group_jid) DO NOTHING",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("group campaign safety migration does not contain %q", expected)
+		}
+	}
+}

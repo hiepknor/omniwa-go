@@ -28,6 +28,11 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_MAX_ATTEMPTS, "")
 	t.Setenv(config_env.WA_CAMPAIGN_RETRY_BASE, "")
 	t.Setenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED, "")
+	t.Setenv(config_env.WA_CAMPAIGN_GROUP_TARGETS_ENABLED, "")
+	t.Setenv(config_env.WA_CAMPAIGN_GROUP_COOLDOWN, "")
+	t.Setenv(config_env.WA_CAMPAIGN_CIRCUIT_DURATION, "")
+	t.Setenv(config_env.WA_CAMPAIGN_RATE_PAUSE_THRESHOLD, "")
+	t.Setenv(config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, "")
 	t.Setenv(config_env.WA_GROUP_LISTS_ENABLED, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "")
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "")
@@ -83,6 +88,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if !config.CampaignDirectCreateEnabled {
 		t.Fatal("expected direct campaign creation compatibility to be enabled by default")
 	}
+	if config.CampaignGroupTargetsEnabled || config.CampaignGroupCooldown != time.Hour || config.CampaignCircuitDuration != 5*time.Minute || config.CampaignRatePauseThreshold != 3 || config.CampaignFailurePauseThreshold != 10 {
+		t.Fatalf("group campaign defaults = %t/%v/%v/%d/%d", config.CampaignGroupTargetsEnabled, config.CampaignGroupCooldown, config.CampaignCircuitDuration, config.CampaignRatePauseThreshold, config.CampaignFailurePauseThreshold)
+	}
 	if config.RemoteMedia.Policy != "public_only" || config.RemoteMedia.Timeout != 15*time.Second || config.RemoteMedia.MaxBytes != 32*1024*1024 || len(config.RemoteMedia.AllowedHosts) != 0 {
 		t.Fatalf("remote media defaults = %+v", config.RemoteMedia)
 	}
@@ -112,6 +120,11 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_MAX_ATTEMPTS, "5")
 	t.Setenv(config_env.WA_CAMPAIGN_RETRY_BASE, "45s")
 	t.Setenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED, "false")
+	t.Setenv(config_env.WA_CAMPAIGN_GROUP_TARGETS_ENABLED, "true")
+	t.Setenv(config_env.WA_CAMPAIGN_GROUP_COOLDOWN, "2h")
+	t.Setenv(config_env.WA_CAMPAIGN_CIRCUIT_DURATION, "7m")
+	t.Setenv(config_env.WA_CAMPAIGN_RATE_PAUSE_THRESHOLD, "4")
+	t.Setenv(config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, "12")
 	t.Setenv(config_env.WA_GROUP_LISTS_ENABLED, "true")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "allowlist")
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "cdn.example.com, media.example.com")
@@ -166,6 +179,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if config.CampaignDirectCreateEnabled {
 		t.Fatal("expected direct campaign creation override to be disabled")
+	}
+	if !config.CampaignGroupTargetsEnabled || config.CampaignGroupCooldown != 2*time.Hour || config.CampaignCircuitDuration != 7*time.Minute || config.CampaignRatePauseThreshold != 4 || config.CampaignFailurePauseThreshold != 12 {
+		t.Fatalf("group campaign overrides = %t/%v/%v/%d/%d", config.CampaignGroupTargetsEnabled, config.CampaignGroupCooldown, config.CampaignCircuitDuration, config.CampaignRatePauseThreshold, config.CampaignFailurePauseThreshold)
 	}
 	if len(config.InstanceTokenHMACKey) != 32 || config.InstanceTokenHMACKeyVersion != 7 || config.InstanceTokenBackfillBatch != 25 || config.InstanceTokenBackfillMaxBatches != 4 {
 		t.Fatalf("instance token digest overrides are invalid")

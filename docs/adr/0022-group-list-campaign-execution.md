@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted; implementation is staged and the `campaign_group_targets` capability
-must remain absent until the complete execution path is enabled.
+Accepted and implemented behind `WA_CAMPAIGN_GROUP_TARGETS_ENABLED`. The
+`campaign_group_targets` capability remains absent unless both Group Lists and
+the complete group execution path are enabled.
 
 ## Context
 
@@ -174,8 +175,11 @@ even though the currently supported topology is one application replica.
   policy. Crossing a threshold atomically pauses the campaign and records a safe
   reason. Frontends display the result and never reproduce policy constants.
 
-Leases, guard ownership, cooldowns, and circuit transitions use database time,
-bounded durations, and fenced claim identities. Crash recovery may release an
+expired guard, but an expired or lost claim cannot overwrite a newer outcome.
+Leases, guard ownership, cooldowns, and circuit transitions use normalized UTC
+timestamps, bounded durations, and fenced claim identities. Crash recovery may
+reclaim an expired guard, but an expired or lost claim cannot overwrite a newer
+outcome.
 expired guard, but an expired or lost claim cannot overwrite a newer outcome.
 
 ### Progress contract
@@ -206,8 +210,9 @@ expired guard, but an expired or lost claim cannot overwrite a newer outcome.
 
 The buckets are mutually exclusive current target states. `total` is their sum;
 `processed` is `sent + delivered + read + failed + skipped + aborted` and is
-never inferred by a client. `retryAt` is the earliest future target attempt or
-circuit-open time relevant to the campaign. `updatedAt` is the newest campaign
+never inferred by a client. `retryAt` is the earliest effective time at which
+the campaign may be retried, including a later instance-circuit boundary.
+`updatedAt` is the newest campaign
 or target progress mutation. A campaign completes when it has no pending or
 processing targets; completion does not mean every target succeeded.
 
@@ -276,8 +281,8 @@ filter a target type it does not understand.
 
 ## Required verification
 
-Implementation is not complete without populated-schema backfill and rollback
-tests; legacy direct read, audit, execution, and contract tests; Group List
+Release verification includes populated-schema backfill and rollback tests;
+legacy direct read, audit, execution, and contract tests; Group List
 snapshot and version-conflict tests; kick, leave, permission, suspension, and
 dissolution tests at every revalidation boundary; terminal, transient,
 rate-limit, and unknown-outcome worker tests; concurrent campaigns targeting the

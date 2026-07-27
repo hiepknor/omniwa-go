@@ -80,15 +80,20 @@ type Config struct {
 	EventRetention                  time.Duration
 	RemoteMedia                     RemoteMediaConfig
 
-	WAOutboundRatePerSecond     float64
-	WAOutboundBurst             int
-	WAOutboundMaxWait           time.Duration
-	CampaignBatchSize           int
-	CampaignLease               time.Duration
-	CampaignPollInterval        time.Duration
-	CampaignMaxAttempts         int
-	CampaignRetryBase           time.Duration
-	CampaignDirectCreateEnabled bool
+	WAOutboundRatePerSecond       float64
+	WAOutboundBurst               int
+	WAOutboundMaxWait             time.Duration
+	CampaignBatchSize             int
+	CampaignLease                 time.Duration
+	CampaignPollInterval          time.Duration
+	CampaignMaxAttempts           int
+	CampaignRetryBase             time.Duration
+	CampaignDirectCreateEnabled   bool
+	CampaignGroupTargetsEnabled   bool
+	CampaignGroupCooldown         time.Duration
+	CampaignCircuitDuration       time.Duration
+	CampaignRatePauseThreshold    int
+	CampaignFailurePauseThreshold int
 
 	// Logger configurations
 	LogMaxSize    int
@@ -391,6 +396,7 @@ func Load() *Config {
 	licenseGateEnabled := os.Getenv(config_env.LICENSE_GATE_ENABLED) != "false"
 	groupListsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LISTS_ENABLED)), "true")
 	campaignDirectCreateEnabled := !strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED)), "false")
+	campaignGroupTargetsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_GROUP_TARGETS_ENABLED)), "true")
 
 	waInfoRateValue := os.Getenv(config_env.WA_INFO_RATE)
 	if waInfoRateValue == "" {
@@ -492,6 +498,24 @@ func Load() *Config {
 	campaignRetryBase, err := parsePositiveDuration(campaignRetryBaseValue)
 	if err != nil {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_RETRY_BASE, err)
+	}
+	campaignGroupCooldownValue := defaultIfEmpty(os.Getenv(config_env.WA_CAMPAIGN_GROUP_COOLDOWN), "1h")
+	campaignGroupCooldown, err := parsePositiveDuration(campaignGroupCooldownValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_GROUP_COOLDOWN, err)
+	}
+	campaignCircuitDurationValue := defaultIfEmpty(os.Getenv(config_env.WA_CAMPAIGN_CIRCUIT_DURATION), "5m")
+	campaignCircuitDuration, err := parsePositiveDuration(campaignCircuitDurationValue)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_CIRCUIT_DURATION, err)
+	}
+	campaignRatePauseThreshold, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.WA_CAMPAIGN_RATE_PAUSE_THRESHOLD), "3"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_RATE_PAUSE_THRESHOLD, err)
+	}
+	campaignFailurePauseThreshold, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD), "10"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, err)
 	}
 
 	waGroupReconcileIntervalValue := os.Getenv(config_env.WA_GROUP_RECONCILE_INTERVAL)
@@ -685,15 +709,20 @@ func Load() *Config {
 		LogDirectory:       logDirectory,
 		LogCompress:        logCompress,
 
-		WAOutboundRatePerSecond:     waOutboundRatePerSecond,
-		WAOutboundBurst:             waOutboundBurst,
-		WAOutboundMaxWait:           waOutboundMaxWait,
-		CampaignBatchSize:           campaignBatchSize,
-		CampaignLease:               campaignLease,
-		CampaignPollInterval:        campaignPollInterval,
-		CampaignMaxAttempts:         campaignMaxAttempts,
-		CampaignRetryBase:           campaignRetryBase,
-		CampaignDirectCreateEnabled: campaignDirectCreateEnabled,
+		WAOutboundRatePerSecond:       waOutboundRatePerSecond,
+		WAOutboundBurst:               waOutboundBurst,
+		WAOutboundMaxWait:             waOutboundMaxWait,
+		CampaignBatchSize:             campaignBatchSize,
+		CampaignLease:                 campaignLease,
+		CampaignPollInterval:          campaignPollInterval,
+		CampaignMaxAttempts:           campaignMaxAttempts,
+		CampaignRetryBase:             campaignRetryBase,
+		CampaignDirectCreateEnabled:   campaignDirectCreateEnabled,
+		CampaignGroupTargetsEnabled:   campaignGroupTargetsEnabled,
+		CampaignGroupCooldown:         campaignGroupCooldown,
+		CampaignCircuitDuration:       campaignCircuitDuration,
+		CampaignRatePauseThreshold:    campaignRatePauseThreshold,
+		CampaignFailurePauseThreshold: campaignFailurePauseThreshold,
 	}
 
 	minioEnabled := os.Getenv(config_env.MINIO_ENABLED) == "true"

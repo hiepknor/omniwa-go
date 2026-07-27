@@ -3,6 +3,7 @@ package campaign_service
 import (
 	"context"
 	"errors"
+	"hash/fnv"
 	"math"
 	"time"
 
@@ -34,6 +35,11 @@ type workerRepository interface {
 	MarkRetry(context.Context, *campaign_model.Recipient, string, time.Time) error
 	MarkDeferred(context.Context, *campaign_model.Recipient, string, time.Time) error
 	MarkFailed(context.Context, *campaign_model.Recipient, string) error
+	RevalidateGroupClaim(context.Context, *campaign_model.Recipient) (campaign_repository.GroupEligibilityResult, error)
+	MarkSkipped(context.Context, *campaign_model.Recipient, string) error
+	MarkProjectionUnknown(context.Context, *campaign_model.Recipient, time.Time) error
+	MarkRateLimited(context.Context, *campaign_model.Recipient, string, time.Time) error
+	MarkUnknownOutcome(context.Context, *campaign_model.Recipient) error
 	Transition(context.Context, string, string, campaign_model.CampaignStatus, *time.Time, campaign_repository.Actor) (*campaign_model.Campaign, error)
 }
 
@@ -47,6 +53,7 @@ type BatchResult struct {
 	Retried  int
 	Deferred int
 	Failed   int
+	Skipped  int
 }
 
 type ResultHandler func(BatchResult, error)
@@ -94,6 +101,24 @@ func (w *Worker) RunOnce(ctx context.Context) (BatchResult, error) {
 			}
 			campaigns[recipient.CampaignID] = campaign
 		}
+		if recipient.TargetType == campaign_model.RecipientTargetGroup {
+			proceed, validationErr := w.revalidateGroup(ctx, recipient, &result)
+			if validationErr != nil {
+				errorsList = append(errorsList, validationErr)
+				continue
+			}
+			if !proceed {
+				continue
+			}
+			proceed, validationErr = w.revalidateGroup(ctx, recipient, &result)
+			if validationErr != nil {
+				errorsList = append(errorsList, validationErr)
+				continue
+			}
+			if !proceed {
+				continue
+			}
+		}
 		providerID, sendErr := w.sender.Send(ctx, campaign, recipient)
 		if sendErr == nil {
 			if err := w.repository.MarkSent(ctx, recipient, providerID); err != nil {
@@ -103,11 +128,20 @@ func (w *Worker) RunOnce(ctx context.Context) (BatchResult, error) {
 			result.Sent++
 			continue
 		}
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && recipient.TargetType != campaign_model.RecipientTargetGroup {
 			return result, errors.Join(append(errorsList, ctx.Err())...)
 		}
-		if err := w.recordSendFailure(ctx, recipient, safeSendErrorCode(sendErr), sendErr, &result); err != nil {
+		recordContext := ctx
+		var cancel context.CancelFunc
+		if ctx.Err() != nil {
+			recordContext, cancel = context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		}
+		if err := w.recordSendFailure(recordContext, recipient, safeSendErrorCode(sendErr), sendErr, &result); err != nil {
 			errorsList = append(errorsList, err)
+		}
+		if cancel != nil {
+			cancel()
+			return result, errors.Join(append(errorsList, ctx.Err())...)
 		}
 	}
 	for _, identity := range affected {
@@ -122,6 +156,34 @@ func (w *Worker) RunOnce(ctx context.Context) (BatchResult, error) {
 
 func (w *Worker) recordSendFailure(ctx context.Context, recipient *campaign_model.Recipient, errorCode string, sendErr error, result *BatchResult) error {
 	now := w.now().UTC()
+	if recipient.TargetType == campaign_model.RecipientTargetGroup {
+		var delivery *DeliveryError
+		if errors.As(sendErr, &delivery) {
+			switch delivery.Kind {
+			case DeliveryFailureRateLimit:
+				delay := positiveDelay(delivery.RetryAfter)
+				if err := w.repository.MarkRateLimited(ctx, recipient, delivery.Code, now.Add(delay)); err != nil {
+					return err
+				}
+				result.Deferred++
+				return nil
+			case DeliveryFailureUnknown:
+				if err := w.repository.MarkUnknownOutcome(ctx, recipient); err != nil {
+					return err
+				}
+				result.Failed++
+				return nil
+			case DeliveryFailureTerminal:
+				if err := w.repository.MarkFailed(ctx, recipient, delivery.Code); err != nil {
+					return err
+				}
+				result.Failed++
+				return nil
+			case DeliveryFailureTransient:
+				errorCode = delivery.Code
+			}
+		}
+	}
 	var dependency *dependencyUnavailableError
 	if errors.As(sendErr, &dependency) {
 		return w.deferFailure(ctx, recipient, "dependency_unavailable", w.settings.RetryBase, result)
@@ -137,11 +199,71 @@ func (w *Worker) recordSendFailure(ctx context.Context, recipient *campaign_mode
 		return nil
 	}
 	delay := exponentialDelay(w.settings.RetryBase, recipient.AttemptCount)
+	if recipient.TargetType == campaign_model.RecipientTargetGroup {
+		delay = jitteredDelay(delay, recipient.ID)
+	}
 	if err := w.repository.MarkRetry(ctx, recipient, errorCode, now.Add(delay)); err != nil {
 		return err
 	}
 	result.Retried++
 	return nil
+}
+
+func (w *Worker) revalidateGroup(ctx context.Context, recipient *campaign_model.Recipient, result *BatchResult) (bool, error) {
+	eligibility, err := w.repository.RevalidateGroupClaim(ctx, recipient)
+	if err != nil {
+		if markErr := w.repository.MarkProjectionUnknown(ctx, recipient, w.now().UTC().Add(w.settings.RetryBase)); markErr != nil {
+			return false, errors.Join(err, markErr)
+		}
+		result.Deferred++
+		return false, nil
+	}
+	switch eligibility.Eligibility {
+	case "eligible":
+		return true, nil
+	case "unknown":
+		if err := w.repository.MarkProjectionUnknown(ctx, recipient, w.now().UTC().Add(w.settings.RetryBase)); err != nil {
+			return false, err
+		}
+		result.Deferred++
+		return false, nil
+	case "unavailable":
+		if !safeCampaignReason(eligibility.Reason) {
+			return false, errors.New("group eligibility returned an unsafe reason")
+		}
+		if err := w.repository.MarkSkipped(ctx, recipient, eligibility.Reason); err != nil {
+			return false, err
+		}
+		result.Skipped++
+		return false, nil
+	case "deferred":
+		if eligibility.RetryAt == nil || !eligibility.RetryAt.After(w.now().UTC()) || !safeCampaignReason(eligibility.Reason) {
+			return false, errors.New("group delivery circuit returned invalid deferral")
+		}
+		if err := w.repository.MarkDeferred(ctx, recipient, eligibility.Reason, *eligibility.RetryAt); err != nil {
+			return false, err
+		}
+		result.Deferred++
+		return false, nil
+	default:
+		return false, errors.New("group eligibility returned an invalid state")
+	}
+}
+
+func safeCampaignReason(value string) bool {
+	switch value {
+	case "group_access_lost", "group_dissolved", "send_permission_denied", "group_suspended", "provider_rate_limited", "outbound_rate_limited", "campaign_paused", "projection_not_ready":
+		return true
+	default:
+		return false
+	}
+}
+
+func jitteredDelay(delay time.Duration, key string) time.Duration {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(key))
+	factor := 0.75 + float64(hash.Sum32()%501)/1000
+	return time.Duration(float64(delay) * factor)
 }
 
 func (w *Worker) deferFailure(ctx context.Context, recipient *campaign_model.Recipient, errorCode string, delay time.Duration, result *BatchResult) error {

@@ -17,6 +17,7 @@ const (
 	CapabilityCampaignOrchestration = "campaign_orchestration"
 	CapabilityFailureOperations     = "projection_failure_operations"
 	CapabilityGroupLists            = "group_lists"
+	CapabilityCampaignGroupTargets  = "campaign_group_targets"
 )
 
 var resourceCapabilities = map[string]string{

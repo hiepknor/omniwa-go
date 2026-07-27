@@ -44,7 +44,7 @@ type managementService interface {
 	List(context.Context, string, campaign_model.CampaignStatus, int, string) (*campaign_service.CampaignList, error)
 	Recipients(context.Context, string, string, int, string) (*campaign_service.RecipientList, error)
 	Audit(context.Context, string, string, int, string) (*campaign_service.AuditList, error)
-	Transition(context.Context, string, string, campaign_model.CampaignStatus, *time.Time, campaign_repository.Actor) (*campaign_service.CampaignDetail, error)
+	Transition(context.Context, string, string, string, campaign_model.CampaignStatus, *time.Time, campaign_repository.Actor) (*campaign_service.CampaignDetail, error)
 }
 
 type campaignHandler struct{ service managementService }
@@ -320,7 +320,7 @@ func (h *campaignHandler) transition(ctx *gin.Context, target campaign_model.Cam
 	if !validCampaignID(ctx) {
 		return
 	}
-	detail, err := h.service.Transition(ctx.Request.Context(), instance.Id, ctx.Param("campaignId"), target, startsAt, instanceActor(ctx))
+	detail, err := h.service.Transition(ctx.Request.Context(), instance.Id, ctx.Param("campaignId"), instance.Jid, target, startsAt, instanceActor(ctx))
 	if err != nil {
 		writeCampaignError(ctx, err)
 		return
@@ -393,12 +393,14 @@ func writeCampaignError(ctx *gin.Context, err error) {
 		ctx.JSON(http.StatusConflict, gin.H{"error": "group list version changed", "code": "group_list_version_conflict"})
 	case errors.Is(err, campaign_repository.ErrGroupListEmpty), errors.Is(err, group_list_service.ErrEmpty):
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "group list is empty", "code": "group_list_empty"})
-	case errors.Is(err, group_list_service.ErrGroupUnavailable):
+	case errors.Is(err, campaign_repository.ErrGroupUnavailable), errors.Is(err, group_list_service.ErrGroupUnavailable):
 		ctx.JSON(http.StatusConflict, gin.H{"error": "group list contains an unavailable group", "code": "group_list_group_unavailable"})
-	case errors.Is(err, group_list_service.ErrProjectionNotReady):
+	case errors.Is(err, campaign_repository.ErrGroupProjectionNotReady), errors.Is(err, group_list_service.ErrProjectionNotReady):
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "group projection is not ready", "code": "projection_not_ready"})
 	case errors.Is(err, campaign_repository.ErrInvalidCampaignInput):
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid campaign input", "code": "invalid_campaign_input"})
+	case errors.Is(err, campaign_repository.ErrNoEligibleTargets):
+		ctx.JSON(http.StatusConflict, gin.H{"error": "campaign has no eligible targets", "code": "campaign_no_eligible_targets"})
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "campaign not found", "code": "campaign_not_found"})
 	case errors.Is(err, campaign_repository.ErrInvalidCampaignTransition), errors.Is(err, campaign_repository.ErrCampaignConflict), errors.Is(err, campaign_repository.ErrCampaignHasPendingWork):

@@ -287,8 +287,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		projectionHealthPolicy.MaxReconcileAge = map[string]time.Duration{"groups": 2 * config.GroupSyncInterval}
 	}
 	var projectionStateOptions []projection_service.StateServiceOption
+	groupCampaignsEnabled := config.GroupListsEnabled && config.CampaignGroupTargetsEnabled
 	if config.GroupListsEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupLists))
+	}
+	if groupCampaignsEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityCampaignGroupTargets))
 	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(
 		projection_repository.NewStateRepository(db),
@@ -475,7 +479,14 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	sendMessageService := send_service.NewSendService(runtimeRegistry, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, audioConverterRequester, loggerWrapper)
 	campaignRepository := campaign_repository.NewCampaignRepository(db, campaign_repository.WithGroupEligibilityEvaluator(
-		func(ctx context.Context, tx *gorm.DB, instanceID, instanceJID string, groupJIDs []string) ([]campaign_repository.GroupTargetSnapshot, error) {
+		func(ctx context.Context, tx *gorm.DB, instanceID, instanceJID string, groupJIDs []string) ([]campaign_repository.GroupEligibilityResult, error) {
+			if instanceJID == "" {
+				instance, instanceErr := instanceRepository.GetInstanceByID(instanceID)
+				if instanceErr != nil {
+					return nil, instanceErr
+				}
+				instanceJID = instance.Jid
+			}
 			state := projection_service.NewStateServiceWithHealth(
 				projection_repository.NewStateRepository(tx),
 				projection_repository.NewWorkHealthRepository(tx),
@@ -486,22 +497,22 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			if err != nil {
 				return nil, err
 			}
-			targets := make([]campaign_repository.GroupTargetSnapshot, len(results))
+			targets := make([]campaign_repository.GroupEligibilityResult, len(results))
 			for index, result := range results {
-				switch result.Eligibility {
-				case group_list_service.EligibilityUnknown:
-					return nil, group_list_service.ErrProjectionNotReady
-				case group_list_service.EligibilityUnavailable:
-					return nil, group_list_service.ErrGroupUnavailable
-				case group_list_service.EligibilityEligible:
-					targets[index] = campaign_repository.GroupTargetSnapshot{GroupJID: result.GroupJID, TargetLabel: result.CurrentName}
-				default:
-					return nil, group_list_service.ErrProjectionNotReady
+				reason := ""
+				if result.EligibilityReason != nil {
+					reason = *result.EligibilityReason
+				}
+				targets[index] = campaign_repository.GroupEligibilityResult{
+					GroupJID: result.GroupJID, TargetLabel: result.CurrentName, Eligibility: result.Eligibility, Reason: reason,
 				}
 			}
 			return targets, nil
 		},
-	))
+	), campaign_repository.WithGroupSafety(campaign_repository.GroupSafetySettings{
+		Enabled: groupCampaignsEnabled, Cooldown: config.CampaignGroupCooldown, CircuitDuration: config.CampaignCircuitDuration,
+		RatePauseThreshold: config.CampaignRatePauseThreshold, FailurePauseThreshold: config.CampaignFailurePauseThreshold,
+	}))
 	campaignWorker := campaign_service.NewWorker(
 		campaignRepository,
 		campaign_service.NewTextSender(instanceRepository, sendMessageService),
@@ -511,9 +522,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		},
 		func(result campaign_service.BatchResult, err error) {
 			if err != nil {
-				logger.LogError("component=campaign action=process_batch result=failed error_code=batch_processing_failed claimed=%d sent=%d retried=%d deferred=%d failed=%d", result.Claimed, result.Sent, result.Retried, result.Deferred, result.Failed)
+				logger.LogError("component=campaign action=process_batch result=failed error_code=batch_processing_failed claimed=%d sent=%d retried=%d deferred=%d failed=%d skipped=%d", result.Claimed, result.Sent, result.Retried, result.Deferred, result.Failed, result.Skipped)
 			} else if result.Claimed > 0 {
-				logger.LogInfo("component=campaign action=process_batch result=success claimed=%d sent=%d retried=%d deferred=%d failed=%d", result.Claimed, result.Sent, result.Retried, result.Deferred, result.Failed)
+				logger.LogInfo("component=campaign action=process_batch result=success claimed=%d sent=%d retried=%d deferred=%d failed=%d skipped=%d", result.Claimed, result.Sent, result.Retried, result.Deferred, result.Failed, result.Skipped)
 			}
 		},
 	)
@@ -579,6 +590,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		campaign_handler.NewCampaignHandler(campaign_service.NewManagementService(
 			campaignRepository,
 			campaign_service.WithDirectCreateEnabled(config.CampaignDirectCreateEnabled),
+			campaign_service.WithGroupTargetsEnabled(groupCampaignsEnabled),
 		)),
 		community_handler.NewCommunityHandler(communityService),
 		label_handler.NewLabelHandler(labelService),

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
+	"go.mau.fi/whatsmeow"
 )
 
 type instanceReader interface {
@@ -16,7 +18,27 @@ type instanceReader interface {
 
 type textSendService interface {
 	SendText(*send_service.TextStruct, *instance_model.Instance) (*send_service.MessageSendStruct, error)
+	SendTextOnce(context.Context, *send_service.TextStruct, *instance_model.Instance) (*send_service.MessageSendStruct, error)
 }
+
+type DeliveryFailureKind string
+
+const (
+	DeliveryFailureTransient DeliveryFailureKind = "transient"
+	DeliveryFailureTerminal  DeliveryFailureKind = "terminal"
+	DeliveryFailureRateLimit DeliveryFailureKind = "rate_limit"
+	DeliveryFailureUnknown   DeliveryFailureKind = "unknown"
+)
+
+type DeliveryError struct {
+	Kind       DeliveryFailureKind
+	Code       string
+	RetryAfter time.Duration
+	Cause      error
+}
+
+func (e *DeliveryError) Error() string { return e.Code }
+func (e *DeliveryError) Unwrap() error { return e.Cause }
 
 type TextSender struct {
 	instances instanceReader
@@ -45,18 +67,50 @@ func (s *TextSender) Send(ctx context.Context, campaign *campaign_model.Campaign
 	if err != nil {
 		return "", &dependencyUnavailableError{cause: err}
 	}
-	result, err := s.sends.SendText(&send_service.TextStruct{
+	data := &send_service.TextStruct{
 		Number: recipient.RecipientJID,
 		Text:   campaign.TextBody,
 		Id:     deterministicMessageID(recipient.ID),
-	}, instance)
+	}
+	var result *send_service.MessageSendStruct
+	if recipient.TargetType == campaign_model.RecipientTargetGroup {
+		result, err = s.sends.SendTextOnce(ctx, data, instance)
+	} else {
+		result, err = s.sends.SendText(data, instance)
+	}
 	if err != nil {
+		if recipient.TargetType == campaign_model.RecipientTargetGroup {
+			return "", classifyGroupDeliveryError(err)
+		}
 		return "", err
 	}
 	if result == nil || result.Info.ID == "" {
 		return "", errors.New("campaign send returned no provider message identity")
 	}
 	return string(result.Info.ID), nil
+}
+
+func classifyGroupDeliveryError(err error) error {
+	if delay, limited := retryAfter(err); limited || errors.Is(err, whatsmeow.ErrIQRateOverLimit) {
+		return &DeliveryError{Kind: DeliveryFailureRateLimit, Code: "provider_rate_limited", RetryAfter: positiveDelay(delay), Cause: err}
+	}
+	if errors.Is(err, whatsmeow.ErrIQForbidden) {
+		return &DeliveryError{Kind: DeliveryFailureTerminal, Code: "send_permission_denied", Cause: err}
+	}
+	if errors.Is(err, whatsmeow.ErrIQNotFound) {
+		return &DeliveryError{Kind: DeliveryFailureTerminal, Code: "group_access_lost", Cause: err}
+	}
+	if errors.Is(err, whatsmeow.ErrIQGone) {
+		return &DeliveryError{Kind: DeliveryFailureTerminal, Code: "group_dissolved", Cause: err}
+	}
+	if errors.Is(err, whatsmeow.ErrIQNotAuthorized) {
+		return &DeliveryError{Kind: DeliveryFailureTerminal, Code: "instance_not_authorized", Cause: err}
+	}
+	var providerError *send_service.ProviderSendError
+	if errors.As(err, &providerError) {
+		return &DeliveryError{Kind: DeliveryFailureUnknown, Code: "unknown_send_outcome", Cause: err}
+	}
+	return &DeliveryError{Kind: DeliveryFailureTransient, Code: "send_failed", Cause: err}
 }
 
 func deterministicMessageID(recipientID string) string {

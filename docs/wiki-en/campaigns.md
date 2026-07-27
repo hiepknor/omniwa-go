@@ -1,8 +1,8 @@
 # Campaign orchestration
 
 Campaigns are durable, instance-scoped text delivery jobs. Direct campaigns
-use persisted recipient consent. The campaign contract also reserves a
-server-snapshotted Group List target for the staged group-delivery rollout.
+use persisted recipient consent. Group campaigns use a server-snapshotted Group
+List and one delivery target per group.
 Lifecycle controls, audit history, and progress are owned by the backend.
 
 ## Safety contract
@@ -61,11 +61,11 @@ The additive Group List request shape is:
 }
 ```
 
-Group target creation remains intentionally disabled in this schema/contract
-release. It returns `409 campaign_group_targets_disabled` until the group-aware
-worker, revalidation, pacing, retry, and circuit-breaker slice is deployed.
-The server does not advertise `campaign_group_targets` before that complete
-stack is ready.
+Group target creation and execution are controlled by
+`WA_CAMPAIGN_GROUP_TARGETS_ENABLED`, which defaults to `false`. When the flag or
+Group Lists are disabled, creation returns
+`409 campaign_group_targets_disabled` and the server does not advertise
+`campaign_group_targets`.
 
 When enabled, creation locks the Group List, checks instance scope, version,
 non-empty membership, and backend eligibility, and snapshots the list ID, list
@@ -84,6 +84,25 @@ POST /campaigns/{campaignId}/start
 
 Starting before `startsAt` is safe: recipient jobs remain ineligible until the
 persisted due time.
+
+At start, unavailable targets are skipped and eligible targets continue. If no
+target remains eligible, the API returns `409 campaign_no_eligible_targets`. An
+unknown or stale group projection returns `503 projection_not_ready` without a
+partial start.
+
+The worker revalidates eligibility after claim and again at the provider
+boundary. Terminal group errors are not retried. Known transient failures use
+bounded exponential backoff with jitter. A provider rate limit opens an
+instance-wide durable circuit and honors `Retry-After`; an unknown send outcome
+fails the target, pauses the campaign, and sets `needsAttention=true` instead of
+risking a duplicate send. Per-group leases and cooldowns prevent concurrent or
+too-frequent sends across campaigns.
+
+Backend safety policy is configured with
+`WA_CAMPAIGN_GROUP_COOLDOWN`, `WA_CAMPAIGN_CIRCUIT_DURATION`,
+`WA_CAMPAIGN_RATE_PAUSE_THRESHOLD`, and
+`WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD`. Clients must display the returned pause,
+retry, and attention fields rather than duplicate these thresholds.
 
 ## Read and control
 
@@ -132,23 +151,26 @@ Invalid input and cursors return 400. Missing campaigns return 404. Invalid or
 concurrent lifecycle transitions return 409 with code
 `campaign_state_conflict`.
 
-Clients can detect availability through the `campaign_orchestration` value in
-`GET /server/capabilities`.
+Clients can detect the base API through `campaign_orchestration` and group
+execution through `campaign_group_targets` in `GET /server/capabilities`.
 
 ## Staged rollout and rollback
 
-Migration 22 is additive. Existing campaigns and recipients are backfilled by
+Migrations 22 and 23 are additive. Existing campaigns and recipients are backfilled by
 the database defaults as `targetType=direct`; older direct history remains
-readable and auditable. The default `WA_CAMPAIGN_DIRECT_CREATE_ENABLED=true`
+readable and auditable. Migration 23 adds durable group delivery guards,
+instance circuit state, and aggregate safety counters. The default
+`WA_CAMPAIGN_DIRECT_CREATE_ENABLED=true`
 preserves the existing create API during the Console migration. Set it to
 `false` only after clients have moved to Group Lists, or to stop new direct
 campaign creation without affecting existing history.
 
-This release does not expose a group-execution feature flag or capability, so
-it cannot enqueue group work accidentally. Application rollback deploys the
-previous image and leaves the additive columns unused. Do not remove migration
-22 columns during the rollback window. After group execution is enabled in a
-later release, disable new group creation and drain or pause group campaigns
-before rolling back to a binary that is not group-aware. See
+Keep `WA_CAMPAIGN_GROUP_TARGETS_ENABLED=false` through migration and image
+deployment, then enable it in a canary environment. Disabling the flag removes
+the capability, blocks new Group List campaigns, and stops new group claims;
+existing direct work remains compatible. Do not remove migration 22 or 23
+structures during the rollback window. Before rolling back to a binary that is
+not group-aware, disable the flag, pause every non-terminal group campaign, and
+wait for or fence all active group leases. See
 [ADR 0022](../adr/0022-group-list-campaign-execution.md) for the full rollout
 and recovery rules.
