@@ -16,6 +16,7 @@ import (
 	group_list_handler "github.com/evolution-foundation/evolution-go/pkg/groupList/handler"
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
 	label_handler "github.com/evolution-foundation/evolution-go/pkg/label/handler"
+	media_handler "github.com/evolution-foundation/evolution-go/pkg/media/handler"
 	message_handler "github.com/evolution-foundation/evolution-go/pkg/message/handler"
 	auth_middleware "github.com/evolution-foundation/evolution-go/pkg/middleware"
 	newsletter_handler "github.com/evolution-foundation/evolution-go/pkg/newsletter/handler"
@@ -38,6 +39,7 @@ type Routes struct {
 	callHandler             call_handler.CallHandler
 	campaignHandler         campaign_handler.CampaignHandler
 	campaignMediaHandler    campaign_handler.MediaHandler
+	mediaHandler            media_handler.Handler
 	communityHandler        community_handler.CommunityHandler
 	labelHandler            label_handler.LabelHandler
 	newsletterHandler       newsletter_handler.NewsletterHandler
@@ -83,6 +85,13 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		routes.POST("", r.campaignMediaHandler.Upload)
 		routes.GET("/:mediaId", r.campaignMediaHandler.Get)
 		routes.DELETE("/:mediaId", r.campaignMediaHandler.Delete)
+	}
+	if r.mediaHandler != nil {
+		routes := eng.Group("/media-assets")
+		routes.Use(r.authMiddleware.Auth)
+		routes.POST("", r.mediaHandler.Upload)
+		routes.GET("/:mediaId", r.mediaHandler.Get)
+		routes.DELETE("/:mediaId", r.mediaHandler.Delete)
 	}
 
 	if r.groupListHandler != nil {
@@ -308,6 +317,7 @@ func NewRouter(
 	callHandler call_handler.CallHandler,
 	campaignHandler campaign_handler.CampaignHandler,
 	campaignMediaHandler campaign_handler.MediaHandler,
+	mediaHandler media_handler.Handler,
 	communityHandler community_handler.CommunityHandler,
 	labelHandler label_handler.LabelHandler,
 	newsletterHandler newsletter_handler.NewsletterHandler,
@@ -327,6 +337,7 @@ func NewRouter(
 		callHandler:             callHandler,
 		campaignHandler:         campaignHandler,
 		campaignMediaHandler:    campaignMediaHandler,
+		mediaHandler:            mediaHandler,
 		communityHandler:        communityHandler,
 		labelHandler:            labelHandler,
 		newsletterHandler:       newsletterHandler,

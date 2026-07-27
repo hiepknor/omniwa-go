@@ -40,6 +40,7 @@ type Repository interface {
 	MarkFailed(context.Context, string, string, string) error
 	AddReference(context.Context, media_model.AssetReference) error
 	RemoveReference(context.Context, string, string, media_model.ReferenceOwnerType, string) error
+	HasCampaignShadow(context.Context, string, string) (bool, error)
 	PlanInstancePurge(context.Context, string) (*InstancePurgePlan, error)
 	ClaimDelete(context.Context, string, string, time.Duration) (*media_model.Asset, error)
 	ClaimExpired(context.Context, int, time.Duration) ([]media_model.Asset, error)
@@ -303,6 +304,17 @@ func (r *repository) RemoveReference(ctx context.Context, instanceID, assetID st
 		Delete(&media_model.AssetReference{}).Error
 }
 
+func (r *repository) HasCampaignShadow(ctx context.Context, instanceID, assetID string) (bool, error) {
+	if err := validateIdentity(r, ctx, instanceID, assetID); err != nil {
+		return false, err
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).Table("campaign_media_assets").Where("instance_id = ? AND id = ?", instanceID, assetID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count != 0, nil
+}
+
 func (r *repository) ClaimDelete(ctx context.Context, instanceID, assetID string, lease time.Duration) (*media_model.Asset, error) {
 	if err := validateIdentity(r, ctx, instanceID, assetID); err != nil {
 		return nil, err
@@ -327,6 +339,9 @@ func (r *repository) ClaimDelete(ctx context.Context, instanceID, assetID string
 			asset.Status == media_model.AssetStatusDeleting || asset.Status == media_model.AssetStatusDeleted ||
 			asset.CleanupClaimToken != nil && asset.CleanupLeaseUntil != nil && asset.CleanupLeaseUntil.After(now) {
 			return ErrAssetConflict
+		}
+		if err := deleteExpiredReferences(tx, instanceID, assetID, now); err != nil {
+			return err
 		}
 		var references int64
 		if err := tx.Model(&media_model.AssetReference{}).
@@ -374,6 +389,11 @@ func (r *repository) ClaimExpired(ctx context.Context, limit int, lease time.Dur
       AND NOT EXISTS (
           SELECT 1 FROM media_asset_references AS refs
           WHERE refs.instance_id = assets.instance_id AND refs.media_asset_id = assets.id
+            AND (refs.retention_until IS NULL OR refs.retention_until > ?)
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM campaign_media_assets AS legacy
+          WHERE legacy.instance_id = assets.instance_id AND legacy.id = assets.id
       )
     ORDER BY assets.expires_at ASC, assets.id ASC
     FOR UPDATE SKIP LOCKED
@@ -383,7 +403,7 @@ UPDATE media_assets AS assets
 SET status = 'deleting', cleanup_claim_token = ?, cleanup_lease_until = ?, updated_at = ?
 FROM candidates
 WHERE assets.id = candidates.id
-RETURNING assets.*`, now, now, limit, token, leaseUntil, now).Scan(&assets).Error
+RETURNING assets.*`, now, now, now, limit, token, leaseUntil, now).Scan(&assets).Error
 	return assets, err
 }
 
@@ -393,6 +413,9 @@ func (r *repository) CompleteCleanup(ctx context.Context, asset *media_model.Ass
 	}
 	now := r.now().UTC()
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := deleteExpiredReferences(tx, asset.InstanceID, asset.ID, now); err != nil {
+			return err
+		}
 		var references int64
 		if err := tx.Model(&media_model.AssetReference{}).
 			Where("instance_id = ? AND media_asset_id = ?", asset.InstanceID, asset.ID).Count(&references).Error; err != nil {
@@ -415,6 +438,11 @@ func (r *repository) CompleteCleanup(ctx context.Context, asset *media_model.Ass
 		}
 		return nil
 	})
+}
+
+func deleteExpiredReferences(tx *gorm.DB, instanceID, assetID string, now time.Time) error {
+	return tx.Where("instance_id = ? AND media_asset_id = ? AND retention_until IS NOT NULL AND retention_until <= ?", instanceID, assetID, now).
+		Delete(&media_model.AssetReference{}).Error
 }
 
 func (r *repository) ReleaseCleanup(ctx context.Context, asset *media_model.Asset) error {

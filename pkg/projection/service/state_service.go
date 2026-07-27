@@ -19,6 +19,7 @@ const (
 	CapabilityGroupLists            = "group_lists"
 	CapabilityCampaignGroupTargets  = "campaign_group_targets"
 	CapabilityCampaignImageContent  = "campaign_image_content"
+	CapabilityChatImageContent      = "chat_image_content"
 )
 
 var resourceCapabilities = map[string]string{

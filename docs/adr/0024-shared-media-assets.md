@@ -4,8 +4,10 @@
 
 Accepted. Migration 26 and the generic storage boundary are the additive,
 disabled-by-default foundation. Migration 27 backfills and cuts campaign
-metadata over behind feature flags while retaining a rollback shadow. Chat
-cutovers remain separate staged changes.
+metadata over behind feature flags while retaining a rollback shadow. The
+outbound chat cutover now uses the same shared identity behind an independent
+feature flag; inbound capture and authenticated content streaming remain later
+staged changes.
 
 ## Context
 
@@ -52,10 +54,23 @@ new `media-assets/.../canonical` keys to `MEDIA_ASSET_BUCKET` and exact legacy
 `campaign-media/.../image` keys to `CAMPAIGN_MEDIA_BUCKET`. No shared campaign
 foreign key is added yet because it would prevent rollback to the old binary.
 
-The
-`WA_MEDIA_ASSETS_ENABLED` flag defaults to false. Enabling this foundation only
+The `WA_MEDIA_ASSETS_ENABLED` flag defaults to false. Enabling this foundation only
 validates configuration and private bucket health. Campaign behavior switches
 only when campaign image content is also enabled.
+
+Outbound chat images use `POST /media-assets` for normalized device uploads and
+the existing `POST /send/media` route with `mediaAssetId`, `type=image`, and an
+optional caption. URL, base64, and multipart request forms retain their legacy
+behavior. `WA_CHAT_IMAGE_CONTENT_ENABLED` gates the new routes, sender wiring,
+cleanup worker, and `chat_image_content` capability. It requires
+`WA_MEDIA_ASSETS_ENABLED=true`.
+
+The sender creates a time-bounded message reference before reading the object,
+then verifies the stored byte count and SHA-256 before making exactly one
+provider upload and one provider send attempt. Failures known to occur before
+provider send admission release the provisional reference. An admitted send
+without acknowledgement retains the reference and returns
+`unknown_send_outcome` with explicit no-automatic-retry guidance.
 
 ## Alternatives considered
 
@@ -73,6 +88,13 @@ open. Later stages must backfill campaign assets without moving objects, switch
 consumers behind flags, and remove the legacy table only in a separate contract
 migration. Shared references make cleanup aware of consumer retention without
 giving consumers direct storage access.
+
+Message references expire with `WA_MSG_RETENTION`. Generic cleanup ignores
+campaign rollback shadows, removes expired message references under the same
+database fence used to claim an asset, and deletes only unreferenced assets.
+The campaign cleanup adapter remains the owner of shadowed campaign rows during
+the compatibility window. Generic cleanup and explicit generic deletion both
+refuse those rollback-shadow assets.
 
 The database uses `ON DELETE RESTRICT` from shared assets to instances. Instance
 deletion first plans and removes every known private variant, then deletes only
@@ -92,5 +114,11 @@ legacy shadow. Leave both metadata schemas and both object namespaces in place.
 Repair schema defects with a forward migration. Do not reuse or make either
 bucket public.
 
+Enable outbound chat first in development with both media flags, verify upload,
+metadata read, image plus caption delivery, unknown-outcome handling, retention,
+and anonymous bucket denial, then stage the same flag in production. Roll back
+outbound chat by disabling `WA_CHAT_IMAGE_CONTENT_ENABLED`; legacy URL, base64,
+and multipart sends remain available and shared records remain intact.
+
 Backfill, campaign cutover, outbound chat, inbound capture, and destructive
-legacy removal each require their own rollout and rollback gates.
+legacy removal each retain their own rollout and rollback gates.

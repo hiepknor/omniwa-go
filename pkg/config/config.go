@@ -96,7 +96,11 @@ type Config struct {
 	CampaignFailurePauseThreshold int
 	CampaignImageContentEnabled   bool
 	MediaAssetsEnabled            bool
+	ChatImageContentEnabled       bool
 	MediaAssetBucket              string
+	MediaAssetMaxBytes            int64
+	MediaAssetMaxPixels           int64
+	MediaAssetUnboundTTL          time.Duration
 	CampaignMediaBucket           string
 	CampaignMediaMaxBytes         int64
 	CampaignMediaMaxPixels        int64
@@ -405,6 +409,7 @@ func Load() *Config {
 	campaignDirectCreateEnabled := !strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED)), "false")
 	campaignGroupTargetsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_GROUP_TARGETS_ENABLED)), "true")
 	campaignImageContentEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED)), "true")
+	chatImageContentEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CHAT_IMAGE_CONTENT_ENABLED)), "true")
 
 	waInfoRateValue := os.Getenv(config_env.WA_INFO_RATE)
 	if waInfoRateValue == "" {
@@ -546,6 +551,18 @@ func Load() *Config {
 	campaignMediaUnboundTTL, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.CAMPAIGN_MEDIA_UNBOUND_TTL), "24h"))
 	if err != nil {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.CAMPAIGN_MEDIA_UNBOUND_TTL, err)
+	}
+	mediaAssetMaxBytes := parsePositiveInt64OrFatal(config_env.MEDIA_ASSET_MAX_BYTES, "8388608")
+	if mediaAssetMaxBytes > 64*1024*1024 {
+		logger.LogFatal("[CONFIG] invalid %s: must be no greater than 67108864", config_env.MEDIA_ASSET_MAX_BYTES)
+	}
+	mediaAssetMaxPixels := parsePositiveInt64OrFatal(config_env.MEDIA_ASSET_MAX_PIXELS, "16000000")
+	if mediaAssetMaxPixels > 100_000_000 {
+		logger.LogFatal("[CONFIG] invalid %s: must be no greater than 100000000", config_env.MEDIA_ASSET_MAX_PIXELS)
+	}
+	mediaAssetUnboundTTL, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.MEDIA_ASSET_UNBOUND_TTL), "24h"))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.MEDIA_ASSET_UNBOUND_TTL, err)
 	}
 
 	waGroupReconcileIntervalValue := os.Getenv(config_env.WA_GROUP_RECONCILE_INTERVAL)
@@ -755,7 +772,11 @@ func Load() *Config {
 		CampaignFailurePauseThreshold: campaignFailurePauseThreshold,
 		CampaignImageContentEnabled:   campaignImageContentEnabled,
 		MediaAssetsEnabled:            mediaAssetsEnabled,
+		ChatImageContentEnabled:       chatImageContentEnabled,
 		MediaAssetBucket:              mediaAssetBucket,
+		MediaAssetMaxBytes:            mediaAssetMaxBytes,
+		MediaAssetMaxPixels:           mediaAssetMaxPixels,
+		MediaAssetUnboundTTL:          mediaAssetUnboundTTL,
 		CampaignMediaBucket:           campaignMediaBucket,
 		CampaignMediaMaxBytes:         campaignMediaMaxBytes,
 		CampaignMediaMaxPixels:        campaignMediaMaxPixels,

@@ -119,6 +119,7 @@ type LinkStruct struct {
 type MediaStruct struct {
 	Number          string       `json:"number"`
 	Url             string       `json:"url"`
+	MediaAssetID    string       `json:"mediaAssetId,omitempty"`
 	Type            string       `json:"type"`
 	Caption         string       `json:"caption"`
 	Filename        string       `json:"filename"`
@@ -1011,6 +1012,7 @@ func (s *sendService) SendImageOnce(ctx context.Context, data *MediaStruct, file
 	}}
 	return s.sendMessageContext(ctx, instance, message, "ImageMessage", &SendDataStruct{
 		Id: data.Id, Number: data.Number, FormatJid: data.FormatJid, MediaHandle: uploaded.Handle,
+		MentionAll: data.MentionAll, MentionedJID: data.MentionedJID, Quoted: data.Quoted, ForwardingScore: data.ForwardingScore,
 	}, true)
 }
 

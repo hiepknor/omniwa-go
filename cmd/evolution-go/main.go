@@ -56,6 +56,7 @@ import (
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 	label_service "github.com/evolution-foundation/evolution-go/pkg/label/service"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	media_handler "github.com/evolution-foundation/evolution-go/pkg/media/handler"
 	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
 	media_repository "github.com/evolution-foundation/evolution-go/pkg/media/repository"
 	media_service "github.com/evolution-foundation/evolution-go/pkg/media/service"
@@ -266,6 +267,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 		logger.LogInfo("component=media_assets action=initialize result=success")
 	}
+	if config.ChatImageContentEnabled && !config.MediaAssetsEnabled {
+		logger.LogFatal("component=chat_image_content action=initialize result=failed error=media_assets_required")
+	}
 
 	var tokenDigester instance_repository.TokenDigester
 	if len(config.InstanceTokenHMACKey) > 0 {
@@ -329,6 +333,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	if config.CampaignImageContentEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityCampaignImageContent))
+	}
+	if config.ChatImageContentEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("messages", projection_service.CapabilityChatImageContent))
 	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(
 		projection_repository.NewStateRepository(db),
@@ -557,6 +564,30 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 	}
 	sendMessageService := send_service.NewSendService(runtimeRegistry, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, audioConverterRequester, loggerWrapper)
+	mediaAssetRepository := media_repository.New(db)
+	var mediaAssetHandler media_handler.Handler
+	var outboundImageService *media_service.OutboundImageService
+	if config.ChatImageContentEnabled {
+		assetSettings := media_service.AssetSettings{
+			MaxBytes: config.MediaAssetMaxBytes, MaxPixels: config.MediaAssetMaxPixels,
+			UnboundTTL: config.MediaAssetUnboundTTL, DeleteLease: 5 * time.Minute,
+		}
+		assetService := media_service.NewAssetService(mediaAssetRepository, mediaAssetStore, assetSettings)
+		mediaAssetHandler = media_handler.New(assetService, config.MediaAssetMaxBytes)
+		outboundImageService = media_service.NewOutboundImageService(
+			mediaAssetRepository, mediaAssetStore, sendMessageService, config.MediaAssetMaxBytes, config.MessageRetention,
+		)
+		cleanupWorker := media_service.NewCleanupWorker(mediaAssetRepository, mediaAssetStore, 100, 5*time.Minute, 15*time.Minute,
+			func(cleaned int, err error) {
+				if err != nil {
+					logger.LogError("component=media_assets action=cleanup result=failed error_code=cleanup_failed cleaned=%d", cleaned)
+				} else if cleaned > 0 {
+					logger.LogInfo("component=media_assets action=cleanup result=success cleaned=%d", cleaned)
+				}
+			},
+		)
+		startBackground(backgroundWorkers, "media_assets.cleanup", cleanupWorker.Run)
+	}
 	campaignRepository := campaign_repository.NewCampaignRepository(db, campaign_repository.WithGroupEligibilityEvaluator(
 		func(ctx context.Context, tx *gorm.DB, instanceID, instanceJID string, groupJIDs []string) ([]campaign_repository.GroupEligibilityResult, error) {
 			if instanceJID == "" {
@@ -672,6 +703,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	// NOVO: PollHandler usando PollService já inicializado no whatsmeowService (evita dupla inicialização)
 	pollHandler := poll_handler.NewPollHandler(whatsmeowService.GetPollService(), loggerWrapper)
+	var sendHandlerOptions []send_handler.Option
+	if outboundImageService != nil {
+		sendHandlerOptions = append(sendHandlerOptions, send_handler.WithAssetImageSender(outboundImageService))
+	}
 
 	r := gin.Default()
 	r.Use(httpapi.RequestIdentity())
@@ -681,7 +716,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, X-Request-ID, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, X-Request-ID, Idempotency-Key, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, Retry-After, X-Request-ID")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(200)
@@ -713,7 +748,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			instance_handler.WithCredentialHealth(credentialHealthService),
 		),
 		user_handler.NewUserHandler(userService),
-		send_handler.NewSendHandler(sendMessageService),
+		send_handler.NewSendHandler(sendMessageService, sendHandlerOptions...),
 		message_handler.NewMessageHandler(messageService, chatMessageReader),
 		chat_handler.NewChatHandler(chatService, chatMessageReader),
 		group_handler.NewGroupHandler(groupService),
@@ -726,6 +761,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			campaign_service.WithImageContentEnabled(config.CampaignImageContentEnabled),
 		)),
 		campaignMediaHandler,
+		mediaAssetHandler,
 		community_handler.NewCommunityHandler(communityService),
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),

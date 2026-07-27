@@ -224,6 +224,14 @@ definitions:
         example: "2026-07-21T10:30:00Z"
         type: string
     type: object
+  apidocs.MediaAssetResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.Asset'
+      message:
+        example: success
+        type: string
+    type: object
   apidocs.MessageIdData:
     properties:
       messageId:
@@ -1081,6 +1089,82 @@ definitions:
       messageId:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_media_model.Asset:
+    properties:
+      canonical:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetVariant'
+      createdAt:
+        type: string
+      expiresAt:
+        type: string
+      failureCode:
+        type: string
+      id:
+        type: string
+      mediaType:
+        type: string
+      origin:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetOrigin'
+      readyAt:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetStatus'
+      updatedAt:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_media_model.AssetOrigin:
+    enum:
+    - device_upload
+    - whatsapp_inbound
+    type: string
+    x-enum-varnames:
+    - AssetOriginDeviceUpload
+    - AssetOriginWhatsAppInbound
+  github_com_evolution-foundation_evolution-go_pkg_media_model.AssetStatus:
+    enum:
+    - pending
+    - uploading
+    - downloading
+    - processing
+    - ready
+    - failed
+    - deleting
+    - deleted
+    type: string
+    x-enum-varnames:
+    - AssetStatusPending
+    - AssetStatusUploading
+    - AssetStatusDownloading
+    - AssetStatusProcessing
+    - AssetStatusReady
+    - AssetStatusFailed
+    - AssetStatusDeleting
+    - AssetStatusDeleted
+  github_com_evolution-foundation_evolution-go_pkg_media_model.AssetVariant:
+    properties:
+      createdAt:
+        type: string
+      height:
+        type: integer
+      mimeType:
+        type: string
+      sha256:
+        type: string
+      sizeBytes:
+        type: integer
+      variant:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.VariantKind'
+      width:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_media_model.VariantKind:
+    enum:
+    - provider_original
+    - canonical
+    type: string
+    x-enum-varnames:
+    - VariantProviderOriginal
+    - VariantCanonical
   github_com_evolution-foundation_evolution-go_pkg_message_service.ChatPresenceStruct:
     properties:
       delay:
@@ -1934,6 +2018,8 @@ definitions:
       forwardingScore:
         type: integer
       id:
+        type: string
+      mediaAssetId:
         type: string
       mentionAll:
         type: boolean
@@ -11459,6 +11545,103 @@ paths:
       summary: Add label to message
       tags:
       - Label
+  /media-assets:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: JPEG or PNG image
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Instance-scoped upload idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/apidocs.MediaAssetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Upload shared image asset
+      tags:
+      - Media Assets
+  /media-assets/{mediaId}:
+    delete:
+      parameters:
+      - description: Media asset UUID
+        in: path
+        name: mediaId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.SuccessResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete shared image asset
+      tags:
+      - Media Assets
+    get:
+      parameters:
+      - description: Media asset UUID
+        in: path
+        name: mediaId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.MediaAssetResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get shared image asset metadata
+      tags:
+      - Media Assets
   /message/{messageId}:
     get:
       parameters:
@@ -12471,7 +12654,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Send a media message
+      description: Send legacy URL/base64 media, or one private device-upload image
+        by mediaAssetId with an optional caption
       parameters:
       - description: Message data
         in: body
