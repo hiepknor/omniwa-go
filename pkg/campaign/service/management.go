@@ -280,11 +280,23 @@ func (s *ManagementService) Audit(ctx context.Context, instanceID, campaignID st
 	return result, err
 }
 
-func (s *ManagementService) Transition(ctx context.Context, instanceID, campaignID string, target campaign_model.CampaignStatus, startsAt *time.Time, actor campaign_repository.Actor) (*CampaignDetail, error) {
+func (s *ManagementService) Transition(ctx context.Context, instanceID, campaignID, instanceJID string, target campaign_model.CampaignStatus, startsAt *time.Time, actor campaign_repository.Actor) (*CampaignDetail, error) {
 	if err := s.validate(ctx); err != nil {
 		return nil, err
 	}
-	campaign, err := s.repository.Transition(ctx, instanceID, campaignID, target, startsAt, actor)
+	stored, err := s.repository.GetCampaign(ctx, instanceID, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	var campaign *campaign_model.Campaign
+	if stored.TargetType == campaign_model.CampaignTargetGroupList && target == campaign_model.CampaignStatusRunning {
+		if !s.groupTargetsEnabled {
+			return nil, ErrGroupCampaignTargetsDisabled
+		}
+		campaign, err = s.repository.ActivateGroupCampaign(ctx, instanceID, campaignID, instanceJID, actor)
+	} else {
+		campaign, err = s.repository.Transition(ctx, instanceID, campaignID, target, startsAt, actor)
+	}
 	if err != nil {
 		return nil, err
 	}

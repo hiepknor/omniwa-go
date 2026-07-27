@@ -67,6 +67,17 @@ func (r *campaignRepository) CreateGroupDraft(ctx context.Context, instanceID st
 		if len(targets) != len(entries) {
 			return errors.New("group eligibility result does not match group list snapshot")
 		}
+		for _, target := range targets {
+			switch target.Eligibility {
+			case "eligible":
+			case "unknown":
+				return ErrGroupProjectionNotReady
+			case "unavailable":
+				return ErrGroupUnavailable
+			default:
+				return errors.New("group eligibility result state is invalid")
+			}
+		}
 		campaign = campaign_model.Campaign{
 			ID: campaignID, InstanceID: instanceID, Name: name, Status: campaign_model.CampaignStatusDraft,
 			ContentType: "text", TextBody: input.TextBody, TargetType: campaign_model.CampaignTargetGroupList,
@@ -102,6 +113,13 @@ func (r *campaignRepository) CreateGroupDraft(ctx context.Context, instanceID st
 			return err
 		}
 		if err := tx.CreateInBatches(&recipients, 500).Error; err != nil {
+			return err
+		}
+		guards := make([]groupDeliveryGuard, len(recipients))
+		for index := range recipients {
+			guards[index] = groupDeliveryGuard{InstanceID: instanceID, GroupJID: recipients[index].RecipientJID, UpdatedAt: now}
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&guards, 500).Error; err != nil {
 			return err
 		}
 		metadata, err := json.Marshal(map[string]any{

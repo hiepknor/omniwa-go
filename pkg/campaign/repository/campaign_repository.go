@@ -24,6 +24,9 @@ var (
 	ErrInvalidCampaignInput      = errors.New("invalid campaign input")
 	ErrRecipientClaimLost        = errors.New("campaign recipient claim is no longer active")
 	ErrGroupListEmpty            = errors.New("group list is empty")
+	ErrGroupProjectionNotReady   = errors.New("groups projection is not ready")
+	ErrGroupUnavailable          = errors.New("group campaign target is unavailable")
+	ErrNoEligibleTargets         = errors.New("campaign has no eligible targets")
 )
 
 const maxCampaignRecipients = 10_000
@@ -56,12 +59,15 @@ type GroupDraftInput struct {
 	Actor            Actor
 }
 
-type GroupTargetSnapshot struct {
+type GroupEligibilityResult struct {
 	GroupJID    string
 	TargetLabel string
+	Eligibility string
+	Reason      string
+	RetryAt     *time.Time
 }
 
-type GroupEligibilityEvaluator func(context.Context, *gorm.DB, string, string, []string) ([]GroupTargetSnapshot, error)
+type GroupEligibilityEvaluator func(context.Context, *gorm.DB, string, string, []string) ([]GroupEligibilityResult, error)
 
 type RepositoryOption func(*campaignRepository)
 
@@ -79,6 +85,7 @@ type CampaignRepository interface {
 	ListAuditPage(context.Context, string, string, int, *AuditCursor) (*AuditPage, error)
 	ProgressSnapshots(context.Context, string, []string) (map[string]RecipientProgress, error)
 	RecipientCounts(context.Context, string, string) (map[campaign_model.RecipientStatus]int64, error)
+	ActivateGroupCampaign(context.Context, string, string, string, Actor) (*campaign_model.Campaign, error)
 	Transition(context.Context, string, string, campaign_model.CampaignStatus, *time.Time, Actor) (*campaign_model.Campaign, error)
 	ListAudit(context.Context, string, string) ([]campaign_model.AuditEvent, error)
 	ClaimReady(context.Context, int, time.Duration) ([]campaign_model.Recipient, error)
@@ -87,12 +94,18 @@ type CampaignRepository interface {
 	MarkRetry(context.Context, *campaign_model.Recipient, string, time.Time) error
 	MarkDeferred(context.Context, *campaign_model.Recipient, string, time.Time) error
 	MarkFailed(context.Context, *campaign_model.Recipient, string) error
+	RevalidateGroupClaim(context.Context, *campaign_model.Recipient) (GroupEligibilityResult, error)
+	MarkSkipped(context.Context, *campaign_model.Recipient, string) error
+	MarkProjectionUnknown(context.Context, *campaign_model.Recipient, time.Time) error
+	MarkRateLimited(context.Context, *campaign_model.Recipient, string, time.Time) error
+	MarkUnknownOutcome(context.Context, *campaign_model.Recipient) error
 }
 
 type campaignRepository struct {
 	db               *gorm.DB
 	now              func() time.Time
 	groupEligibility GroupEligibilityEvaluator
+	groupSafety      GroupSafetySettings
 }
 
 func NewCampaignRepository(db *gorm.DB, options ...RepositoryOption) CampaignRepository {

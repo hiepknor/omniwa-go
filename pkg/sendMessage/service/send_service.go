@@ -40,6 +40,7 @@ import (
 
 type SendService interface {
 	SendText(data *TextStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
+	SendTextOnce(ctx context.Context, data *TextStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendLink(data *LinkStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendMediaUrl(data *MediaStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendMediaFile(data *MediaStruct, fileData []byte, instance *instance_model.Instance) (*MessageSendStruct, error)
@@ -615,6 +616,19 @@ func findURL(text string) string {
 
 func (s *sendService) SendText(data *TextStruct, instance *instance_model.Instance) (*MessageSendStruct, error) {
 	return s.sendTextWithRetry(data, instance, 3) // 3 tentativas máximas
+}
+
+// SendTextOnce is the context-aware, single-provider-attempt path used by the
+// campaign worker, which owns retry and unknown-outcome policy.
+func (s *sendService) SendTextOnce(ctx context.Context, data *TextStruct, instance *instance_model.Instance) (*MessageSendStruct, error) {
+	if ctx == nil || data == nil || instance == nil || instance.Id == "" {
+		return nil, errors.New("send context, payload, and instance are required")
+	}
+	msg := &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: &data.Text}}
+	return s.sendMessageContext(ctx, instance, msg, "ExtendedTextMessage", &SendDataStruct{
+		Id: data.Id, Number: data.Number, Quoted: data.Quoted, Delay: data.Delay, MentionAll: data.MentionAll,
+		MentionedJID: data.MentionedJID, FormatJid: data.FormatJid, ForwardingScore: data.ForwardingScore,
+	}, true)
 }
 
 func (s *sendService) sendTextWithRetry(data *TextStruct, instance *instance_model.Instance, maxRetries int) (*MessageSendStruct, error) {
@@ -2353,6 +2367,17 @@ func (s *sendService) SendList(data *ListStruct, instance *instance_model.Instan
 }
 
 func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.Message, messageType string, data *SendDataStruct) (*MessageSendStruct, error) {
+	return s.sendMessageContext(context.Background(), instance, msg, messageType, data, false)
+}
+
+// ProviderSendError means the provider call was admitted but returned without
+// an acknowledgement. Callers must treat the delivery outcome as unknown.
+type ProviderSendError struct{ Cause error }
+
+func (e *ProviderSendError) Error() string { return "provider send returned without acknowledgement" }
+func (e *ProviderSendError) Unwrap() error { return e.Cause }
+
+func (s *sendService) sendMessageContext(ctx context.Context, instance *instance_model.Instance, msg *waE2E.Message, messageType string, data *SendDataStruct, classifyOutcome bool) (*MessageSendStruct, error) {
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound send started type=%s", instance.Id, messageType)
 
 	client, err := s.ensureClientConnected(instance.Id)
@@ -2782,12 +2807,15 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		sendExtra.AdditionalNodes = data.AdditionalNodes
 	}
 
-	if err := s.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
+	if err := s.whatsmeowService.WaitOutbound(ctx, instance.Id, 1); err != nil {
 		return nil, err
 	}
-	response, err := client.SendMessage(context.Background(), recipient, msg, sendExtra)
+	response, err := client.SendMessage(ctx, recipient, msg, sendExtra)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Outbound message failed error_code=send_failed", instance.Id)
+		if classifyOutcome {
+			return nil, &ProviderSendError{Cause: err}
+		}
 		return nil, err
 	}
 

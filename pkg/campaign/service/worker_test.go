@@ -24,6 +24,11 @@ type workerRepositoryFake struct {
 	retryAt          time.Time
 	errorCode        string
 	transitionTarget campaign_model.CampaignStatus
+	eligibility      campaign_repository.GroupEligibilityResult
+	eligibilityErr   error
+	skipped          int
+	rateLimited      int
+	unknownOutcome   int
 }
 
 func (f *workerRepositoryFake) ClaimReady(context.Context, int, time.Duration) ([]campaign_model.Recipient, error) {
@@ -49,6 +54,32 @@ func (f *workerRepositoryFake) MarkDeferred(_ context.Context, _ *campaign_model
 func (f *workerRepositoryFake) MarkFailed(_ context.Context, _ *campaign_model.Recipient, code string) error {
 	f.failed++
 	f.errorCode = code
+	return nil
+}
+func (f *workerRepositoryFake) RevalidateGroupClaim(context.Context, *campaign_model.Recipient) (campaign_repository.GroupEligibilityResult, error) {
+	if f.eligibility.Eligibility == "" {
+		return campaign_repository.GroupEligibilityResult{Eligibility: "eligible"}, f.eligibilityErr
+	}
+	return f.eligibility, f.eligibilityErr
+}
+
+func (f *workerRepositoryFake) MarkSkipped(_ context.Context, _ *campaign_model.Recipient, code string) error {
+	f.skipped++
+	f.errorCode = code
+	return nil
+}
+func (f *workerRepositoryFake) MarkProjectionUnknown(context.Context, *campaign_model.Recipient, time.Time) error {
+	f.deferred++
+	return nil
+}
+func (f *workerRepositoryFake) MarkRateLimited(context.Context, *campaign_model.Recipient, string, time.Time) error {
+	f.rateLimited++
+	f.deferred++
+	return nil
+}
+func (f *workerRepositoryFake) MarkUnknownOutcome(context.Context, *campaign_model.Recipient) error {
+	f.unknownOutcome++
+	f.failed++
 	return nil
 }
 func (f *workerRepositoryFake) Transition(_ context.Context, _, _ string, target campaign_model.CampaignStatus, _ *time.Time, _ campaign_repository.Actor) (*campaign_model.Campaign, error) {
@@ -149,6 +180,50 @@ func TestWorkerSettingsAndDelayBounds(t *testing.T) {
 	}
 }
 
+func TestGroupWorkerRevalidatesAndSkipsUnavailableTarget(t *testing.T) {
+	repository, _ := groupWorkerFixture()
+	repository.eligibility = campaign_repository.GroupEligibilityResult{Eligibility: "unavailable", Reason: "group_access_lost"}
+	worker := newTestWorker(repository, senderFake{providerID: "must-not-send"})
+	result, err := worker.RunOnce(context.Background())
+	if err != nil || result.Skipped != 1 || repository.skipped != 1 || repository.sent != 0 || repository.errorCode != "group_access_lost" {
+		t.Fatalf("unavailable result = %#v, %v; repository=%#v", result, err, repository)
+	}
+}
+
+func TestGroupWorkerPausesUnknownProjectionWithoutAttempt(t *testing.T) {
+	repository, _ := groupWorkerFixture()
+	repository.eligibility = campaign_repository.GroupEligibilityResult{Eligibility: "unknown"}
+	worker := newTestWorker(repository, senderFake{providerID: "must-not-send"})
+	result, err := worker.RunOnce(context.Background())
+	if err != nil || result.Deferred != 1 || repository.deferred != 1 || repository.sent != 0 {
+		t.Fatalf("unknown projection result = %#v, %v; repository=%#v", result, err, repository)
+	}
+}
+
+func TestGroupWorkerHandlesRateLimitAndUnknownOutcome(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		err   error
+		check func(*workerRepositoryFake, BatchResult) bool
+	}{
+		{name: "rate limit", err: &DeliveryError{Kind: DeliveryFailureRateLimit, Code: "provider_rate_limited", RetryAfter: time.Minute}, check: func(repository *workerRepositoryFake, result BatchResult) bool {
+			return repository.rateLimited == 1 && result.Deferred == 1
+		}},
+		{name: "unknown outcome", err: &DeliveryError{Kind: DeliveryFailureUnknown, Code: "unknown_send_outcome"}, check: func(repository *workerRepositoryFake, result BatchResult) bool {
+			return repository.unknownOutcome == 1 && result.Failed == 1
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository, _ := groupWorkerFixture()
+			worker := newTestWorker(repository, senderFake{err: test.err})
+			result, err := worker.RunOnce(context.Background())
+			if err != nil || !test.check(repository, result) {
+				t.Fatalf("group failure result = %#v, %v; repository=%#v", result, err, repository)
+			}
+		})
+	}
+}
+
 func workerFixture(attempts int) (*workerRepositoryFake, *campaign_model.Campaign) {
 	instanceID, campaignID := uuid.NewString(), uuid.NewString()
 	campaign := &campaign_model.Campaign{ID: campaignID, InstanceID: instanceID, ContentType: "text", TextBody: "hello"}
@@ -160,6 +235,14 @@ func workerFixture(attempts int) (*workerRepositoryFake, *campaign_model.Campaig
 			Status: campaign_model.RecipientStatusProcessing, ClaimToken: &claim, AttemptCount: attempts,
 		}},
 	}, campaign
+}
+
+func groupWorkerFixture() (*workerRepositoryFake, *campaign_model.Campaign) {
+	repository, campaign := workerFixture(0)
+	campaign.TargetType = campaign_model.CampaignTargetGroupList
+	repository.recipients[0].TargetType = campaign_model.RecipientTargetGroup
+	repository.recipients[0].RecipientJID = "120363000001@g.us"
+	return repository, campaign
 }
 
 func newTestWorker(repository workerRepository, sender Sender) *Worker {

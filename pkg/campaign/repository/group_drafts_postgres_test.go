@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -59,16 +60,25 @@ func TestGroupDraftSnapshotIsAtomicScopedAndImmutable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	evaluator := func(_ context.Context, tx *gorm.DB, instanceID, instanceJID string, groupJIDs []string) ([]campaign_repository.GroupTargetSnapshot, error) {
+	eligibilityOverrides := map[string]campaign_repository.GroupEligibilityResult{}
+	evaluator := func(_ context.Context, tx *gorm.DB, instanceID, instanceJID string, groupJIDs []string) ([]campaign_repository.GroupEligibilityResult, error) {
 		if tx == nil || instanceID != instance.Id || instanceJID != instance.Jid || len(groupJIDs) != 2 {
 			return nil, errors.New("eligibility did not receive the locked instance snapshot")
 		}
-		return []campaign_repository.GroupTargetSnapshot{
-			{GroupJID: groupJIDs[0], TargetLabel: "HCM Branch"},
-			{GroupJID: groupJIDs[1], TargetLabel: "Hanoi Branch"},
-		}, nil
+		results := make([]campaign_repository.GroupEligibilityResult, len(groupJIDs))
+		for index, groupJID := range groupJIDs {
+			result := campaign_repository.GroupEligibilityResult{GroupJID: groupJID, TargetLabel: "Current " + groupJID, Eligibility: "eligible"}
+			if override, exists := eligibilityOverrides[groupJID]; exists {
+				result = override
+				result.GroupJID = groupJID
+			}
+			results[index] = result
+		}
+		return results, nil
 	}
-	repository := campaign_repository.NewCampaignRepository(db, campaign_repository.WithGroupEligibilityEvaluator(evaluator))
+	repository := campaign_repository.NewCampaignRepository(db, campaign_repository.WithGroupEligibilityEvaluator(evaluator), campaign_repository.WithGroupSafety(campaign_repository.GroupSafetySettings{
+		Enabled: true, Cooldown: time.Hour, CircuitDuration: time.Minute, RatePauseThreshold: 2, FailurePauseThreshold: 2,
+	}))
 	input := campaign_repository.GroupDraftInput{
 		Name: "July campaign", TextBody: "Campaign content", GroupListID: list.ID, GroupListVersion: list.Version,
 		InstanceJID: instance.Jid, Actor: campaign_repository.Actor{Type: "system"},
@@ -91,6 +101,200 @@ func TestGroupDraftSnapshotIsAtomicScopedAndImmutable(t *testing.T) {
 			t.Fatalf("group target snapshot = %#v", target)
 		}
 	}
+	secondCampaign, _, err := repository.CreateGroupDraft(context.Background(), instance.Id, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []*campaign_model.Campaign{campaign, secondCampaign} {
+		startsAt := time.Now().UTC()
+		if _, err := repository.Transition(context.Background(), instance.Id, candidate.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repository.ActivateGroupCampaign(context.Background(), instance.Id, candidate.ID, instance.Jid, campaign_repository.Actor{Type: "system"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claimBatches := make(chan []campaign_model.Recipient, 2)
+	claimErrors := make(chan error, 2)
+	var claimWorkers sync.WaitGroup
+	for range 2 {
+		claimWorkers.Add(1)
+		go func() {
+			defer claimWorkers.Done()
+			claimed, claimErr := repository.ClaimReadyForInstance(context.Background(), instance.Id, 4, time.Minute)
+			claimBatches <- claimed
+			claimErrors <- claimErr
+		}()
+	}
+	claimWorkers.Wait()
+	close(claimBatches)
+	close(claimErrors)
+	for claimErr := range claimErrors {
+		if claimErr != nil {
+			t.Fatal(claimErr)
+		}
+	}
+	claimedGroups := make([]campaign_model.Recipient, 0, 2)
+	claimedJIDs := map[string]bool{}
+	for batch := range claimBatches {
+		claimedGroups = append(claimedGroups, batch...)
+		for _, claimed := range batch {
+			if claimedJIDs[claimed.RecipientJID] {
+				t.Fatalf("group claimed concurrently by two campaigns: %s", claimed.RecipientJID)
+			}
+			claimedJIDs[claimed.RecipientJID] = true
+		}
+	}
+	if len(claimedGroups) != 2 {
+		t.Fatalf("concurrent guarded claims = %d, want one per group", len(claimedGroups))
+	}
+	for index := range claimedGroups {
+		if err := repository.MarkSent(context.Background(), &claimedGroups[index], "provider-group-"+uuid.NewString()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := repository.MarkSent(context.Background(), &claimedGroups[0], "stale-provider"); !errors.Is(err, campaign_repository.ErrRecipientClaimLost) {
+		t.Fatalf("stale group claim completion = %v", err)
+	}
+	cooldownClaims, err := repository.ClaimReadyForInstance(context.Background(), instance.Id, 4, time.Minute)
+	if err != nil || len(cooldownClaims) != 0 {
+		t.Fatalf("cooldown claims = %#v, %v", cooldownClaims, err)
+	}
+	eligibilityOverrides = map[string]campaign_repository.GroupEligibilityResult{}
+	partialCampaign, _, err := repository.CreateGroupDraft(context.Background(), instance.Id, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startsAt := time.Now().UTC()
+	if _, err := repository.Transition(context.Background(), instance.Id, partialCampaign.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"}); err != nil {
+		t.Fatal(err)
+	}
+	eligibilityOverrides[entries[0].GroupJID] = campaign_repository.GroupEligibilityResult{Eligibility: "unavailable", Reason: "group_access_lost"}
+	activated, err := repository.ActivateGroupCampaign(context.Background(), instance.Id, partialCampaign.ID, instance.Jid, campaign_repository.Actor{Type: "system"})
+	if err != nil || activated.Status != campaign_model.CampaignStatusRunning {
+		t.Fatalf("partial activation = %#v, %v", activated, err)
+	}
+	partialCounts, err := repository.RecipientCounts(context.Background(), instance.Id, partialCampaign.ID)
+	if err != nil || partialCounts[campaign_model.RecipientStatusSkipped] != 1 || partialCounts[campaign_model.RecipientStatusPending] != 1 {
+		t.Fatalf("partial activation counts = %#v, %v", partialCounts, err)
+	}
+
+	eligibilityOverrides = map[string]campaign_repository.GroupEligibilityResult{}
+	unknownCampaign, _, err := repository.CreateGroupDraft(context.Background(), instance.Id, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Transition(context.Background(), instance.Id, unknownCampaign.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"}); err != nil {
+		t.Fatal(err)
+	}
+	eligibilityOverrides[entries[0].GroupJID] = campaign_repository.GroupEligibilityResult{Eligibility: "unknown", Reason: "projection_not_ready"}
+	if _, err := repository.ActivateGroupCampaign(context.Background(), instance.Id, unknownCampaign.ID, instance.Jid, campaign_repository.Actor{Type: "system"}); !errors.Is(err, campaign_repository.ErrGroupProjectionNotReady) {
+		t.Fatalf("unknown activation error = %v", err)
+	}
+	storedUnknown, err := repository.GetCampaign(context.Background(), instance.Id, unknownCampaign.ID)
+	if err != nil || storedUnknown.Status != campaign_model.CampaignStatusScheduled {
+		t.Fatalf("unknown activation mutated campaign = %#v, %v", storedUnknown, err)
+	}
+
+	eligibilityOverrides = map[string]campaign_repository.GroupEligibilityResult{}
+	noEligibleCampaign, _, err := repository.CreateGroupDraft(context.Background(), instance.Id, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Transition(context.Background(), instance.Id, noEligibleCampaign.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		eligibilityOverrides[entry.GroupJID] = campaign_repository.GroupEligibilityResult{Eligibility: "unavailable", Reason: "group_access_lost"}
+	}
+	failedCampaign, err := repository.ActivateGroupCampaign(context.Background(), instance.Id, noEligibleCampaign.ID, instance.Jid, campaign_repository.Actor{Type: "system"})
+	if !errors.Is(err, campaign_repository.ErrNoEligibleTargets) || failedCampaign.Status != campaign_model.CampaignStatusFailed {
+		t.Fatalf("no-eligible activation = %#v, %v", failedCampaign, err)
+	}
+	if err := db.Exec(`UPDATE campaign_group_delivery_guards SET last_acknowledged_at = NULL WHERE instance_id = ?`, instance.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	rateLimitedClaim, err := repository.ClaimReadyForInstance(context.Background(), instance.Id, 1, time.Minute)
+	if err != nil || len(rateLimitedClaim) != 1 {
+		t.Fatalf("rate-limit claim = %#v, %v", rateLimitedClaim, err)
+	}
+	retryAt := time.Now().UTC().Add(2 * time.Minute)
+	if err := repository.MarkRateLimited(context.Background(), &rateLimitedClaim[0], "provider_rate_limited", retryAt); err != nil {
+		t.Fatal(err)
+	}
+	blockedByCircuit, err := repository.ClaimReadyForInstance(context.Background(), instance.Id, 4, time.Minute)
+	if err != nil || len(blockedByCircuit) != 0 {
+		t.Fatalf("open circuit claims = %#v, %v", blockedByCircuit, err)
+	}
+	snapshots, err := repository.ProgressSnapshots(context.Background(), instance.Id, []string{rateLimitedClaim[0].CampaignID})
+	if err != nil || snapshots[rateLimitedClaim[0].CampaignID].RetryAt == nil || snapshots[rateLimitedClaim[0].CampaignID].RetryAt.Before(retryAt) {
+		t.Fatalf("circuit progress retry = %#v, %v", snapshots, err)
+	}
+	if err := db.Exec(`DELETE FROM campaign_instance_circuits WHERE instance_id = ?`, instance.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	unknownClaim, err := repository.ClaimReadyForInstance(context.Background(), instance.Id, 1, time.Minute)
+	if err != nil || len(unknownClaim) != 1 {
+		t.Fatalf("unknown-outcome claim = %#v, %v", unknownClaim, err)
+	}
+	if err := repository.MarkUnknownOutcome(context.Background(), &unknownClaim[0]); err != nil {
+		t.Fatal(err)
+	}
+	attentionCampaign, err := repository.GetCampaign(context.Background(), instance.Id, unknownClaim[0].CampaignID)
+	if err != nil || attentionCampaign.Status != campaign_model.CampaignStatusPaused || !attentionCampaign.NeedsAttention || attentionCampaign.PauseReason == nil || *attentionCampaign.PauseReason != "unknown_send_outcome" {
+		t.Fatalf("unknown-outcome campaign = %#v, %v", attentionCampaign, err)
+	}
+	if err := repository.MarkUnknownOutcome(context.Background(), &unknownClaim[0]); !errors.Is(err, campaign_repository.ErrRecipientClaimLost) {
+		t.Fatalf("stale unknown outcome = %v", err)
+	}
+	eligibilityOverrides = map[string]campaign_repository.GroupEligibilityResult{}
+	failureList := group_list_model.GroupList{
+		ID: uuid.NewString(), InstanceID: instance.Id, Name: "Failure threshold groups", NormalizedName: "failure threshold groups", Version: 1,
+		AuthorizationSource: "operator_attestation", AuthorizationReferenceHash: strings.Repeat("b", 64), AuthorizedAt: now,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&failureList).Error; err != nil {
+		t.Fatal(err)
+	}
+	failureEntries := []group_list_model.Entry{
+		{GroupListID: failureList.ID, InstanceID: instance.Id, GroupJID: "120363000011@g.us", GroupNameSnapshot: "Failure 01", CreatedAt: now},
+		{GroupListID: failureList.ID, InstanceID: instance.Id, GroupJID: "120363000012@g.us", GroupNameSnapshot: "Failure 02", CreatedAt: now},
+	}
+	if err := db.Create(&failureEntries).Error; err != nil {
+		t.Fatal(err)
+	}
+	failureInput := input
+	failureInput.GroupListID = failureList.ID
+	failureInput.GroupListVersion = 1
+	failureCampaign, _, err := repository.CreateGroupDraft(context.Background(), instance.Id, failureInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Transition(context.Background(), instance.Id, failureCampaign.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ActivateGroupCampaign(context.Background(), instance.Id, failureCampaign.ID, instance.Jid, campaign_repository.Actor{Type: "system"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE campaigns SET status = 'paused' WHERE instance_id = ? AND id <> ? AND status = 'running'`, instance.Id, failureCampaign.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	failureClaims, err := repository.ClaimReadyForInstance(context.Background(), instance.Id, 2, time.Minute)
+	if err != nil || len(failureClaims) != 2 {
+		t.Fatalf("failure threshold claims = %#v, %v", failureClaims, err)
+	}
+	for index := range failureClaims {
+		if failureClaims[index].CampaignID != failureCampaign.ID {
+			t.Fatalf("unexpected failure campaign claim = %#v", failureClaims[index])
+		}
+		if err := repository.MarkFailed(context.Background(), &failureClaims[index], "send_permission_denied"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pausedFailureCampaign, err := repository.GetCampaign(context.Background(), instance.Id, failureCampaign.ID)
+	if err != nil || pausedFailureCampaign.Status != campaign_model.CampaignStatusPaused || pausedFailureCampaign.FailureSignalCount != 2 || pausedFailureCampaign.PauseReason == nil || *pausedFailureCampaign.PauseReason != "failure_threshold_exceeded" {
+		t.Fatalf("failure threshold campaign = %#v, %v", pausedFailureCampaign, err)
+	}
 	if err := db.Model(&group_list_model.GroupList{}).Where("id = ?", list.ID).
 		Updates(map[string]any{"name": "Renamed", "version": 5, "deleted_at": time.Now().UTC()}).Error; err != nil {
 		t.Fatal(err)
@@ -100,7 +304,7 @@ func TestGroupDraftSnapshotIsAtomicScopedAndImmutable(t *testing.T) {
 		t.Fatalf("immutable loaded snapshot = %#v targets=%#v err=%v", loaded, loadedTargets, err)
 	}
 	audit, err := repository.ListAudit(context.Background(), instance.Id, campaign.ID)
-	if err != nil || len(audit) != 1 {
+	if err != nil || len(audit) < 1 {
 		t.Fatalf("audit = %#v, %v", audit, err)
 	}
 	var metadata map[string]any

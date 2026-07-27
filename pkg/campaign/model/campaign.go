@@ -53,6 +53,8 @@ type Campaign struct {
 	PauseReason           *string            `json:"pauseReason,omitempty" gorm:"column:pause_reason;size:64"`
 	RetryAt               *time.Time         `json:"retryAt,omitempty" gorm:"column:retry_at"`
 	NeedsAttention        bool               `json:"needsAttention" gorm:"column:needs_attention;not null"`
+	FailureSignalCount    int                `json:"-" gorm:"column:failure_signal_count;not null"`
+	RateLimitSignalCount  int                `json:"-" gorm:"column:rate_limit_signal_count;not null"`
 	Version               int64              `json:"version" gorm:"column:version;not null"`
 	CreatedAt             time.Time          `json:"createdAt"`
 	UpdatedAt             time.Time          `json:"updatedAt"`

@@ -56,7 +56,7 @@ func (f *managementServiceFake) Audit(_ context.Context, instanceID, campaignID 
 	f.instanceID, f.campaignID = instanceID, campaignID
 	return f.audit, f.err
 }
-func (f *managementServiceFake) Transition(_ context.Context, instanceID, campaignID string, target campaign_model.CampaignStatus, startsAt *time.Time, actor campaign_repository.Actor) (*campaign_service.CampaignDetail, error) {
+func (f *managementServiceFake) Transition(_ context.Context, instanceID, campaignID, _ string, target campaign_model.CampaignStatus, startsAt *time.Time, actor campaign_repository.Actor) (*campaign_service.CampaignDetail, error) {
 	f.calls++
 	f.instanceID, f.campaignID, f.target, f.startsAt, f.actor = instanceID, campaignID, target, startsAt, actor
 	return f.detail, f.err
@@ -119,6 +119,29 @@ func TestLifecycleUsesSafeConflictContractAndInstanceAttribution(t *testing.T) {
 	if response.Code != http.StatusConflict || service.target != campaign_model.CampaignStatusPaused || service.actor.Reference != "instance-secret" ||
 		!strings.Contains(response.Body.String(), `"code":"campaign_state_conflict"`) || strings.Contains(response.Body.String(), "invalid campaign status transition") {
 		t.Fatalf("Pause() status=%d service=%#v body=%s", response.Code, service, response.Body.String())
+	}
+}
+
+func TestStartMapsGroupPreflightFailures(t *testing.T) {
+	instanceID, campaignID := uuid.NewString(), uuid.NewString()
+	for _, test := range []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{name: "projection unknown", err: campaign_repository.ErrGroupProjectionNotReady, status: http.StatusServiceUnavailable, code: "projection_not_ready"},
+		{name: "no eligible targets", err: campaign_repository.ErrNoEligibleTargets, status: http.StatusConflict, code: "campaign_no_eligible_targets"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := &managementServiceFake{err: test.err}
+			handler := NewCampaignHandler(service)
+			ctx, response := campaignContext(http.MethodPost, "/campaigns/"+campaignID+"/start", "", instanceID, "instance-secret", campaignID)
+			handler.Start(ctx)
+			if response.Code != test.status || service.target != campaign_model.CampaignStatusRunning || !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
+				t.Fatalf("Start() status=%d service=%#v body=%s", response.Code, service, response.Body.String())
+			}
+		})
 	}
 }
 

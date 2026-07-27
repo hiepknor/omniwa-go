@@ -174,6 +174,27 @@ GROUP BY campaign_id, status`, instanceID, campaignIDs).Scan(&rows).Error; err !
 		}
 		result[row.CampaignID] = snapshot
 	}
+	var circuit struct{ OpenUntil time.Time }
+	if err := r.db.WithContext(ctx).Raw(`SELECT open_until FROM campaign_instance_circuits
+WHERE instance_id = ? AND open_until > NOW()`, instanceID).Scan(&circuit).Error; err != nil {
+		return nil, err
+	}
+	if !circuit.OpenUntil.IsZero() {
+		var groupCampaignIDs []string
+		if err := r.db.WithContext(ctx).Model(&campaign_model.Campaign{}).
+			Where("instance_id = ? AND id IN ? AND target_type = ?", instanceID, campaignIDs, campaign_model.CampaignTargetGroupList).
+			Pluck("id", &groupCampaignIDs).Error; err != nil {
+			return nil, err
+		}
+		for _, campaignID := range groupCampaignIDs {
+			snapshot := result[campaignID]
+			if snapshot.RetryAt == nil || circuit.OpenUntil.After(*snapshot.RetryAt) {
+				retryAt := circuit.OpenUntil.UTC()
+				snapshot.RetryAt = &retryAt
+				result[campaignID] = snapshot
+			}
+		}
+	}
 	return result, nil
 }
 

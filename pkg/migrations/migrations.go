@@ -805,6 +805,58 @@ CREATE INDEX campaign_recipients_group_target_idx
 ON campaign_recipients (instance_id, recipient_jid, campaign_id)
 WHERE target_type = 'group';`,
 	},
+	{
+		Version: 23,
+		Name:    "add_group_campaign_delivery_safety",
+		SQL: `ALTER TABLE campaigns
+    ADD COLUMN failure_signal_count INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN rate_limit_signal_count INTEGER NOT NULL DEFAULT 0,
+    ADD CONSTRAINT campaigns_failure_signal_count_check CHECK (failure_signal_count >= 0),
+    ADD CONSTRAINT campaigns_rate_limit_signal_count_check CHECK (rate_limit_signal_count >= 0);
+
+CREATE TABLE campaign_group_delivery_guards (
+    instance_id UUID NOT NULL,
+    group_jid VARCHAR(255) NOT NULL,
+    owner_recipient_id UUID NULL,
+    owner_campaign_id UUID NULL,
+    claim_token VARCHAR(64) NULL,
+    lease_until TIMESTAMPTZ NULL,
+    last_acknowledged_at TIMESTAMPTZ NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, group_jid),
+    CONSTRAINT campaign_group_delivery_guards_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT campaign_group_delivery_guards_recipient_fk FOREIGN KEY (owner_recipient_id, owner_campaign_id, instance_id) REFERENCES campaign_recipients(id, campaign_id, instance_id) ON DELETE SET NULL (owner_recipient_id, owner_campaign_id),
+    CONSTRAINT campaign_group_delivery_guards_jid_check CHECK (group_jid ~ '^[^@]+@g[.]us$'),
+    CONSTRAINT campaign_group_delivery_guards_claim_check CHECK (
+        (owner_recipient_id IS NULL AND owner_campaign_id IS NULL AND claim_token IS NULL AND lease_until IS NULL)
+        OR (owner_recipient_id IS NOT NULL AND owner_campaign_id IS NOT NULL AND claim_token IS NOT NULL AND lease_until IS NOT NULL)
+    ),
+    CONSTRAINT campaign_group_delivery_guards_claim_token_check CHECK (claim_token IS NULL OR claim_token ~ '^[0-9a-f-]{36}$')
+);
+CREATE INDEX campaign_group_delivery_guards_lease_idx
+ON campaign_group_delivery_guards (lease_until, instance_id, group_jid)
+WHERE lease_until IS NOT NULL;
+CREATE INDEX campaign_group_delivery_guards_cooldown_idx
+ON campaign_group_delivery_guards (instance_id, last_acknowledged_at, group_jid)
+WHERE last_acknowledged_at IS NOT NULL;
+
+INSERT INTO campaign_group_delivery_guards (instance_id, group_jid, updated_at)
+SELECT DISTINCT instance_id, recipient_jid, NOW()
+FROM campaign_recipients
+WHERE target_type = 'group'
+ON CONFLICT (instance_id, group_jid) DO NOTHING;
+
+CREATE TABLE campaign_instance_circuits (
+    instance_id UUID PRIMARY KEY,
+    open_until TIMESTAMPTZ NOT NULL,
+    reason VARCHAR(64) NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT campaign_instance_circuits_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT campaign_instance_circuits_reason_check CHECK (reason ~ '^[a-z0-9_]{1,64}$')
+);
+CREATE INDEX campaign_instance_circuits_open_idx
+ON campaign_instance_circuits (open_until, instance_id);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

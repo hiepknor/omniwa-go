@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	"github.com/evolution-foundation/evolution-go/pkg/outbound"
 	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
 	"github.com/google/uuid"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )
 
@@ -28,6 +31,11 @@ type textSendServiceFake struct {
 }
 
 func (f *textSendServiceFake) SendText(input *send_service.TextStruct, _ *instance_model.Instance) (*send_service.MessageSendStruct, error) {
+	f.input = input
+	return f.info, f.err
+}
+
+func (f *textSendServiceFake) SendTextOnce(_ context.Context, input *send_service.TextStruct, _ *instance_model.Instance) (*send_service.MessageSendStruct, error) {
 	f.input = input
 	return f.info, f.err
 }
@@ -70,5 +78,27 @@ func TestTextSenderClassifiesInstanceLookupAsDependencyDeferral(t *testing.T) {
 	var dependency *dependencyUnavailableError
 	if !errors.As(err, &dependency) {
 		t.Fatalf("dependency error = %v", err)
+	}
+}
+
+func TestGroupDeliveryErrorClassificationIsConservative(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		kind DeliveryFailureKind
+		code string
+	}{
+		{name: "terminal permission", err: &send_service.ProviderSendError{Cause: whatsmeow.ErrIQForbidden}, kind: DeliveryFailureTerminal, code: "send_permission_denied"},
+		{name: "rate limit", err: &send_service.ProviderSendError{Cause: &outbound.RateLimitError{RetryAfter: time.Minute}}, kind: DeliveryFailureRateLimit, code: "provider_rate_limited"},
+		{name: "unknown provider outcome", err: &send_service.ProviderSendError{Cause: errors.New("connection lost")}, kind: DeliveryFailureUnknown, code: "unknown_send_outcome"},
+		{name: "known pre-provider transient", err: errors.New("dependency unavailable"), kind: DeliveryFailureTransient, code: "send_failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var delivery *DeliveryError
+			if err := classifyGroupDeliveryError(test.err); !errors.As(err, &delivery) || delivery.Kind != test.kind || delivery.Code != test.code {
+				t.Fatalf("classification = %#v, %v", delivery, err)
+			}
+		})
 	}
 }
