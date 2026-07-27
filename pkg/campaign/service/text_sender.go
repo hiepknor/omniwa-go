@@ -10,6 +10,7 @@ import (
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types"
 )
 
 type instanceReader interface {
@@ -62,6 +63,12 @@ func (s *TextSender) Send(ctx context.Context, campaign *campaign_model.Campaign
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+	if recipient.TargetType == campaign_model.RecipientTargetGroup {
+		jid, err := types.ParseJID(strings.TrimSpace(recipient.RecipientJID))
+		if err != nil || jid.User == "" || jid.Server != types.GroupServer || jid.ToNonAD().String() != recipient.RecipientJID {
+			return "", &DeliveryError{Kind: DeliveryFailureTerminal, Code: "invalid_group_jid", Cause: err}
+		}
 	}
 	instance, err := s.instances.GetInstanceByID(recipient.InstanceID)
 	if err != nil {

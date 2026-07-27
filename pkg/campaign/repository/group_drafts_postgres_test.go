@@ -222,9 +222,40 @@ func TestGroupDraftSnapshotIsAtomicScopedAndImmutable(t *testing.T) {
 	if err := repository.MarkRateLimited(context.Background(), &rateLimitedClaim[0], "provider_rate_limited", retryAt); err != nil {
 		t.Fatal(err)
 	}
+	directCampaign, _, err := repository.CreateDraft(context.Background(), instance.Id, campaign_repository.DraftInput{
+		Name: "Circuit-scoped direct campaign", TextBody: "Legacy direct work", Actor: campaign_repository.Actor{Type: "system"},
+		Recipients: []campaign_repository.RecipientConsent{{
+			JID: "15550009999@s.whatsapp.net", OptInSource: "integration_test", EvidenceReference: "circuit-consent",
+			OptedInAt: now,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Transition(context.Background(), instance.Id, directCampaign.ID, campaign_model.CampaignStatusScheduled, &startsAt, campaign_repository.Actor{Type: "system"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Transition(context.Background(), instance.Id, directCampaign.ID, campaign_model.CampaignStatusRunning, nil, campaign_repository.Actor{Type: "system"}); err != nil {
+		t.Fatal(err)
+	}
 	blockedByCircuit, err := repository.ClaimReadyForInstance(context.Background(), instance.Id, 4, time.Minute)
 	if err != nil || len(blockedByCircuit) != 0 {
-		t.Fatalf("open circuit claims = %#v, %v", blockedByCircuit, err)
+		t.Fatalf("open circuit allowed instance campaign claims = %#v, %v", blockedByCircuit, err)
+	}
+	directSnapshots, err := repository.ProgressSnapshots(context.Background(), instance.Id, []string{directCampaign.ID})
+	if err != nil || directSnapshots[directCampaign.ID].RetryAt == nil || directSnapshots[directCampaign.ID].RetryAt.Before(retryAt.Add(-time.Millisecond)) {
+		t.Fatalf("direct campaign circuit progress retry = %#v, %v", directSnapshots, err)
+	}
+	rollbackRepository := campaign_repository.NewCampaignRepository(db)
+	rollbackClaims, err := rollbackRepository.ClaimReadyForInstance(context.Background(), instance.Id, 1, time.Minute)
+	if err != nil || len(rollbackClaims) != 1 || rollbackClaims[0].CampaignID != directCampaign.ID || rollbackClaims[0].TargetType != campaign_model.RecipientTargetDirect {
+		t.Fatalf("disabled group safety did not preserve direct claims = %#v, %v", rollbackClaims, err)
+	}
+	if err := rollbackRepository.MarkDeferred(context.Background(), &rollbackClaims[0], "campaign_paused", retryAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Transition(context.Background(), instance.Id, directCampaign.ID, campaign_model.CampaignStatusPaused, nil, campaign_repository.Actor{Type: "system"}); err != nil {
+		t.Fatal(err)
 	}
 	snapshots, err := repository.ProgressSnapshots(context.Background(), instance.Id, []string{rateLimitedClaim[0].CampaignID})
 	if err != nil || snapshots[rateLimitedClaim[0].CampaignID].RetryAt == nil || snapshots[rateLimitedClaim[0].CampaignID].RetryAt.Before(retryAt.Add(-time.Millisecond)) {

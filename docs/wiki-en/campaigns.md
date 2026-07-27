@@ -93,9 +93,11 @@ partial start.
 The worker revalidates eligibility after claim and again at the provider
 boundary. Terminal group errors are not retried. Known transient failures use
 bounded exponential backoff with jitter. A provider rate limit opens an
-instance-wide durable circuit and honors `Retry-After`; an unknown send outcome
-fails the target, pauses the campaign, and sets `needsAttention=true` instead of
-risking a duplicate send. Per-group leases and cooldowns prevent concurrent or
+instance-wide durable circuit and honors `Retry-After`. While that circuit is
+open, it prevents both group and legacy direct campaign claims for the instance,
+and progress exposes the circuit retry time. An unknown send outcome fails the
+target, pauses the campaign, and sets `needsAttention=true` instead of risking a
+duplicate send. Per-group leases and cooldowns prevent concurrent or
 too-frequent sends across campaigns.
 
 Backend safety policy is configured with
