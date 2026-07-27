@@ -1,7 +1,9 @@
 package send_handler
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -9,6 +11,8 @@ import (
 
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	media_repository "github.com/evolution-foundation/evolution-go/pkg/media/repository"
+	media_service "github.com/evolution-foundation/evolution-go/pkg/media/service"
 	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
 	"github.com/gin-gonic/gin"
 )
@@ -30,6 +34,17 @@ type SendHandler interface {
 
 type sendHandler struct {
 	sendMessageService send_service.SendService
+	assetImageSender   assetImageSender
+}
+
+type assetImageSender interface {
+	Send(context.Context, *send_service.MediaStruct, *instance_model.Instance) (*send_service.MessageSendStruct, error)
+}
+
+type Option func(*sendHandler)
+
+func WithAssetImageSender(sender assetImageSender) Option {
+	return func(handler *sendHandler) { handler.assetImageSender = sender }
 }
 
 func writeServiceError(ctx *gin.Context, err error) {
@@ -137,7 +152,7 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 
 // Send a media message
 // @Summary Send a media message
-// @Description Send a media message
+// @Description Send legacy URL/base64 media, or one private device-upload image by mediaAssetId with an optional caption
 // @Tags Send Message
 // @Accept json
 // @Produce json
@@ -258,6 +273,24 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 
 		if data.Number == "" {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+			return
+		}
+
+		if data.MediaAssetID != "" {
+			if data.Url != "" || data.Type != "image" {
+				httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_media_asset", "mediaAssetId requires type image and cannot be combined with url")
+				return
+			}
+			if s.assetImageSender == nil {
+				httpapi.WriteError(ctx, http.StatusNotImplemented, "chat_image_content_disabled", "shared image sending is disabled")
+				return
+			}
+			message, err := s.assetImageSender.Send(ctx.Request.Context(), data, instance)
+			if err != nil {
+				writeAssetSendError(ctx, err)
+				return
+			}
+			ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": message})
 			return
 		}
 
@@ -864,8 +897,40 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 func NewSendHandler(
 	sendMessageService send_service.SendService,
+	options ...Option,
 ) SendHandler {
-	return &sendHandler{
+	handler := &sendHandler{
 		sendMessageService: sendMessageService,
+	}
+	for _, option := range options {
+		if option != nil {
+			option(handler)
+		}
+	}
+	return handler
+}
+
+func writeAssetSendError(ctx *gin.Context, err error) {
+	if httpapi.WriteRateLimit(ctx, err) {
+		return
+	}
+	switch {
+	case errors.Is(err, media_service.ErrInvalidMediaAsset):
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_media_asset", "invalid media asset request")
+	case errors.Is(err, media_repository.ErrAssetNotFound):
+		httpapi.WriteError(ctx, http.StatusNotFound, "media_asset_not_found", "media asset not found")
+	case errors.Is(err, media_repository.ErrAssetConflict), errors.Is(err, media_service.ErrMediaAssetNotReady):
+		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_not_ready", "media asset is not ready")
+	case errors.Is(err, media_service.ErrMediaAssetIntegrity):
+		httpapi.WriteError(ctx, http.StatusUnprocessableEntity, "media_asset_integrity_failed", "media asset integrity check failed")
+	case errors.Is(err, media_service.ErrMediaAssetStorage):
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "media_asset_storage_unavailable", "media asset storage is unavailable")
+	default:
+		var unknown *send_service.ProviderSendError
+		if errors.As(err, &unknown) {
+			httpapi.WriteError(ctx, http.StatusBadGateway, "unknown_send_outcome", "provider acknowledgement is unknown; do not retry automatically")
+			return
+		}
+		writeServiceError(ctx, err)
 	}
 }

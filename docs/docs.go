@@ -4174,6 +4174,160 @@ const docTemplate = `{
                 }
             }
         },
+        "/media-assets": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Media Assets"
+                ],
+                "summary": "Upload shared image asset",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "JPEG or PNG image",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Instance-scoped upload idempotency key",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.MediaAssetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/media-assets/{mediaId}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Media Assets"
+                ],
+                "summary": "Get shared image asset metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media asset UUID",
+                        "name": "mediaId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.MediaAssetResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Media Assets"
+                ],
+                "summary": "Delete shared image asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media asset UUID",
+                        "name": "mediaId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/message/delete": {
             "post": {
                 "security": [
@@ -5761,7 +5915,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Send a media message",
+                "description": "Send legacy URL/base64 media, or one private device-upload image by mediaAssetId with an optional caption",
                 "consumes": [
                     "application/json"
                 ],
@@ -7845,6 +7999,18 @@ const docTemplate = `{
                 }
             }
         },
+        "apidocs.MediaAssetResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.Asset"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
         "apidocs.MessageIdData": {
             "type": "object",
             "properties": {
@@ -9122,6 +9288,112 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_media_model.Asset": {
+            "type": "object",
+            "properties": {
+                "canonical": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetVariant"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "failureCode": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "mediaType": {
+                    "type": "string"
+                },
+                "origin": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetOrigin"
+                },
+                "readyAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetStatus"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_media_model.AssetOrigin": {
+            "type": "string",
+            "enum": [
+                "device_upload",
+                "whatsapp_inbound"
+            ],
+            "x-enum-varnames": [
+                "AssetOriginDeviceUpload",
+                "AssetOriginWhatsAppInbound"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_media_model.AssetStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "uploading",
+                "downloading",
+                "processing",
+                "ready",
+                "failed",
+                "deleting",
+                "deleted"
+            ],
+            "x-enum-varnames": [
+                "AssetStatusPending",
+                "AssetStatusUploading",
+                "AssetStatusDownloading",
+                "AssetStatusProcessing",
+                "AssetStatusReady",
+                "AssetStatusFailed",
+                "AssetStatusDeleting",
+                "AssetStatusDeleted"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_media_model.AssetVariant": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "mimeType": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
+                },
+                "variant": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.VariantKind"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_media_model.VariantKind": {
+            "type": "string",
+            "enum": [
+                "provider_original",
+                "canonical"
+            ],
+            "x-enum-varnames": [
+                "VariantProviderOriginal",
+                "VariantCanonical"
+            ]
+        },
         "github_com_evolution-foundation_evolution-go_pkg_message_service.ChatPresenceStruct": {
             "type": "object",
             "properties": {
@@ -10350,6 +10622,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "mediaAssetId": {
                     "type": "string"
                 },
                 "mentionAll": {

@@ -188,6 +188,7 @@ func (r *sharedMediaAssetRepository) ClaimExpired(ctx context.Context, limit int
       AND NOT EXISTS (
           SELECT 1 FROM media_asset_references AS refs
           WHERE refs.instance_id = shared.instance_id AND refs.media_asset_id = shared.id
+            AND (refs.retention_until IS NULL OR refs.retention_until > ?)
       )
     ORDER BY shared.expires_at ASC, shared.id ASC
     FOR UPDATE OF shared SKIP LOCKED
@@ -197,7 +198,7 @@ UPDATE media_assets AS shared
 SET status = 'deleting', cleanup_claim_token = ?, cleanup_lease_until = ?, updated_at = ?
 FROM candidates
 WHERE shared.id = candidates.id
-RETURNING shared.*`, now, now, limit, claimToken, leaseUntil, now).Scan(&shared).Error; err != nil {
+RETURNING shared.*`, now, now, now, limit, claimToken, leaseUntil, now).Scan(&shared).Error; err != nil {
 			return err
 		}
 		result = make([]campaign_model.MediaAsset, len(shared))

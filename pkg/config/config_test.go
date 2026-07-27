@@ -35,7 +35,11 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, "")
 	t.Setenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED, "")
 	t.Setenv(config_env.WA_MEDIA_ASSETS_ENABLED, "")
+	t.Setenv(config_env.WA_CHAT_IMAGE_CONTENT_ENABLED, "")
 	t.Setenv(config_env.MEDIA_ASSET_BUCKET, "")
+	t.Setenv(config_env.MEDIA_ASSET_MAX_BYTES, "")
+	t.Setenv(config_env.MEDIA_ASSET_MAX_PIXELS, "")
+	t.Setenv(config_env.MEDIA_ASSET_UNBOUND_TTL, "")
 	t.Setenv(config_env.CAMPAIGN_MEDIA_BUCKET, "")
 	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_BYTES, "")
 	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_PIXELS, "")
@@ -101,8 +105,11 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.CampaignImageContentEnabled || config.CampaignMediaBucket != "omniwa-campaign-media" || config.CampaignMediaMaxBytes != 8*1024*1024 || config.CampaignMediaMaxPixels != 16_000_000 || config.CampaignMediaUnboundTTL != 24*time.Hour {
 		t.Fatalf("campaign media defaults are invalid: enabled=%t bucket=%q bytes=%d pixels=%d ttl=%v", config.CampaignImageContentEnabled, config.CampaignMediaBucket, config.CampaignMediaMaxBytes, config.CampaignMediaMaxPixels, config.CampaignMediaUnboundTTL)
 	}
-	if config.MediaAssetsEnabled || config.MediaAssetBucket != "omniwa-media-assets" {
-		t.Fatalf("media asset defaults are invalid: enabled=%t bucket=%q", config.MediaAssetsEnabled, config.MediaAssetBucket)
+	if config.MediaAssetsEnabled || config.MediaAssetBucket != "omniwa-media-assets" || config.MediaAssetMaxBytes != 8*1024*1024 || config.MediaAssetMaxPixels != 16_000_000 || config.MediaAssetUnboundTTL != 24*time.Hour {
+		t.Fatalf("media asset defaults are invalid: enabled=%t bucket=%q bytes=%d pixels=%d ttl=%v", config.MediaAssetsEnabled, config.MediaAssetBucket, config.MediaAssetMaxBytes, config.MediaAssetMaxPixels, config.MediaAssetUnboundTTL)
+	}
+	if config.ChatImageContentEnabled {
+		t.Fatal("expected chat image content to be disabled by default")
 	}
 	if config.RemoteMedia.Policy != "public_only" || config.RemoteMedia.Timeout != 15*time.Second || config.RemoteMedia.MaxBytes != 32*1024*1024 || len(config.RemoteMedia.AllowedHosts) != 0 {
 		t.Fatalf("remote media defaults = %+v", config.RemoteMedia)
@@ -140,7 +147,11 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, "12")
 	t.Setenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED, "true")
 	t.Setenv(config_env.WA_MEDIA_ASSETS_ENABLED, "true")
+	t.Setenv(config_env.WA_CHAT_IMAGE_CONTENT_ENABLED, "true")
 	t.Setenv(config_env.MEDIA_ASSET_BUCKET, "private-media-assets")
+	t.Setenv(config_env.MEDIA_ASSET_MAX_BYTES, "3145728")
+	t.Setenv(config_env.MEDIA_ASSET_MAX_PIXELS, "9000000")
+	t.Setenv(config_env.MEDIA_ASSET_UNBOUND_TTL, "6h")
 	t.Setenv(config_env.CAMPAIGN_MEDIA_BUCKET, "private-campaign-images")
 	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_BYTES, "4194304")
 	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_PIXELS, "12000000")
@@ -206,8 +217,11 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	if !config.CampaignImageContentEnabled || config.CampaignMediaBucket != "private-campaign-images" || config.CampaignMediaMaxBytes != 4*1024*1024 || config.CampaignMediaMaxPixels != 12_000_000 || config.CampaignMediaUnboundTTL != 12*time.Hour {
 		t.Fatalf("campaign media overrides are invalid")
 	}
-	if !config.MediaAssetsEnabled || config.MediaAssetBucket != "private-media-assets" {
-		t.Fatalf("media asset overrides are invalid: enabled=%t bucket=%q", config.MediaAssetsEnabled, config.MediaAssetBucket)
+	if !config.MediaAssetsEnabled || config.MediaAssetBucket != "private-media-assets" || config.MediaAssetMaxBytes != 3*1024*1024 || config.MediaAssetMaxPixels != 9_000_000 || config.MediaAssetUnboundTTL != 6*time.Hour {
+		t.Fatalf("media asset overrides are invalid: enabled=%t bucket=%q bytes=%d pixels=%d ttl=%v", config.MediaAssetsEnabled, config.MediaAssetBucket, config.MediaAssetMaxBytes, config.MediaAssetMaxPixels, config.MediaAssetUnboundTTL)
+	}
+	if !config.ChatImageContentEnabled {
+		t.Fatal("expected chat image content override to be enabled")
 	}
 	if len(config.InstanceTokenHMACKey) != 32 || config.InstanceTokenHMACKeyVersion != 7 || config.InstanceTokenBackfillBatch != 25 || config.InstanceTokenBackfillMaxBatches != 4 {
 		t.Fatalf("instance token digest overrides are invalid")

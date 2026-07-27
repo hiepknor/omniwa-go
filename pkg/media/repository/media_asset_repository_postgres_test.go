@@ -109,12 +109,14 @@ func TestPostgresMediaAssetLifecycleIsInstanceScopedAndCleanupFenced(t *testing.
 	if err != nil || len(claimed) != 0 {
 		t.Fatalf("referenced cleanup claim = %d, err=%v", len(claimed), err)
 	}
-	if err := repository.RemoveReference(ctx, instance.Id, assetID, media_model.ReferenceOwnerMessage, "message-1"); err != nil {
+	if err := db.Model(&media_model.AssetReference{}).
+		Where("instance_id = ? AND media_asset_id = ? AND owner_type = ? AND owner_id = ?", instance.Id, assetID, media_model.ReferenceOwnerMessage, "message-1").
+		Update("retention_until", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
 	claimed, err = repository.ClaimExpired(ctx, 10, time.Minute)
 	if err != nil || len(claimed) != 1 || claimed[0].ID != assetID || claimed[0].CleanupClaimToken == nil {
-		t.Fatalf("unreferenced cleanup claim = %+v, err=%v", claimed, err)
+		t.Fatalf("expired-reference cleanup claim = %+v, err=%v", claimed, err)
 	}
 	if err := repository.AddReference(ctx, media_model.AssetReference{
 		InstanceID: instance.Id, MediaAssetID: assetID, OwnerType: media_model.ReferenceOwnerCampaign, OwnerID: uuid.NewString(),
@@ -129,6 +131,10 @@ func TestPostgresMediaAssetLifecycleIsInstanceScopedAndCleanupFenced(t *testing.
 	}
 	if err := repository.CompleteCleanup(ctx, &claimed[0]); err != nil {
 		t.Fatal(err)
+	}
+	var references int64
+	if err := db.Model(&media_model.AssetReference{}).Where("media_asset_id = ?", assetID).Count(&references).Error; err != nil || references != 0 {
+		t.Fatalf("expired references after cleanup = %d, err=%v", references, err)
 	}
 	if _, err := repository.Get(ctx, instance.Id, assetID); !errors.Is(err, ErrAssetNotFound) {
 		t.Fatalf("deleted asset read error = %v", err)

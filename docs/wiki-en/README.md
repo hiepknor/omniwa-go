@@ -39,7 +39,7 @@ OmniWA GO HTTP API (a WhatsApp API built on [whatsmeow](https://github.com/tulir
 
 The server exposes REST endpoints grouped by resource (`/instance`, `/send`,
 `/message`, `/chat`, `/group`, `/community`, `/newsletter`, `/label`, `/user`,
-`/call`, `/polls`, `/group-lists`, `/campaigns`, `/campaign-media`). Every call carries an `apikey` HTTP header. You
+`/call`, `/polls`, `/group-lists`, `/campaigns`, `/campaign-media`, `/media-assets`). Every call carries an `apikey` HTTP header. You
 first create an **instance** (one connected WhatsApp account) using the global admin key, then
 use that instance's own token as the `apikey` for all messaging routes. Realtime
 updates (incoming messages, connection state, QR refresh, …) arrive over a

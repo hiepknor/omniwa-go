@@ -15,6 +15,7 @@ import (
 	campaign_service "github.com/evolution-foundation/evolution-go/pkg/campaign/service"
 	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
 	group_list_service "github.com/evolution-foundation/evolution-go/pkg/groupList/service"
+	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
 )
 
 // SuccessResponse is the standard success envelope returned by most endpoints:
@@ -76,6 +77,11 @@ type CampaignAuditListResponse struct {
 type CampaignMediaAssetResponse struct {
 	Message string                    `json:"message" example:"success"`
 	Data    campaign_model.MediaAsset `json:"data"`
+}
+
+type MediaAssetResponse struct {
+	Message string            `json:"message" example:"success"`
+	Data    media_model.Asset `json:"data"`
 }
 
 type GroupListDetailResponse struct {
