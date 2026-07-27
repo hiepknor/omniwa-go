@@ -70,6 +70,7 @@ type Config struct {
 	QrcodeMaxCount                  int
 	CheckUserExists                 bool
 	LicenseGateEnabled              bool
+	GroupListsEnabled               bool
 	WAInfoRatePerSecond             float64
 	WAInfoBurst                     int
 	WAInfoMaxWait                   time.Duration
@@ -387,6 +388,7 @@ func Load() *Config {
 	// LICENSE_GATE_ENABLED=false to run without the license activation gate and
 	// the associated remote heartbeat.
 	licenseGateEnabled := os.Getenv(config_env.LICENSE_GATE_ENABLED) != "false"
+	groupListsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LISTS_ENABLED)), "true")
 
 	waInfoRateValue := os.Getenv(config_env.WA_INFO_RATE)
 	if waInfoRateValue == "" {
@@ -658,6 +660,7 @@ func Load() *Config {
 		QrcodeMaxCount:       qrMaxCount,
 		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
 		LicenseGateEnabled:   licenseGateEnabled,
+		GroupListsEnabled:    groupListsEnabled,
 		WAInfoRatePerSecond:  waInfoRatePerSecond,
 		WAInfoBurst:          waInfoBurst,
 		WAInfoMaxWait:        waInfoMaxWait,

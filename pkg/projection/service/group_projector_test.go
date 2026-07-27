@@ -12,10 +12,11 @@ import (
 )
 
 type captureGroupSnapshots struct {
-	group        *projection_model.Group
-	participants []projection_model.GroupParticipant
-	patch        *projection_repository.GroupPatch
-	tombstoned   bool
+	group          *projection_model.Group
+	participants   []projection_model.GroupParticipant
+	patch          *projection_repository.GroupPatch
+	tombstoned     bool
+	tombstoneCause projection_model.GroupTombstoneCause
 }
 
 func (c *captureGroupSnapshots) ApplyPatch(_ context.Context, patch projection_repository.GroupPatch) (bool, error) {
@@ -23,9 +24,28 @@ func (c *captureGroupSnapshots) ApplyPatch(_ context.Context, patch projection_r
 	return true, nil
 }
 
-func (c *captureGroupSnapshots) Tombstone(context.Context, string, string, string, time.Time) (bool, error) {
+func (c *captureGroupSnapshots) Tombstone(_ context.Context, _, _, _ string, _ time.Time, cause projection_model.GroupTombstoneCause) (bool, error) {
 	c.tombstoned = true
+	c.tombstoneCause = cause
 	return true, nil
+}
+
+func TestGroupProjectorMarksExplicitProviderDeleteAsDissolved(t *testing.T) {
+	raw := &events.GroupInfo{
+		JID: types.NewJID("group", types.GroupServer), Timestamp: time.Unix(700, 0),
+		Delete: &types.GroupDelete{Deleted: true, DeleteReason: "owner_delete"},
+	}
+	event, _, err := NormalizeGroupEvent("instance-a", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := &captureGroupSnapshots{}
+	if err := NewGroupProjector(groups, &captureProjectionState{}).Handle(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if !groups.tombstoned || groups.tombstoneCause != projection_model.GroupTombstoneDissolved {
+		t.Fatalf("delete projection = tombstoned:%t cause:%q", groups.tombstoned, groups.tombstoneCause)
+	}
 }
 
 func (c *captureGroupSnapshots) ApplySnapshot(_ context.Context, group *projection_model.Group, participants []projection_model.GroupParticipant) (bool, error) {

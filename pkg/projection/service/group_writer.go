@@ -15,7 +15,7 @@ import (
 type groupWriteRepository interface {
 	ApplySnapshot(context.Context, *projection_model.Group, []projection_model.GroupParticipant) (bool, error)
 	ApplyPatch(context.Context, projection_repository.GroupPatch) (bool, error)
-	Tombstone(context.Context, string, string, string, time.Time) (bool, error)
+	Tombstone(context.Context, string, string, string, time.Time, projection_model.GroupTombstoneCause) (bool, error)
 }
 
 type groupWriteState interface {
@@ -139,7 +139,7 @@ func (w *GroupWriter) Tombstone(ctx context.Context, instanceID, groupID string)
 		return errors.New("group identity is required")
 	}
 	version := w.version()
-	if _, err := w.groups.Tombstone(ctx, instanceID, groupID, version.key, version.at); err != nil {
+	if _, err := w.groups.Tombstone(ctx, instanceID, groupID, version.key, version.at, projection_model.GroupTombstoneAccessLost); err != nil {
 		return err
 	}
 	return w.record(instanceID, version.at)

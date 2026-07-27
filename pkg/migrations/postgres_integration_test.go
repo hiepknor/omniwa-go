@@ -44,6 +44,22 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err := migrations.Run(db); err != nil {
 		t.Fatalf("second migration run failed: %v", err)
 	}
+	concurrentMigrations := make(chan error, 4)
+	var migrationWait sync.WaitGroup
+	for range 4 {
+		migrationWait.Add(1)
+		go func() {
+			defer migrationWait.Done()
+			concurrentMigrations <- migrations.Run(db)
+		}()
+	}
+	migrationWait.Wait()
+	close(concurrentMigrations)
+	for migrationErr := range concurrentMigrations {
+		if migrationErr != nil {
+			t.Fatalf("concurrent migration run failed: %v", migrationErr)
+		}
+	}
 	// The integration test reconnects and intentionally exercises durable rows.
 	// Remove only artifacts from prior interrupted/repeated runs before asserting
 	// global claim behavior.
@@ -529,16 +545,20 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || len(storedParticipants) != 1 || storedParticipants[0].ParticipantID != "user-b@s.whatsapp.net" {
 		t.Fatalf("participants after replacement = %#v, %v", storedParticipants, err)
 	}
-	applied, err = groupRepository.Tombstone(context.Background(), instance.Id, "group@g.us", "delete-550", time.Unix(550, 0))
+	applied, err = groupRepository.Tombstone(context.Background(), instance.Id, "group@g.us", "delete-550", time.Unix(550, 0), projection_model.GroupTombstoneAccessLost)
 	if err != nil || applied {
 		t.Fatalf("stale tombstone = %v, %v", applied, err)
 	}
-	applied, err = groupRepository.Tombstone(context.Background(), instance.Id, "group@g.us", "delete-700", time.Unix(700, 0))
+	applied, err = groupRepository.Tombstone(context.Background(), instance.Id, "group@g.us", "delete-700", time.Unix(700, 0), projection_model.GroupTombstoneDissolved)
 	if err != nil || !applied {
 		t.Fatalf("new tombstone = %v, %v", applied, err)
 	}
 	if _, _, err := groupRepository.Get(context.Background(), instance.Id, "group@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("tombstoned group remained readable: %v", err)
+	}
+	eligibilityRecords, err := groupRepository.GetForEligibility(context.Background(), instance.Id, []string{"group@g.us"})
+	if err != nil || len(eligibilityRecords) != 1 || eligibilityRecords[0].Group.TombstoneCause == nil || *eligibilityRecords[0].Group.TombstoneCause != projection_model.GroupTombstoneDissolved {
+		t.Fatalf("tombstone eligibility record = %#v, %v", eligibilityRecords, err)
 	}
 	announce := true
 	applied, err = groupRepository.ApplyPatch(context.Background(), projection_repository.GroupPatch{
@@ -547,6 +567,10 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	})
 	if err != nil || !applied {
 		t.Fatalf("newer group patch = %v, %v", applied, err)
+	}
+	eligibilityRecords, err = groupRepository.GetForEligibility(context.Background(), instance.Id, []string{"group@g.us"})
+	if err != nil || len(eligibilityRecords) != 1 || eligibilityRecords[0].Group.TombstonedAt != nil || eligibilityRecords[0].Group.TombstoneCause != nil {
+		t.Fatalf("revived eligibility record = %#v, %v", eligibilityRecords, err)
 	}
 	lateName := "Late valid name"
 	applied, err = groupRepository.ApplyPatch(context.Background(), projection_repository.GroupPatch{
@@ -783,6 +807,10 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	}
 	if _, _, err := groupRepository.Get(context.Background(), instance.Id, "worker@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("missing group was not tombstoned: %v", err)
+	}
+	missingRecords, err := groupRepository.GetForEligibility(context.Background(), instance.Id, []string{"worker@g.us"})
+	if err != nil || len(missingRecords) != 1 || missingRecords[0].Group.TombstoneCause == nil || *missingRecords[0].Group.TombstoneCause != projection_model.GroupTombstoneAccessLost {
+		t.Fatalf("reconciliation tombstone cause = %#v, %v", missingRecords, err)
 	}
 	authoritativeGroup, authoritativeParticipants, err := groupRepository.Get(context.Background(), instance.Id, "authoritative@g.us")
 	if err != nil || authoritativeGroup.Name == nil || *authoritativeGroup.Name != "Authoritative group" || len(authoritativeParticipants) != 1 || authoritativeParticipants[0].Role != projection_model.ParticipantRoleAdmin {

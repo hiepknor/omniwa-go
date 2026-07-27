@@ -15,7 +15,7 @@ const groupsProjectionSchemaVersion int64 = GroupsProjectionSchemaVersion
 type groupSnapshotRepository interface {
 	ApplySnapshot(context.Context, *projection_model.Group, []projection_model.GroupParticipant) (bool, error)
 	ApplyPatch(context.Context, projection_repository.GroupPatch) (bool, error)
-	Tombstone(context.Context, string, string, string, time.Time) (bool, error)
+	Tombstone(context.Context, string, string, string, time.Time, projection_model.GroupTombstoneCause) (bool, error)
 }
 
 type projectionEventState interface {
@@ -52,7 +52,7 @@ func (p *GroupProjector) Handle(ctx context.Context, event *projection_model.Eve
 			return err
 		}
 	} else if payload.Deleted != nil && payload.Deleted.Deleted {
-		if _, err := p.groups.Tombstone(ctx, event.InstanceID, payload.GroupID, event.EventKey, event.OccurredAt); err != nil {
+		if _, err := p.groups.Tombstone(ctx, event.InstanceID, payload.GroupID, event.EventKey, event.OccurredAt, projection_model.GroupTombstoneDissolved); err != nil {
 			return err
 		}
 	} else {

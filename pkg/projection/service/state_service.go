@@ -16,6 +16,7 @@ const (
 	CapabilityOutboundRateLimit     = "outbound_rate_limit"
 	CapabilityCampaignOrchestration = "campaign_orchestration"
 	CapabilityFailureOperations     = "projection_failure_operations"
+	CapabilityGroupLists            = "group_lists"
 )
 
 var resourceCapabilities = map[string]string{
@@ -76,10 +77,22 @@ type ProjectionResourceHealth struct {
 }
 
 type stateService struct {
-	repository projection_repository.StateRepository
-	work       projection_repository.WorkHealthRepository
-	policy     ProjectionHealthPolicy
-	now        func() time.Time
+	repository                projection_repository.StateRepository
+	work                      projection_repository.WorkHealthRepository
+	policy                    ProjectionHealthPolicy
+	extraResourceCapabilities map[string][]string
+	now                       func() time.Time
+}
+
+type StateServiceOption func(*stateService)
+
+func WithResourceCapability(resource, capability string) StateServiceOption {
+	return func(service *stateService) {
+		if resource == "" || capability == "" {
+			return
+		}
+		service.extraResourceCapabilities[resource] = append(service.extraResourceCapabilities[resource], capability)
+	}
 }
 
 type ProjectionHealthPolicy struct {
@@ -89,16 +102,24 @@ type ProjectionHealthPolicy struct {
 
 const defaultProjectionWorkLagThreshold = 2 * time.Minute
 
-func NewStateService(repository projection_repository.StateRepository) StateService {
-	return &stateService{repository: repository, policy: ProjectionHealthPolicy{WorkLagThreshold: defaultProjectionWorkLagThreshold}, now: time.Now}
+func NewStateService(repository projection_repository.StateRepository, options ...StateServiceOption) StateService {
+	service := &stateService{repository: repository, policy: ProjectionHealthPolicy{WorkLagThreshold: defaultProjectionWorkLagThreshold}, extraResourceCapabilities: map[string][]string{}, now: time.Now}
+	for _, option := range options {
+		option(service)
+	}
+	return service
 }
 
-func NewStateServiceWithHealth(repository projection_repository.StateRepository, work projection_repository.WorkHealthRepository, policy ProjectionHealthPolicy) StateService {
+func NewStateServiceWithHealth(repository projection_repository.StateRepository, work projection_repository.WorkHealthRepository, policy ProjectionHealthPolicy, options ...StateServiceOption) StateService {
 	if policy.WorkLagThreshold <= 0 {
 		policy.WorkLagThreshold = defaultProjectionWorkLagThreshold
 	}
 	policy.MaxReconcileAge = copyDurationMap(policy.MaxReconcileAge)
-	return &stateService{repository: repository, work: work, policy: policy, now: time.Now}
+	service := &stateService{repository: repository, work: work, policy: policy, extraResourceCapabilities: map[string][]string{}, now: time.Now}
+	for _, option := range options {
+		option(service)
+	}
+	return service
 }
 
 func (s *stateService) Get(instanceID, resource string) (*projection_model.State, error) {
@@ -206,6 +227,7 @@ func (s *stateService) Capabilities(instanceID string) ([]string, error) {
 			if capability := resourceCapabilities[state.Resource]; capability != "" {
 				capabilities = append(capabilities, capability)
 			}
+			capabilities = append(capabilities, s.extraResourceCapabilities[state.Resource]...)
 		}
 	}
 	sort.Strings(capabilities)

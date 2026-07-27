@@ -53,6 +53,7 @@ are returned only to an admin-authenticated request.
 | `events_projection` | Use durable, retention-bound event history | `GET /events` |
 | `outbound_rate_limit` | Parse outbound pacing errors independently from information-query limits | Existing `/send/*` mutations |
 | `campaign_orchestration` | Use server-owned campaign state and recipient jobs | `/campaigns` and its control/history endpoints |
+| `group_lists` | Use server-owned, versioned group target lists and backend eligibility | `/group-lists` and its group/audit endpoints |
 | `projection_failure_operations` | Show admin projection-failure operations | `/server/projection-failures*` |
 | `instance_metadata_views` | Use credential-free instance list/detail contracts | `GET /instance/metadata`, `GET /instance/metadata/{instanceId}` |
 | `instance_token_rotation` | Offer compare-and-swap token rotation | `POST /instance/rotate-token/{instanceId}` |
