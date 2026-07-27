@@ -142,12 +142,12 @@ func TestCampaignCreateGatesDirectAndGroupContracts(t *testing.T) {
 	if _, err := service.Create(context.Background(), instanceID, groupInput); !errors.Is(err, ErrGroupCampaignTargetsDisabled) || repository.groupCalls != 0 {
 		t.Fatalf("disabled group create = %v calls=%d", err, repository.groupCalls)
 	}
-	if _, err := service.Create(context.Background(), instanceID, directInput); err != nil || repository.directCalls != 1 {
-		t.Fatalf("compatible direct create = %v calls=%d", err, repository.directCalls)
+	if _, err := service.Create(context.Background(), instanceID, directInput); !errors.Is(err, ErrDirectCampaignCreateDisabled) || repository.directCalls != 0 {
+		t.Fatalf("default direct create = %v calls=%d", err, repository.directCalls)
 	}
 
 	repository = &managementRepositoryStub{}
-	service = NewManagementService(repository, WithDirectCreateEnabled(false), WithGroupTargetsEnabled(true))
+	service = NewManagementService(repository, WithGroupTargetsEnabled(true))
 	if _, err := service.Create(context.Background(), instanceID, directInput); !errors.Is(err, ErrDirectCampaignCreateDisabled) || repository.directCalls != 0 {
 		t.Fatalf("disabled direct create = %v calls=%d", err, repository.directCalls)
 	}
@@ -157,6 +157,12 @@ func TestCampaignCreateGatesDirectAndGroupContracts(t *testing.T) {
 	}
 	if _, err := service.Create(context.Background(), instanceID, CreateCampaignInput{Name: "ambiguous", TextBody: "hello", Target: groupInput.Target, Recipients: directInput.Recipients}); !errors.Is(err, campaign_repository.ErrInvalidCampaignInput) {
 		t.Fatalf("ambiguous create error = %v", err)
+	}
+
+	repository = &managementRepositoryStub{}
+	service = NewManagementService(repository, WithDirectCreateEnabled(true))
+	if _, err := service.Create(context.Background(), instanceID, directInput); err != nil || repository.directCalls != 1 {
+		t.Fatalf("emergency direct create = %v calls=%d", err, repository.directCalls)
 	}
 }
 

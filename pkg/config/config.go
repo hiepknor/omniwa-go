@@ -415,7 +415,7 @@ func Load() *Config {
 	// the associated remote heartbeat.
 	licenseGateEnabled := os.Getenv(config_env.LICENSE_GATE_ENABLED) != "false"
 	groupListsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LISTS_ENABLED)), "true")
-	campaignDirectCreateEnabled := !strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED)), "false")
+	campaignDirectCreateEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED)), "true")
 	campaignGroupTargetsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_GROUP_TARGETS_ENABLED)), "true")
 	campaignImageContentEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED)), "true")
 	chatImageContentEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CHAT_IMAGE_CONTENT_ENABLED)), "true")

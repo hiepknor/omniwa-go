@@ -307,7 +307,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Creates a text or image campaign draft. Legacy top-level text remains readable for compatibility. Image campaigns require a Group List target and WA_CAMPAIGN_IMAGE_CONTENT_ENABLED.",
+                "description": "Creates a text or image campaign draft from one Group List snapshot. Legacy top-level text remains readable for compatibility. Image campaigns require WA_CAMPAIGN_IMAGE_CONTENT_ENABLED.",
                 "consumes": [
                     "application/json"
                 ],
@@ -11138,29 +11138,6 @@ const docTemplate = `{
                 }
             }
         },
-        "pkg_campaign_handler.CampaignRecipientConsent": {
-            "type": "object",
-            "required": [
-                "jid",
-                "optInEvidenceReference",
-                "optInSource",
-                "optedInAt"
-            ],
-            "properties": {
-                "jid": {
-                    "type": "string"
-                },
-                "optInEvidenceReference": {
-                    "type": "string"
-                },
-                "optInSource": {
-                    "type": "string"
-                },
-                "optedInAt": {
-                    "type": "string"
-                }
-            }
-        },
         "pkg_campaign_handler.CampaignTargetRequest": {
             "type": "object",
             "required": [
@@ -11191,12 +11168,6 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
-                },
-                "recipients": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/pkg_campaign_handler.CampaignRecipientConsent"
-                    }
                 },
                 "target": {
                     "$ref": "#/definitions/pkg_campaign_handler.CampaignTargetRequest"

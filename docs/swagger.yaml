@@ -2304,22 +2304,6 @@ definitions:
     required:
     - type
     type: object
-  pkg_campaign_handler.CampaignRecipientConsent:
-    properties:
-      jid:
-        type: string
-      optInEvidenceReference:
-        type: string
-      optInSource:
-        type: string
-      optedInAt:
-        type: string
-    required:
-    - jid
-    - optInEvidenceReference
-    - optInSource
-    - optedInAt
-    type: object
   pkg_campaign_handler.CampaignTargetRequest:
     properties:
       groupListId:
@@ -2339,10 +2323,6 @@ definitions:
         $ref: '#/definitions/pkg_campaign_handler.CampaignContentRequest'
       name:
         type: string
-      recipients:
-        items:
-          $ref: '#/definitions/pkg_campaign_handler.CampaignRecipientConsent'
-        type: array
       target:
         $ref: '#/definitions/pkg_campaign_handler.CampaignTargetRequest'
       text:
@@ -9159,9 +9139,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a text or image campaign draft. Legacy top-level text remains
-        readable for compatibility. Image campaigns require a Group List target and
-        WA_CAMPAIGN_IMAGE_CONTENT_ENABLED.
+      description: Creates a text or image campaign draft from one Group List snapshot.
+        Legacy top-level text remains readable for compatibility. Image campaigns
+        require WA_CAMPAIGN_IMAGE_CONTENT_ENABLED.
       parameters:
       - description: Campaign draft
         in: body
