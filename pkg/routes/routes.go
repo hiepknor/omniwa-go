@@ -13,6 +13,7 @@ import (
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
 	community_handler "github.com/evolution-foundation/evolution-go/pkg/community/handler"
 	group_handler "github.com/evolution-foundation/evolution-go/pkg/group/handler"
+	group_list_handler "github.com/evolution-foundation/evolution-go/pkg/groupList/handler"
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
 	label_handler "github.com/evolution-foundation/evolution-go/pkg/label/handler"
 	message_handler "github.com/evolution-foundation/evolution-go/pkg/message/handler"
@@ -33,6 +34,7 @@ type Routes struct {
 	messageHandler          message_handler.MessageHandler
 	chatHandler             chat_handler.ChatHandler
 	groupHandler            group_handler.GroupHandler
+	groupListHandler        group_list_handler.Handler
 	callHandler             call_handler.CallHandler
 	campaignHandler         campaign_handler.CampaignHandler
 	communityHandler        community_handler.CommunityHandler
@@ -73,6 +75,18 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	eng.POST("/server/projection-failures/replay", r.authMiddleware.AuthAdmin, r.serverHandler.ReplayProjectionFailure)
 	eng.POST("/server/projection-failures/discard", r.authMiddleware.AuthAdmin, r.serverHandler.DiscardProjectionFailure)
 	eng.GET("/events", r.authMiddleware.Auth, r.serverHandler.EventHistory)
+
+	if r.groupListHandler != nil {
+		routes := eng.Group("/group-lists")
+		routes.Use(r.authMiddleware.Auth)
+		routes.GET("", r.groupListHandler.List)
+		routes.POST("", r.groupListHandler.Create)
+		routes.GET("/:groupListId", r.groupListHandler.Get)
+		routes.GET("/:groupListId/groups", r.groupListHandler.Groups)
+		routes.PUT("/:groupListId", r.groupListHandler.Update)
+		routes.DELETE("/:groupListId", r.groupListHandler.Delete)
+		routes.GET("/:groupListId/audit", r.groupListHandler.Audit)
+	}
 
 	routes := eng.Group("/instance")
 	{
@@ -281,6 +295,7 @@ func NewRouter(
 	messageHandler message_handler.MessageHandler,
 	chatHandler chat_handler.ChatHandler,
 	groupHandler group_handler.GroupHandler,
+	groupListHandler group_list_handler.Handler,
 	callHandler call_handler.CallHandler,
 	campaignHandler campaign_handler.CampaignHandler,
 	communityHandler community_handler.CommunityHandler,
@@ -298,6 +313,7 @@ func NewRouter(
 		messageHandler:          messageHandler,
 		chatHandler:             chatHandler,
 		groupHandler:            groupHandler,
+		groupListHandler:        groupListHandler,
 		callHandler:             callHandler,
 		campaignHandler:         campaignHandler,
 		communityHandler:        communityHandler,

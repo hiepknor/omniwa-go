@@ -16,9 +16,10 @@ import (
 type GroupRepository interface {
 	ApplySnapshot(ctx context.Context, group *projection_model.Group, participants []projection_model.GroupParticipant) (bool, error)
 	ApplyPatch(ctx context.Context, patch GroupPatch) (bool, error)
-	Tombstone(ctx context.Context, instanceID, groupID, eventKey string, occurredAt time.Time) (bool, error)
+	Tombstone(ctx context.Context, instanceID, groupID, eventKey string, occurredAt time.Time, cause projection_model.GroupTombstoneCause) (bool, error)
 	TombstoneMissing(ctx context.Context, instanceID string, activeGroupIDs []string, eventKey string, occurredAt time.Time) (int, error)
 	Get(ctx context.Context, instanceID, groupID string) (*projection_model.Group, []projection_model.GroupParticipant, error)
+	GetForEligibility(ctx context.Context, instanceID string, groupIDs []string) ([]GroupRecord, error)
 	List(ctx context.Context, instanceID string) ([]GroupRecord, error)
 	Search(ctx context.Context, instanceID, term string, limit int, cursor *GroupCursor) (*GroupPage, error)
 	GetInviteLink(ctx context.Context, instanceID, groupID string) (*string, error)
@@ -64,7 +65,7 @@ func (r *groupRepository) TombstoneMissing(ctx context.Context, instanceID strin
 			Where("instance_id = ? AND group_id IN ?", instanceID, groupIDs).
 			Updates(map[string]any{
 				"source_occurred_at": occurredAt, "source_event_key": eventKey, "field_versions": fieldVersions,
-				"last_synced_at": now, "tombstoned_at": occurredAt, "updated_at": now,
+				"last_synced_at": now, "tombstoned_at": occurredAt, "tombstone_cause": projection_model.GroupTombstoneAccessLost, "updated_at": now,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -141,6 +142,7 @@ func (r *groupRepository) ApplySnapshot(ctx context.Context, group *projection_m
 	group.SourceOccurredAt = group.SourceOccurredAt.UTC()
 	group.LastSyncedAt = now
 	group.TombstonedAt = nil
+	group.TombstoneCause = nil
 	incoming := groupFieldVersion{OccurredAt: group.SourceOccurredAt, EventKey: group.SourceEventKey}
 	applied := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -191,6 +193,7 @@ func (r *groupRepository) ApplySnapshot(ctx context.Context, group *projection_m
 			updates["field_versions"] = encoded
 			updates["last_synced_at"] = now
 			updates["tombstoned_at"] = nil
+			updates["tombstone_cause"] = nil
 			updates["updated_at"] = now
 			if newerGroupVersion(incoming, groupFieldVersion{OccurredAt: stored.SourceOccurredAt, EventKey: stored.SourceEventKey}) {
 				updates["source_occurred_at"] = group.SourceOccurredAt
@@ -363,6 +366,7 @@ func (r *groupRepository) ApplyPatch(ctx context.Context, patch GroupPatch) (boo
 			updates["last_synced_at"] = now
 			updates["updated_at"] = now
 			updates["tombstoned_at"] = nil
+			updates["tombstone_cause"] = nil
 			if newerGroupVersion(incoming, groupFieldVersion{OccurredAt: stored.SourceOccurredAt, EventKey: stored.SourceEventKey}) {
 				updates["source_occurred_at"] = patch.OccurredAt
 				updates["source_event_key"] = patch.EventKey
@@ -420,6 +424,7 @@ func (r *groupRepository) ApplyPatch(ctx context.Context, patch GroupPatch) (boo
 			participantGroupUpdates["field_versions"] = encoded
 			if stored.TombstonedAt != nil {
 				participantGroupUpdates["tombstoned_at"] = nil
+				participantGroupUpdates["tombstone_cause"] = nil
 			}
 			if err := tx.Model(&projection_model.Group{}).
 				Where("instance_id = ? AND group_id = ?", patch.InstanceID, patch.GroupID).
@@ -435,15 +440,16 @@ func (r *groupRepository) ApplyPatch(ctx context.Context, patch GroupPatch) (boo
 	return applied, nil
 }
 
-func (r *groupRepository) Tombstone(ctx context.Context, instanceID, groupID, eventKey string, occurredAt time.Time) (bool, error) {
-	if instanceID == "" || groupID == "" || eventKey == "" || len(eventKey) > 255 || occurredAt.IsZero() {
+func (r *groupRepository) Tombstone(ctx context.Context, instanceID, groupID, eventKey string, occurredAt time.Time, cause projection_model.GroupTombstoneCause) (bool, error) {
+	if instanceID == "" || groupID == "" || eventKey == "" || len(eventKey) > 255 || occurredAt.IsZero() ||
+		(cause != projection_model.GroupTombstoneAccessLost && cause != projection_model.GroupTombstoneDissolved) {
 		return false, errors.New("group identity and occurrence time are required")
 	}
 	occurredAt = occurredAt.UTC()
 	now := r.now().UTC()
 	group := &projection_model.Group{
 		InstanceID: instanceID, GroupID: groupID, SourceOccurredAt: occurredAt, SourceEventKey: eventKey,
-		LastSyncedAt: now, TombstonedAt: &occurredAt,
+		LastSyncedAt: now, TombstonedAt: &occurredAt, TombstoneCause: &cause,
 	}
 	fieldVersions, err := encodeBaseGroupVersion(occurredAt, eventKey)
 	if err != nil {
@@ -452,7 +458,7 @@ func (r *groupRepository) Tombstone(ctx context.Context, instanceID, groupID, ev
 	group.FieldVersions = fieldVersions
 	applied := false
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Clauses(newerGroupConflict([]string{"source_occurred_at", "source_event_key", "field_versions", "last_synced_at", "tombstoned_at", "updated_at"})).Create(group)
+		result := tx.Clauses(newerGroupConflict([]string{"source_occurred_at", "source_event_key", "field_versions", "last_synced_at", "tombstoned_at", "tombstone_cause", "updated_at"})).Create(group)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -490,6 +496,18 @@ func (r *groupRepository) Get(ctx context.Context, instanceID, groupID string) (
 		return nil, nil, err
 	}
 	return &group, participants, nil
+}
+
+func (r *groupRepository) GetForEligibility(ctx context.Context, instanceID string, groupIDs []string) ([]GroupRecord, error) {
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" || len(groupIDs) == 0 || len(groupIDs) > 10_000 {
+		return nil, errors.New("bounded group eligibility identities are required")
+	}
+	var groups []projection_model.Group
+	if err := r.db.WithContext(ctx).Where("instance_id = ? AND group_id IN ?", instanceID, groupIDs).
+		Order("group_id ASC").Find(&groups).Error; err != nil {
+		return nil, err
+	}
+	return r.recordsWithParticipants(ctx, instanceID, groups)
 }
 
 func (r *groupRepository) List(ctx context.Context, instanceID string) ([]GroupRecord, error) {

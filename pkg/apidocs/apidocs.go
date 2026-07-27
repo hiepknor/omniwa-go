@@ -13,6 +13,8 @@ import (
 
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	campaign_service "github.com/evolution-foundation/evolution-go/pkg/campaign/service"
+	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
+	group_list_service "github.com/evolution-foundation/evolution-go/pkg/groupList/service"
 )
 
 // SuccessResponse is the standard success envelope returned by most endpoints:
@@ -69,6 +71,40 @@ type CampaignAuditListResponse struct {
 	Message string                      `json:"message" example:"success"`
 	Data    []campaign_model.AuditEvent `json:"data"`
 	Meta    ProjectionMeta              `json:"meta"`
+}
+
+type GroupListDetailResponse struct {
+	Message string                        `json:"message" example:"success"`
+	Data    group_list_repository.Summary `json:"data"`
+}
+
+type GroupListListResponse struct {
+	Message string                          `json:"message" example:"success"`
+	Data    []group_list_repository.Summary `json:"data"`
+	Meta    ProjectionMeta                  `json:"meta"`
+}
+
+type GroupListEntryListResponse struct {
+	Message string                         `json:"message" example:"success"`
+	Data    []group_list_service.EntryView `json:"data"`
+	Meta    ProjectionMeta                 `json:"meta"`
+}
+
+type GroupListAuditListResponse struct {
+	Message string                `json:"message" example:"success"`
+	Data    []GroupListAuditEvent `json:"data"`
+	Meta    ProjectionMeta        `json:"meta"`
+}
+
+type GroupListAuditEvent struct {
+	ID          string      `json:"id"`
+	GroupListID string      `json:"groupListId"`
+	EventType   string      `json:"eventType"`
+	ActorType   string      `json:"actorType"`
+	FromVersion *int64      `json:"fromVersion,omitempty"`
+	ToVersion   int64       `json:"toVersion"`
+	Metadata    interface{} `json:"metadata"`
+	OccurredAt  time.Time   `json:"occurredAt"`
 }
 
 type CapabilitiesData struct {

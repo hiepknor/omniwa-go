@@ -40,6 +40,9 @@ import (
 	websocket_producer "github.com/evolution-foundation/evolution-go/pkg/events/websocket"
 	group_handler "github.com/evolution-foundation/evolution-go/pkg/group/handler"
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
+	group_list_handler "github.com/evolution-foundation/evolution-go/pkg/groupList/handler"
+	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
+	group_list_service "github.com/evolution-foundation/evolution-go/pkg/groupList/service"
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_credential "github.com/evolution-foundation/evolution-go/pkg/instance/credential"
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
@@ -283,13 +286,25 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if config.GroupSyncInterval > 0 {
 		projectionHealthPolicy.MaxReconcileAge = map[string]time.Duration{"groups": 2 * config.GroupSyncInterval}
 	}
+	var projectionStateOptions []projection_service.StateServiceOption
+	if config.GroupListsEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupLists))
+	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(
 		projection_repository.NewStateRepository(db),
 		projection_repository.NewWorkHealthRepository(db),
 		projectionHealthPolicy,
+		projectionStateOptions...,
 	)
 	projectionEventService := projection_service.NewEventService(projection_repository.NewEventRepository(db), 30*time.Second, 5*time.Second)
 	groupProjectionRepository := projection_repository.NewGroupRepository(db)
+	var groupListHandler group_list_handler.Handler
+	if config.GroupListsEnabled {
+		groupListHandler = group_list_handler.New(group_list_service.NewManagementService(
+			group_list_repository.New(db),
+			group_list_service.NewEligibilityService(groupProjectionRepository, projectionStateService),
+		))
+	}
 	groupProjector := projection_service.NewGroupProjector(groupProjectionRepository, projectionStateService)
 	labelProjectionRepository := projection_repository.NewLabelProjectionRepository(db)
 	labelProjector := projection_service.NewLabelProjector(labelProjectionRepository, projectionStateService, projection_repository.NewReadinessRepository(db))
@@ -532,6 +547,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		message_handler.NewMessageHandler(messageService, chatMessageReader),
 		chat_handler.NewChatHandler(chatService, chatMessageReader),
 		group_handler.NewGroupHandler(groupService),
+		groupListHandler,
 		call_handler.NewCallHandler(callService),
 		campaign_handler.NewCampaignHandler(campaign_service.NewManagementService(campaignRepository)),
 		community_handler.NewCommunityHandler(communityService),

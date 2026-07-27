@@ -188,6 +188,40 @@ func containsCapability(capabilities []string, expected string) bool {
 	return false
 }
 
+func TestOptionalResourceCapabilityRequiresReadyCurrentProjection(t *testing.T) {
+	repository := newMemoryRepository()
+	service := NewStateService(repository, WithResourceCapability("groups", CapabilityGroupLists))
+	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "groups", SyncStatus: projection_model.SyncStatusStale, SchemaVersion: GroupsProjectionSchemaVersion,
+	}
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsCapability(capabilities, CapabilityGroupLists) {
+		t.Fatalf("feature capability advertised while projection was stale: %v", capabilities)
+	}
+	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "groups", SyncStatus: projection_model.SyncStatusReady, SchemaVersion: GroupsProjectionSchemaVersion,
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsCapability(capabilities, CapabilityGroupLists) {
+		t.Fatalf("feature capability missing for ready projection: %v", capabilities)
+	}
+
+	withoutFeature := NewStateService(repository)
+	capabilities, err = withoutFeature.Capabilities("instance-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsCapability(capabilities, CapabilityGroupLists) {
+		t.Fatalf("disabled feature capability advertised: %v", capabilities)
+	}
+}
+
 func TestProjectionHealthMetricsAreScopedAndTimestamped(t *testing.T) {
 	repository := newMemoryRepository()
 	now := time.Unix(1000, 0).UTC()

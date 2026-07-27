@@ -122,6 +122,68 @@ definitions:
         example: 0123456789abcdef0123456789abcdef
         type: string
     type: object
+  apidocs.GroupListAuditEvent:
+    properties:
+      actorType:
+        type: string
+      eventType:
+        type: string
+      fromVersion:
+        type: integer
+      groupListId:
+        type: string
+      id:
+        type: string
+      metadata: {}
+      occurredAt:
+        type: string
+      toVersion:
+        type: integer
+    type: object
+  apidocs.GroupListAuditListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/apidocs.GroupListAuditEvent'
+        type: array
+      message:
+        example: success
+        type: string
+      meta:
+        $ref: '#/definitions/apidocs.ProjectionMeta'
+    type: object
+  apidocs.GroupListDetailResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_repository.Summary'
+      message:
+        example: success
+        type: string
+    type: object
+  apidocs.GroupListEntryListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EntryView'
+        type: array
+      message:
+        example: success
+        type: string
+      meta:
+        $ref: '#/definitions/apidocs.ProjectionMeta'
+    type: object
+  apidocs.GroupListListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_repository.Summary'
+        type: array
+      message:
+        example: success
+        type: string
+      meta:
+        $ref: '#/definitions/apidocs.ProjectionMeta'
+    type: object
   apidocs.LabelItem:
     properties:
       id:
@@ -614,6 +676,46 @@ definitions:
         description: announcement, not_announcement, locked, unlocked
         type: string
       groupJid:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_groupList_repository.Summary:
+    properties:
+      authorizationSource:
+        type: string
+      authorizedAt:
+        type: string
+      createdAt:
+        type: string
+      description:
+        type: string
+      groupCount:
+        type: integer
+      id:
+        type: string
+      instanceId:
+        type: string
+      name:
+        type: string
+      updatedAt:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_groupList_service.EntryView:
+    properties:
+      canSend:
+        type: boolean
+      checkedAt:
+        type: string
+      currentName:
+        type: string
+      eligibility:
+        type: string
+      eligibilityReason:
+        type: string
+      groupJid:
+        type: string
+      snapshotName:
         type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_instance_credential.CredentialCoverage:
@@ -1936,6 +2038,44 @@ definitions:
         type: string
     required:
     - startsAt
+    type: object
+  pkg_groupList_handler.AuthorizationRequest:
+    properties:
+      authorizedAt:
+        format: date-time
+        type: string
+      evidenceReference:
+        type: string
+      source:
+        type: string
+    type: object
+  pkg_groupList_handler.CreateRequest:
+    properties:
+      authorization:
+        $ref: '#/definitions/pkg_groupList_handler.AuthorizationRequest'
+      description:
+        type: string
+      groupJids:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+    type: object
+  pkg_groupList_handler.UpdateRequest:
+    properties:
+      authorization:
+        $ref: '#/definitions/pkg_groupList_handler.AuthorizationRequest'
+      description:
+        type: string
+      expectedVersion:
+        type: integer
+      groupJids:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
     type: object
   pkg_instance_handler.InstanceMetadataView:
     properties:
@@ -9387,6 +9527,267 @@ paths:
       summary: List durable event history
       tags:
       - Events
+  /group-lists:
+    get:
+      parameters:
+      - description: Normalized name prefix
+        in: query
+        maxLength: 128
+        name: search
+        type: string
+      - default: 50
+        description: Page size (1-100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Opaque instance- and search-scoped cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.GroupListListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List Group Lists
+      tags:
+      - Group Lists
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group List
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pkg_groupList_handler.CreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/apidocs.GroupListDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create Group List
+      tags:
+      - Group Lists
+  /group-lists/{groupListId}:
+    delete:
+      parameters:
+      - description: Group List UUID
+        in: path
+        name: groupListId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete Group List
+      tags:
+      - Group Lists
+    get:
+      parameters:
+      - description: Group List UUID
+        in: path
+        name: groupListId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.GroupListDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get Group List
+      tags:
+      - Group Lists
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group List UUID
+        in: path
+        name: groupListId
+        required: true
+        type: string
+      - description: Replacement Group List and expected version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pkg_groupList_handler.UpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.GroupListDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update Group List
+      tags:
+      - Group Lists
+  /group-lists/{groupListId}/audit:
+    get:
+      parameters:
+      - description: Group List UUID
+        in: path
+        name: groupListId
+        required: true
+        type: string
+      - default: 50
+        description: Page size (1-100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Opaque list-scoped cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.GroupListAuditListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get Group List audit history
+      tags:
+      - Group Lists
+  /group-lists/{groupListId}/groups:
+    get:
+      parameters:
+      - description: Group List UUID
+        in: path
+        name: groupListId
+        required: true
+        type: string
+      - default: 50
+        description: Page size (1-100)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Opaque list-scoped cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.GroupListEntryListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List Group List groups
+      tags:
+      - Group Lists
   /group/create:
     post:
       consumes:

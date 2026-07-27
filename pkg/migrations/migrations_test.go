@@ -231,3 +231,26 @@ func TestInstanceTokenFallbackMigrationIsBoundedAndSecretFree(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupListsMigrationIsInstanceScopedAuditedAndGroupOnly(t *testing.T) {
+	migration := registeredMigration(t, 21)
+	if migration.Name != "create_group_lists" {
+		t.Fatalf("group lists migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"ADD COLUMN tombstone_cause", "projected_groups_tombstone_cause_check",
+		"CREATE TABLE group_lists", "CREATE TABLE group_list_entries", "CREATE TABLE group_list_audit_events",
+		"UNIQUE (id, instance_id)", "group_list_entries_list_fk", "group_list_audit_list_fk",
+		"group_lists_active_name_unique_idx", "WHERE deleted_at IS NULL",
+		"group_list_entries_jid_check", "@g[.]us", "authorization_reference_hash", "actor_reference_hash",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("group lists migration does not contain %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"evidence_reference VARCHAR", "authorization_reference TEXT", "actor_reference VARCHAR"} {
+		if strings.Contains(migration.SQL, forbidden) {
+			t.Fatalf("group lists migration stores raw authorization material: %q", forbidden)
+		}
+	}
+}

@@ -682,6 +682,86 @@ ON instance_token_rotation_audit (instance_id, occurred_at DESC, id DESC);`,
 CREATE INDEX instance_token_fallback_usage_last_used_idx
 ON instance_token_fallback_usage (last_used_at DESC, instance_id);`,
 	},
+	{
+		Version: 21,
+		Name:    "create_group_lists",
+		SQL: `ALTER TABLE projected_groups
+    ADD COLUMN tombstone_cause VARCHAR(32) NULL;
+
+UPDATE projected_groups
+SET tombstone_cause = 'group_access_lost'
+WHERE tombstoned_at IS NOT NULL;
+
+ALTER TABLE projected_groups
+    ADD CONSTRAINT projected_groups_tombstone_cause_check
+    CHECK (
+        (tombstoned_at IS NULL AND tombstone_cause IS NULL)
+        OR (tombstoned_at IS NOT NULL AND tombstone_cause IN ('group_access_lost', 'group_dissolved'))
+    );
+
+CREATE TABLE group_lists (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    normalized_name VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+    version BIGINT NOT NULL DEFAULT 1,
+    authorization_source VARCHAR(64) NOT NULL,
+    authorization_reference_hash VARCHAR(64) NOT NULL,
+    authorized_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    deleted_at TIMESTAMPTZ NULL,
+    CONSTRAINT group_lists_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT group_lists_instance_identity_unique UNIQUE (id, instance_id),
+    CONSTRAINT group_lists_name_check CHECK (char_length(name) BETWEEN 1 AND 255),
+    CONSTRAINT group_lists_normalized_name_check CHECK (char_length(normalized_name) BETWEEN 1 AND 255),
+    CONSTRAINT group_lists_description_check CHECK (description IS NULL OR char_length(description) <= 2000),
+    CONSTRAINT group_lists_version_check CHECK (version >= 1),
+    CONSTRAINT group_lists_authorization_source_check CHECK (char_length(authorization_source) BETWEEN 1 AND 64),
+    CONSTRAINT group_lists_authorization_hash_check CHECK (authorization_reference_hash ~ '^[0-9a-f]{64}$')
+);
+CREATE UNIQUE INDEX group_lists_active_name_unique_idx
+ON group_lists (instance_id, normalized_name)
+WHERE deleted_at IS NULL;
+CREATE INDEX group_lists_page_idx
+ON group_lists (instance_id, normalized_name, id)
+WHERE deleted_at IS NULL;
+
+CREATE TABLE group_list_entries (
+    group_list_id UUID NOT NULL,
+    instance_id UUID NOT NULL,
+    group_jid VARCHAR(255) NOT NULL,
+    group_name_snapshot VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (group_list_id, group_jid),
+    CONSTRAINT group_list_entries_list_fk FOREIGN KEY (group_list_id, instance_id) REFERENCES group_lists(id, instance_id) ON DELETE CASCADE,
+    CONSTRAINT group_list_entries_jid_check CHECK (group_jid ~ '^[^@]+@g[.]us$'),
+    CONSTRAINT group_list_entries_name_check CHECK (char_length(group_name_snapshot) <= 255)
+);
+CREATE INDEX group_list_entries_page_idx
+ON group_list_entries (instance_id, group_list_id, group_jid);
+
+CREATE TABLE group_list_audit_events (
+    id UUID PRIMARY KEY,
+    group_list_id UUID NOT NULL,
+    instance_id UUID NOT NULL,
+    event_type VARCHAR(32) NOT NULL,
+    actor_type VARCHAR(32) NOT NULL,
+    actor_reference_hash VARCHAR(64) NOT NULL,
+    from_version BIGINT NULL,
+    to_version BIGINT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT group_list_audit_list_fk FOREIGN KEY (group_list_id, instance_id) REFERENCES group_lists(id, instance_id) ON DELETE CASCADE,
+    CONSTRAINT group_list_audit_event_type_check CHECK (event_type IN ('created', 'updated', 'deleted')),
+    CONSTRAINT group_list_audit_actor_type_check CHECK (actor_type IN ('instance', 'system')),
+    CONSTRAINT group_list_audit_actor_hash_check CHECK (actor_reference_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT group_list_audit_version_check CHECK (to_version >= 1 AND (from_version IS NULL OR to_version = from_version + 1))
+);
+CREATE INDEX group_list_audit_history_idx
+ON group_list_audit_events (instance_id, group_list_id, occurred_at ASC, id ASC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

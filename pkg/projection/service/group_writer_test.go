@@ -12,10 +12,11 @@ import (
 )
 
 type groupWriterRepositoryStub struct {
-	group        *projection_model.Group
-	participants []projection_model.GroupParticipant
-	patches      []projection_repository.GroupPatch
-	tombstoneID  string
+	group          *projection_model.Group
+	participants   []projection_model.GroupParticipant
+	patches        []projection_repository.GroupPatch
+	tombstoneID    string
+	tombstoneCause projection_model.GroupTombstoneCause
 }
 
 func (s *groupWriterRepositoryStub) ApplySnapshot(_ context.Context, group *projection_model.Group, participants []projection_model.GroupParticipant) (bool, error) {
@@ -28,8 +29,9 @@ func (s *groupWriterRepositoryStub) ApplyPatch(_ context.Context, patch projecti
 	return true, nil
 }
 
-func (s *groupWriterRepositoryStub) Tombstone(_ context.Context, _, groupID, _ string, _ time.Time) (bool, error) {
+func (s *groupWriterRepositoryStub) Tombstone(_ context.Context, _, groupID, _ string, _ time.Time, cause projection_model.GroupTombstoneCause) (bool, error) {
 	s.tombstoneID = groupID
+	s.tombstoneCause = cause
 	return true, nil
 }
 
@@ -95,7 +97,7 @@ func TestGroupWriterWritesMutationPatchesAndTombstone(t *testing.T) {
 		repository.patches[1].TopicDeleted == nil || !*repository.patches[1].TopicDeleted ||
 		repository.patches[2].MemberAddMode == nil || *repository.patches[2].MemberAddMode != "all_member_add" ||
 		len(repository.patches[3].ParticipantChanges) != 1 || repository.patches[3].ParticipantChanges[0].Role != projection_model.ParticipantRoleAdmin ||
-		repository.patches[4].InviteLink == nil || repository.tombstoneID != "group@g.us" || state.recorded != 6 {
+		repository.patches[4].InviteLink == nil || repository.tombstoneID != "group@g.us" || repository.tombstoneCause != projection_model.GroupTombstoneAccessLost || state.recorded != 6 {
 		t.Fatalf("write-through patches = %#v tombstone=%q state=%#v", repository.patches, repository.tombstoneID, state)
 	}
 	if err := writer.MarkStale("instance-a"); err != nil || state.stale != 1 {
