@@ -2,6 +2,8 @@ package projection_service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -17,13 +19,28 @@ type contactReadRepositoryStub struct {
 	searchTerm   string
 	searchLimit  int
 	searchCursor *projection_repository.ContactCursor
+	getID        string
+	getAlias     string
 }
 
 func (s *contactReadRepositoryStub) List(context.Context, string) ([]projection_model.Contact, error) {
 	return s.contacts, nil
 }
 
-func (s *contactReadRepositoryStub) GetByIdentity(context.Context, string, projection_model.ContactIdentityKind, string) (*projection_model.Contact, error) {
+func (s *contactReadRepositoryStub) Count(context.Context, string) (int64, error) {
+	return int64(len(s.contacts)), nil
+}
+
+func (s *contactReadRepositoryStub) Get(_ context.Context, _ string, contactID string) (*projection_model.Contact, error) {
+	s.getID = contactID
+	if len(s.contacts) == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &s.contacts[0], nil
+}
+
+func (s *contactReadRepositoryStub) GetByIdentity(_ context.Context, _ string, _ projection_model.ContactIdentityKind, value string) (*projection_model.Contact, error) {
+	s.getAlias = value
 	if len(s.contacts) == 0 {
 		return nil, gorm.ErrRecordNotFound
 	}
@@ -35,7 +52,7 @@ func (s *contactReadRepositoryStub) Search(_ context.Context, _ string, term str
 	if s.searchPage != nil {
 		return s.searchPage, nil
 	}
-	return &projection_repository.ContactPage{Items: s.contacts}, nil
+	return &projection_repository.ContactPage{Items: s.contacts, Total: int64(len(s.contacts))}, nil
 }
 
 func TestContactReaderDistinguishesReadyEmptyFromNotReady(t *testing.T) {
@@ -51,7 +68,7 @@ func TestContactReaderDistinguishesReadyEmptyFromNotReady(t *testing.T) {
 		SchemaVersion: ContactsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
 	}
 	contacts, meta, err := reader.List(context.Background(), "instance-a")
-	if err != nil || contacts == nil || len(contacts) != 0 || meta == nil || meta.Source != "projection" || meta.LastSyncedAt == nil || !meta.LastSyncedAt.Equal(reconciledAt) {
+	if err != nil || contacts == nil || len(contacts) != 0 || meta == nil || meta.Source != "projection" || meta.Total == nil || *meta.Total != 0 || meta.LastSyncedAt == nil || !meta.LastSyncedAt.Equal(reconciledAt) {
 		t.Fatalf("ready empty List() = %#v, %#v, %v", contacts, meta, err)
 	}
 }
@@ -85,17 +102,35 @@ func TestContactReaderGetsContactByStableJID(t *testing.T) {
 	}
 }
 
+func TestContactReaderResolvesCanonicalAndAliasReferences(t *testing.T) {
+	reconciledAt := time.Unix(500, 0)
+	repository := &contactReadRepositoryStub{contacts: []projection_model.Contact{{ContactID: "11111111-1111-1111-1111-111111111111"}}}
+	reader := NewContactReader(repository, &labelReaderStateStub{state: &projection_model.State{
+		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: ContactsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
+	}})
+	if _, _, err := reader.GetByReference(context.Background(), "instance-a", "22222222-2222-2222-2222-222222222222"); err != nil || repository.getID == "" {
+		t.Fatalf("canonical reference = id %q, error %v", repository.getID, err)
+	}
+	if _, _, err := reader.GetByReference(context.Background(), "instance-a", "15550001@s.whatsapp.net"); err != nil || repository.getAlias != "15550001@s.whatsapp.net" {
+		t.Fatalf("alias reference = alias %q, error %v", repository.getAlias, err)
+	}
+	if _, _, err := reader.GetByReference(context.Background(), "instance-a", "not-a-contact"); !errors.Is(err, ErrInvalidContactReference) {
+		t.Fatalf("invalid reference error = %v", err)
+	}
+}
+
 func TestContactReaderSearchUsesQueryBoundOpaqueCursor(t *testing.T) {
 	reconciledAt := time.Unix(500, 0)
 	repository := &contactReadRepositoryStub{searchPage: &projection_repository.ContactPage{
 		Items:      []projection_model.Contact{{ContactID: "11111111-1111-1111-1111-111111111111", PreferredJID: "alice@s.whatsapp.net"}},
 		NextCursor: &projection_repository.ContactCursor{SortKey: "alice", ContactID: "11111111-1111-1111-1111-111111111111"},
+		Total:      1,
 	}}
 	reader := NewContactReader(repository, &labelReaderStateStub{state: &projection_model.State{
 		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: ContactsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
 	}})
 	contacts, meta, err := reader.Search(context.Background(), "instance-a", " Alice ", 1, "")
-	if err != nil || len(contacts) != 1 || meta == nil || meta.NextCursor == "" || repository.searchTerm != "alice" || repository.searchLimit != 1 {
+	if err != nil || len(contacts) != 1 || meta == nil || meta.NextCursor == "" || meta.Total == nil || *meta.Total != 1 || repository.searchTerm != "alice" || repository.searchLimit != 1 {
 		t.Fatalf("Search() = %#v, %#v, %v repository=%#v", contacts, meta, err, repository)
 	}
 	cursor := meta.NextCursor
@@ -124,5 +159,16 @@ func TestContactReaderSearchRejectsInvalidBounds(t *testing.T) {
 	}
 	if _, _, err := reader.Search(context.Background(), "instance-a", "", 1, "not-base64"); !errors.Is(err, ErrInvalidContactCursor) {
 		t.Fatalf("invalid cursor error = %v", err)
+	}
+	legacyPayload, err := json.Marshal(contactCursorEnvelope{
+		Version: 1, Kind: "contacts", Scope: contactCursorScope("instance-a", ""), SortKey: "alice",
+		ContactID: "11111111-1111-1111-1111-111111111111",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyCursor := base64.RawURLEncoding.EncodeToString(legacyPayload)
+	if _, _, err := reader.Search(context.Background(), "instance-a", "", 1, legacyCursor); !errors.Is(err, ErrInvalidContactCursor) {
+		t.Fatalf("legacy cursor error = %v", err)
 	}
 }

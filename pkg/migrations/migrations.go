@@ -1459,6 +1459,77 @@ CREATE INDEX projected_contact_identity_backfills_work_idx
 ON projected_contact_identity_backfills (status, lease_expires_at, instance_id)
 WHERE status <> 'complete';`,
 	},
+	{
+		Version: 36,
+		Name:    "add_conversation_contact_contract",
+		SQL: `ALTER TABLE projected_chats
+    ADD COLUMN display_name_source VARCHAR(32) NULL,
+    ADD COLUMN display_name_updated_at TIMESTAMPTZ NULL;
+
+UPDATE projected_chats
+SET display_name_source = CASE chat_type
+        WHEN 'direct' THEN 'provider_chat'
+        WHEN 'group' THEN 'group_subject'
+        WHEN 'newsletter' THEN 'newsletter_name'
+        WHEN 'broadcast' THEN 'broadcast_name'
+        ELSE 'provider_chat'
+    END,
+    display_name_updated_at = COALESCE(updated_at, last_synced_at)
+WHERE display_name IS NOT NULL;
+
+UPDATE projected_chats AS chats
+SET contact_id = contacts.contact_id,
+    display_name = COALESCE(
+        NULLIF(contacts.full_name, ''), NULLIF(contacts.business_name, ''),
+        NULLIF(contacts.push_name, ''), NULLIF(contacts.first_name, ''), NULLIF(contacts.username, ''), chats.display_name
+    ),
+    display_name_source = CASE
+        WHEN NULLIF(contacts.full_name, '') IS NOT NULL THEN 'full_name'
+        WHEN NULLIF(contacts.business_name, '') IS NOT NULL THEN 'business_name'
+        WHEN NULLIF(contacts.push_name, '') IS NOT NULL THEN 'push_name'
+        WHEN NULLIF(contacts.first_name, '') IS NOT NULL THEN 'first_name'
+        WHEN NULLIF(contacts.username, '') IS NOT NULL THEN 'username'
+        ELSE chats.display_name_source
+    END,
+    display_name_updated_at = contacts.updated_at
+FROM projected_contact_identities AS identities
+JOIN projected_contacts AS contacts
+  ON contacts.instance_id = identities.instance_id
+ AND contacts.contact_id = identities.contact_id
+ AND contacts.tombstoned_at IS NULL
+WHERE chats.instance_id = identities.instance_id
+  AND chats.chat_id = identities.identity_value
+  AND chats.chat_type = 'direct'
+  AND chats.tombstoned_at IS NULL
+  AND identities.identity_kind = 'jid'
+  AND identities.tombstoned_at IS NULL;
+
+CREATE INDEX projected_contacts_search_preferred_nfkc_idx
+ON projected_contacts (instance_id, (LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE(COALESCE(preferred_jid, ''), NFKC), '[[:space:]]+', ' ', 'g')))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_first_name_nfkc_idx
+ON projected_contacts (instance_id, (LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE(COALESCE(first_name, ''), NFKC), '[[:space:]]+', ' ', 'g')))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_full_name_nfkc_idx
+ON projected_contacts (instance_id, (LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE(COALESCE(full_name, ''), NFKC), '[[:space:]]+', ' ', 'g')))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_push_name_nfkc_idx
+ON projected_contacts (instance_id, (LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE(COALESCE(push_name, ''), NFKC), '[[:space:]]+', ' ', 'g')))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_business_name_nfkc_idx
+ON projected_contacts (instance_id, (LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE(COALESCE(business_name, ''), NFKC), '[[:space:]]+', ' ', 'g')))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contacts_search_username_nfkc_idx
+ON projected_contacts (instance_id, (LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE(COALESCE(username, ''), NFKC), '[[:space:]]+', ' ', 'g')))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+CREATE INDEX projected_contact_identities_search_value_nfkc_idx
+ON projected_contact_identities (instance_id, (LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE(identity_value, NFKC), '[[:space:]]+', ' ', 'g')))) text_pattern_ops)
+WHERE tombstoned_at IS NULL;
+
+UPDATE projection_states
+SET schema_version = 2, updated_at = NOW()
+WHERE resource = 'chats' AND schema_version < 2;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

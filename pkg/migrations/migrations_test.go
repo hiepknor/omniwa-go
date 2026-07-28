@@ -531,3 +531,26 @@ func TestContactIdentityBackfillCheckpointMigrationIsBoundedAndScoped(t *testing
 		}
 	}
 }
+
+func TestConversationContactContractMigrationIsAdditiveAndBackfillsNames(t *testing.T) {
+	migration := registeredMigration(t, 36)
+	if migration.Name != "add_conversation_contact_contract" {
+		t.Fatalf("conversation contact migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"display_name_source VARCHAR(32) NULL", "display_name_updated_at TIMESTAMPTZ NULL",
+		"WHEN 'group' THEN 'group_subject'", "chats.chat_type = 'direct'", "identities.identity_kind = 'jid'",
+		"NULLIF(contacts.full_name, '')", "NULLIF(contacts.business_name, '')", "NULLIF(contacts.push_name, '')",
+		"projected_contacts_search_full_name_nfkc_idx", "NORMALIZE", "text_pattern_ops",
+		"UPDATE projection_states", "resource = 'chats'", "schema_version = 2",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("conversation contact migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP COLUMN", "DROP TABLE", "DELETE FROM"} {
+		if strings.Contains(migration.SQL, forbidden) {
+			t.Fatalf("conversation contact migration contains destructive SQL %q", forbidden)
+		}
+	}
+}

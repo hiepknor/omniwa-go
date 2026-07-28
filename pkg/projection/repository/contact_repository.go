@@ -11,6 +11,7 @@ import (
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	"github.com/google/uuid"
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -43,6 +44,7 @@ type ContactCursor struct {
 type ContactPage struct {
 	Items      []projection_model.Contact
 	NextCursor *ContactCursor
+	Total      int64
 }
 
 // ContactPatch updates one independently ordered field group. A non-nil field
@@ -78,6 +80,7 @@ type ContactRepository interface {
 	Get(context.Context, string, string) (*projection_model.Contact, error)
 	GetByIdentity(context.Context, string, projection_model.ContactIdentityKind, string) (*projection_model.Contact, error)
 	List(context.Context, string) ([]projection_model.Contact, error)
+	Count(context.Context, string) (int64, error)
 	Search(context.Context, string, string, int, *ContactCursor) (*ContactPage, error)
 }
 
@@ -164,6 +167,9 @@ func (r *contactRepository) Apply(ctx context.Context, patch ContactPatch) (*pro
 		if err != nil {
 			return err
 		}
+		if err := updateDirectChatsForContact(tx, &stored, now); err != nil {
+			return err
+		}
 		applied = applied || created || aliasesChanged || addressesChanged
 		return nil
 	})
@@ -173,6 +179,54 @@ func (r *contactRepository) Apply(ctx context.Context, patch ContactPatch) (*pro
 	return &stored, applied, nil
 }
 
+func updateDirectChatsForContact(tx *gorm.DB, contact *projection_model.Contact, now time.Time) error {
+	if contact == nil {
+		return nil
+	}
+	name, source := contact.CanonicalDisplayName()
+	if name != "" {
+		return tx.Exec(`UPDATE projected_chats AS chats
+SET contact_id = ?, display_name = ?, display_name_source = ?, display_name_updated_at = ?, updated_at = ?
+WHERE chats.instance_id = ?
+  AND chats.chat_type = 'direct'
+  AND chats.tombstoned_at IS NULL
+  AND (chats.contact_id = ? OR EXISTS (
+      SELECT 1 FROM projected_contact_identities AS identities
+      WHERE identities.instance_id = chats.instance_id
+        AND identities.contact_id = ?
+        AND identities.identity_kind = 'jid'
+        AND identities.identity_value = chats.chat_id
+        AND identities.tombstoned_at IS NULL
+  ))
+  AND (chats.contact_id, chats.display_name, chats.display_name_source, chats.display_name_updated_at)
+      IS DISTINCT FROM (?, ?, ?, ?)`,
+			contact.ContactID, name, source, contact.UpdatedAt.UTC(), now,
+			contact.InstanceID, contact.ContactID, contact.ContactID,
+			contact.ContactID, name, source, contact.UpdatedAt.UTC(),
+		).Error
+	}
+	return tx.Exec(`UPDATE projected_chats AS chats
+SET contact_id = ?,
+    display_name = CASE WHEN display_name_source IN ('full_name', 'business_name', 'push_name', 'first_name', 'username') THEN NULL ELSE display_name END,
+    display_name_source = CASE WHEN display_name_source IN ('full_name', 'business_name', 'push_name', 'first_name', 'username') THEN NULL ELSE display_name_source END,
+    display_name_updated_at = CASE WHEN display_name_source IN ('full_name', 'business_name', 'push_name', 'first_name', 'username') THEN NULL ELSE display_name_updated_at END,
+    updated_at = ?
+WHERE chats.instance_id = ?
+  AND chats.chat_type = 'direct'
+  AND chats.tombstoned_at IS NULL
+  AND (chats.contact_id = ? OR EXISTS (
+      SELECT 1 FROM projected_contact_identities AS identities
+      WHERE identities.instance_id = chats.instance_id
+        AND identities.contact_id = ?
+        AND identities.identity_kind = 'jid'
+        AND identities.identity_value = chats.chat_id
+        AND identities.tombstoned_at IS NULL
+  ))
+  AND (chats.contact_id IS DISTINCT FROM ? OR display_name_source IN ('full_name', 'business_name', 'push_name', 'first_name', 'username'))`,
+		contact.ContactID, now, contact.InstanceID, contact.ContactID, contact.ContactID, contact.ContactID,
+	).Error
+}
+
 func (r *contactRepository) Get(ctx context.Context, instanceID, contactID string) (*projection_model.Contact, error) {
 	if instanceID == "" || contactID == "" {
 		return nil, errors.New("contact projection identity is required")
@@ -180,6 +234,12 @@ func (r *contactRepository) Get(ctx context.Context, instanceID, contactID strin
 	var contact projection_model.Contact
 	db := r.db.WithContext(ctx)
 	err := db.Where("instance_id = ? AND contact_id = ? AND tombstoned_at IS NULL", instanceID, contactID).First(&contact).Error
+	if err == nil {
+		hydrated := []projection_model.Contact{contact}
+		err = r.hydrateAliases(ctx, instanceID, hydrated)
+		contact = hydrated[0]
+		return &contact, err
+	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return &contact, err
 	}
@@ -188,6 +248,11 @@ func (r *contactRepository) Get(ctx context.Context, instanceID, contactID strin
 		return &contact, err
 	}
 	err = db.Where("instance_id = ? AND contact_id = ? AND tombstoned_at IS NULL", instanceID, redirect.CanonicalContactID).First(&contact).Error
+	if err == nil {
+		hydrated := []projection_model.Contact{contact}
+		err = r.hydrateAliases(ctx, instanceID, hydrated)
+		contact = hydrated[0]
+	}
 	return &contact, err
 }
 
@@ -201,6 +266,11 @@ func (r *contactRepository) GetByIdentity(ctx context.Context, instanceID string
 		Joins("JOIN projected_contact_identities AS identities ON identities.instance_id = contacts.instance_id AND identities.contact_id = contacts.contact_id").
 		Where("identities.instance_id = ? AND identities.identity_kind = ? AND identities.identity_value = ?", instanceID, kind, value).
 		Where("contacts.tombstoned_at IS NULL AND identities.tombstoned_at IS NULL").First(&contact).Error
+	if err == nil {
+		hydrated := []projection_model.Contact{contact}
+		err = r.hydrateAliases(ctx, instanceID, hydrated)
+		contact = hydrated[0]
+	}
 	return &contact, err
 }
 
@@ -211,12 +281,25 @@ func (r *contactRepository) List(ctx context.Context, instanceID string) ([]proj
 	var contacts []projection_model.Contact
 	err := r.db.WithContext(ctx).Where("instance_id = ? AND tombstoned_at IS NULL", instanceID).
 		Order("COALESCE(NULLIF(full_name, ''), NULLIF(push_name, ''), preferred_jid) ASC, contact_id ASC").Find(&contacts).Error
+	if err == nil {
+		err = r.hydrateAliases(ctx, instanceID, contacts)
+	}
 	return contacts, err
+}
+
+func (r *contactRepository) Count(ctx context.Context, instanceID string) (int64, error) {
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" {
+		return 0, errors.New("contact projection instance identity is required")
+	}
+	var total int64
+	err := r.db.WithContext(ctx).Model(&projection_model.Contact{}).
+		Where("instance_id = ? AND tombstoned_at IS NULL", instanceID).Count(&total).Error
+	return total, err
 }
 
 const (
 	maxContactSearchLimit = 200
-	contactSearchSortSQL  = "LOWER(preferred_jid)"
+	contactSearchSortSQL  = "LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE(COALESCE(preferred_jid, ''), NFKC), '[[:space:]]+', ' ', 'g')))"
 )
 
 type contactSearchRow struct {
@@ -230,20 +313,15 @@ func (r *contactRepository) Search(ctx context.Context, instanceID, term string,
 		(cursor != nil && (cursor.SortKey == "" || cursor.ContactID == "")) {
 		return nil, errors.New("valid contact search parameters are required")
 	}
+	term = strings.ToLower(strings.Join(strings.Fields(norm.NFKC.String(term)), " "))
 
-	query := r.db.WithContext(ctx).Model(&projection_model.Contact{}).
-		Select("projected_contacts.*, "+contactSearchSortSQL+" AS search_sort_key").
-		Where("instance_id = ? AND tombstoned_at IS NULL", instanceID)
-	if term != "" {
-		pattern := escapeContactSearchPattern(strings.ToLower(term)) + "%"
-		query = query.Where(`(LOWER(preferred_jid) LIKE ? OR
-LOWER(COALESCE(first_name, '')) LIKE ? OR
-LOWER(COALESCE(full_name, '')) LIKE ? OR
-LOWER(COALESCE(push_name, '')) LIKE ? OR
-LOWER(COALESCE(business_name, '')) LIKE ? OR
-LOWER(COALESCE(username, '')) LIKE ? OR
-LOWER(COALESCE(redacted_phone, '')) LIKE ?)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+	countQuery := r.contactSearchQuery(ctx, instanceID, term)
+	var total int64
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, err
 	}
+	query := r.contactSearchQuery(ctx, instanceID, term).
+		Select("projected_contacts.*, " + contactSearchSortSQL + " AS search_sort_key")
 	if cursor != nil {
 		query = query.Where("("+contactSearchSortSQL+" > ? OR ("+contactSearchSortSQL+" = ? AND contact_id > ?))", cursor.SortKey, cursor.SortKey, cursor.ContactID)
 	}
@@ -252,7 +330,7 @@ LOWER(COALESCE(redacted_phone, '')) LIKE ?)`, pattern, pattern, pattern, pattern
 	if err := query.Order(contactSearchSortSQL + " ASC, contact_id ASC").Limit(limit + 1).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	page := &ContactPage{Items: make([]projection_model.Contact, min(len(rows), limit))}
+	page := &ContactPage{Items: make([]projection_model.Contact, min(len(rows), limit)), Total: total}
 	for index := range page.Items {
 		page.Items[index] = rows[index].Contact
 	}
@@ -260,7 +338,72 @@ LOWER(COALESCE(redacted_phone, '')) LIKE ?)`, pattern, pattern, pattern, pattern
 		last := rows[limit-1]
 		page.NextCursor = &ContactCursor{SortKey: last.SearchSortKey, ContactID: last.ContactID}
 	}
+	if err := r.hydrateAliases(ctx, instanceID, page.Items); err != nil {
+		return nil, err
+	}
 	return page, nil
+}
+
+func (r *contactRepository) contactSearchQuery(ctx context.Context, instanceID, term string) *gorm.DB {
+	query := r.db.WithContext(ctx).Model(&projection_model.Contact{}).
+		Where("projected_contacts.instance_id = ? AND projected_contacts.tombstoned_at IS NULL", instanceID)
+	if term == "" {
+		return query
+	}
+	pattern := escapeContactSearchPattern(term) + "%"
+	normalized := func(column string) string {
+		return "LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE(COALESCE(" + column + ", ''), NFKC), '[[:space:]]+', ' ', 'g')))"
+	}
+	return query.Where(`(projected_contacts.contact_id::text = ? OR
+EXISTS (SELECT 1 FROM projected_contact_redirects AS redirects
+        WHERE redirects.instance_id = projected_contacts.instance_id
+          AND redirects.canonical_contact_id = projected_contacts.contact_id
+          AND redirects.absorbed_contact_id::text = ?) OR
+`+normalized("projected_contacts.preferred_jid")+` LIKE ? OR
+`+normalized("projected_contacts.first_name")+` LIKE ? OR
+`+normalized("projected_contacts.full_name")+` LIKE ? OR
+`+normalized("projected_contacts.push_name")+` LIKE ? OR
+`+normalized("projected_contacts.business_name")+` LIKE ? OR
+`+normalized("projected_contacts.username")+` LIKE ? OR
+`+normalized("projected_contacts.redacted_phone")+` LIKE ? OR
+EXISTS (SELECT 1 FROM projected_contact_identities AS identities
+        WHERE identities.instance_id = projected_contacts.instance_id
+          AND identities.contact_id = projected_contacts.contact_id
+          AND identities.tombstoned_at IS NULL
+          AND `+normalized("identities.identity_value")+` LIKE ?))`,
+		term, term, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+}
+
+func (r *contactRepository) hydrateAliases(
+	ctx context.Context,
+	instanceID string,
+	contacts []projection_model.Contact,
+) error {
+	if len(contacts) == 0 {
+		return nil
+	}
+	ids := make([]string, len(contacts))
+	indexByID := make(map[string]int, len(contacts))
+	for index := range contacts {
+		ids[index] = contacts[index].ContactID
+		indexByID[contacts[index].ContactID] = index
+		contacts[index].Aliases = make([]projection_model.ContactIdentity, 0)
+	}
+	const aliasHydrationBatch = 1000
+	for start := 0; start < len(ids); start += aliasHydrationBatch {
+		end := min(start+aliasHydrationBatch, len(ids))
+		var aliases []projection_model.ContactIdentity
+		if err := r.db.WithContext(ctx).Where("instance_id = ? AND contact_id IN ? AND tombstoned_at IS NULL", instanceID, ids[start:end]).
+			Order("contact_id ASC, identity_kind ASC, identity_value ASC").Find(&aliases).Error; err != nil {
+			return err
+		}
+		for _, alias := range aliases {
+			if index, exists := indexByID[alias.ContactID]; exists {
+				contacts[index].Aliases = append(contacts[index].Aliases, alias)
+			}
+		}
+	}
+	return nil
 }
 
 func escapeContactSearchPattern(value string) string {

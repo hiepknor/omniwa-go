@@ -37,18 +37,20 @@ type ChatMessageReader struct {
 // ProjectedChat is the stable public chat representation. Storage coordination
 // fields are intentionally excluded from the API contract.
 type ProjectedChat struct {
-	ChatID            string                    `json:"chatId"`
-	ContactID         *string                   `json:"contactId,omitempty"`
-	Type              projection_model.ChatType `json:"type"`
-	DisplayName       *string                   `json:"displayName,omitempty"`
-	LastMessageID     *string                   `json:"lastMessageId,omitempty"`
-	LastMessageAt     *time.Time                `json:"lastMessageAt,omitempty"`
-	LastActivityAt    *time.Time                `json:"lastActivityAt,omitempty"`
-	UnreadCount       int                       `json:"unreadCount"`
-	Archived          *bool                     `json:"archived,omitempty"`
-	Pinned            *bool                     `json:"pinned,omitempty"`
-	MutedUntil        *time.Time                `json:"mutedUntil,omitempty"`
-	DisappearingTimer *uint32                   `json:"disappearingTimer,omitempty"`
+	ChatID               string                    `json:"chatId" binding:"required"`
+	ContactID            *string                   `json:"contactId,omitempty"`
+	Type                 projection_model.ChatType `json:"type" binding:"required"`
+	DisplayName          *string                   `json:"displayName,omitempty"`
+	DisplayNameSource    *string                   `json:"displayNameSource,omitempty" enums:"full_name,business_name,push_name,first_name,username,provider_chat,group_subject,newsletter_name,broadcast_name"`
+	DisplayNameUpdatedAt *time.Time                `json:"displayNameUpdatedAt,omitempty"`
+	LastMessageID        *string                   `json:"lastMessageId,omitempty"`
+	LastMessageAt        *time.Time                `json:"lastMessageAt,omitempty"`
+	LastActivityAt       *time.Time                `json:"lastActivityAt,omitempty"`
+	UnreadCount          int                       `json:"unreadCount" binding:"required"`
+	Archived             *bool                     `json:"archived,omitempty"`
+	Pinned               *bool                     `json:"pinned,omitempty"`
+	MutedUntil           *time.Time                `json:"mutedUntil,omitempty"`
+	DisappearingTimer    *uint32                   `json:"disappearingTimer,omitempty"`
 }
 
 // ProjectedMessage is the stable public message representation. It contains
@@ -133,6 +135,7 @@ func (r *ChatMessageReader) ListChats(ctx context.Context, instanceID string, li
 			return nil, nil, err
 		}
 	}
+	meta.Total = &page.Total
 	return items, meta, nil
 }
 
@@ -228,6 +231,7 @@ func (r *ChatMessageReader) ListReceipts(ctx context.Context, instanceID, messag
 func projectedChatView(chat *projection_model.Chat) ProjectedChat {
 	return ProjectedChat{
 		ChatID: chat.ChatID, ContactID: chat.ContactID, Type: chat.Type, DisplayName: chat.DisplayName,
+		DisplayNameSource: chat.DisplayNameSource, DisplayNameUpdatedAt: chat.DisplayNameUpdatedAt,
 		LastMessageID: chat.LastMessageID, LastMessageAt: chat.LastMessageAt, LastActivityAt: chat.LastActivityAt,
 		UnreadCount: chat.UnreadCount, Archived: chat.Archived, Pinned: chat.Pinned, MutedUntil: chat.MutedUntil,
 		DisappearingTimer: chat.DisappearingTimer,

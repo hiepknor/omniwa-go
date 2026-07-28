@@ -10,7 +10,6 @@ import (
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
 	"github.com/gin-gonic/gin"
-	"go.mau.fi/whatsmeow/types"
 	"gorm.io/gorm"
 )
 
@@ -186,7 +185,7 @@ func (u *userHandler) GetAvatar(ctx *gin.Context) {
 
 // Get a user's contacts
 // @Summary Get a user's contacts
-// @Description Get a user's contacts
+// @Description Return all canonical contacts without live reads. meta.total counts canonical contacts, never aliases.
 // @Tags User
 // @Accept json
 // @Produce json
@@ -215,7 +214,7 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 
 // Search projected contacts
 // @Summary Search projected contacts
-// @Description Prefix-search normalized contacts from the persisted instance projection without querying WhatsApp
+// @Description Prefix-search canonical contacts without querying WhatsApp. meta.total is the exact normalized-query match count at request time; cursors are opaque and versioned.
 // @Tags User
 // @Produce json
 // @Param q query string false "Case-insensitive prefix matched against normalized contact fields" maxlength(128)
@@ -252,12 +251,12 @@ func (u *userHandler) SearchContacts(ctx *gin.Context) {
 
 // Get a projected contact
 // @Summary Get a projected contact
-// @Description Get one normalized contact from the persisted instance projection
+// @Description Resolve a canonical UUID, permanent absorbed-ID redirect, or JID alias from the persisted instance projection and return the canonical contactId.
 // @Tags User
 // @Produce json
-// @Param contactId path string true "Contact JID"
+// @Param contactId path string true "Canonical contact ID, absorbed contact ID, or contact JID alias"
 // @Success 200 {object} apidocs.SuccessResponse{data=user_service.ContactInfo} "success"
-// @Failure 400 {object} apidocs.ErrorResponse "Invalid contact JID"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid contact reference"
 // @Failure 404 {object} apidocs.ErrorResponse "Contact not found"
 // @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
@@ -269,27 +268,12 @@ func (u *userHandler) GetContact(ctx *gin.Context) {
 		httpapi.WriteInternal(ctx, nil)
 		return
 	}
-	contactID := ctx.Param("contactId")
-	jid, err := types.ParseJID(contactID)
-	if err != nil || jid.IsEmpty() || !isContactJID(jid) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid contact JID"})
-		return
-	}
-	contact, meta, err := u.userService.GetContact(ctx.Request.Context(), instance, jid.ToNonAD().String())
+	contact, meta, err := u.userService.GetContact(ctx.Request.Context(), instance, ctx.Param("contactId"))
 	if err != nil {
 		writeContactReadError(ctx, err)
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": contact, "meta": meta})
-}
-
-func isContactJID(jid types.JID) bool {
-	switch jid.ToNonAD().Server {
-	case types.DefaultUserServer, types.LegacyUserServer, types.HiddenUserServer, types.HostedLIDServer:
-		return true
-	default:
-		return false
-	}
 }
 
 func writeContactReadError(ctx *gin.Context, err error) {
@@ -298,6 +282,8 @@ func writeContactReadError(ctx *gin.Context, err error) {
 		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_cursor", "invalid contact search cursor")
 	case errors.Is(err, projection_service.ErrInvalidContactSearch):
 		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_search", "invalid contact search query")
+	case errors.Is(err, projection_service.ErrInvalidContactReference):
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_contact_id", "invalid canonical contact ID or JID alias")
 	case errors.Is(err, projection_service.ErrContactsProjectionNotReady):
 		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "projection_not_ready", "contacts projection is not ready")
 	case errors.Is(err, gorm.ErrRecordNotFound):

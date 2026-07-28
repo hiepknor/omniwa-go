@@ -35,6 +35,7 @@ const defaultProjectionPageSize = 50
 
 // List returns projection-backed chats without querying WhatsApp.
 // @Summary List projected chats
+// @Description Cursor-page projected chats without live reads. meta.total is the exact active projected-chat count at request time, not a cross-page snapshot.
 // @Tags Chat
 // @Produce json
 // @Param limit query int false "Page size (1-200)"
@@ -64,6 +65,7 @@ func (c *chatHandler) List(ctx *gin.Context) {
 
 // Get returns one projected chat without querying WhatsApp.
 // @Summary Get a projected chat
+// @Description Return a projected chat with locally denormalized contact or type-specific display-name metadata.
 // @Tags Chat
 // @Produce json
 // @Param chatId path string true "Chat JID"

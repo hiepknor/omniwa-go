@@ -57,6 +57,23 @@ func TestProjectionAspectsAreIndependent(t *testing.T) {
 	}
 }
 
+func TestNonDirectChatNamesKeepTypeSpecificSources(t *testing.T) {
+	for chatType, expected := range map[projection_model.ChatType]string{
+		projection_model.ChatTypeGroup:      "group_subject",
+		projection_model.ChatTypeNewsletter: "newsletter_name",
+		projection_model.ChatTypeBroadcast:  "broadcast_name",
+	} {
+		name := "Projected name"
+		incoming := projection_model.Chat{Type: chatType, DisplayName: &name}
+		if err := resolveChatIdentity(nil, &incoming, &projection_model.Chat{}, true, time.Unix(100, 0).UTC()); err != nil {
+			t.Fatal(err)
+		}
+		if incoming.ContactID != nil || incoming.DisplayNameSource == nil || *incoming.DisplayNameSource != expected || incoming.DisplayNameUpdatedAt == nil {
+			t.Fatalf("%s identity = %#v", chatType, incoming)
+		}
+	}
+}
+
 func TestProjectionVersionOrderingUsesEventKeyAsTieBreaker(t *testing.T) {
 	base := time.Unix(100, 0)
 	if projectionVersionLess(projectionFieldVersion{OccurredAt: base, EventKey: "b"}, projectionFieldVersion{OccurredAt: base, EventKey: "a"}) {

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ChatsProjectionSchemaVersion    int64 = 1
+	ChatsProjectionSchemaVersion    int64 = 2
 	MessagesProjectionSchemaVersion int64 = 2
 	DefaultMessageRetention               = 90 * 24 * time.Hour
 )

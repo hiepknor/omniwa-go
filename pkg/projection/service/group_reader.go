@@ -33,6 +33,7 @@ type ProjectionReadMeta struct {
 	SyncStatus   projection_model.SyncStatus `json:"syncStatus"`
 	LastSyncedAt *time.Time                  `json:"lastSyncedAt,omitempty"`
 	NextCursor   string                      `json:"nextCursor,omitempty"`
+	Total        *int64                      `json:"total,omitempty"`
 }
 
 type groupReadRepository interface {

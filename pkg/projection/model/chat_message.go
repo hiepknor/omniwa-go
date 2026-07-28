@@ -32,26 +32,28 @@ const (
 )
 
 type Chat struct {
-	InstanceID        string          `json:"instanceId" gorm:"column:instance_id;type:uuid;primaryKey"`
-	ChatID            string          `json:"chatId" gorm:"column:chat_id;size:255;primaryKey"`
-	ContactID         *string         `json:"contactId,omitempty" gorm:"column:contact_id;type:uuid"`
-	Type              ChatType        `json:"type" gorm:"column:chat_type;size:32;not null"`
-	DisplayName       *string         `json:"displayName,omitempty" gorm:"column:display_name"`
-	LastMessageID     *string         `json:"lastMessageId,omitempty" gorm:"column:last_message_id;size:255"`
-	LastMessageAt     *time.Time      `json:"lastMessageAt,omitempty" gorm:"column:last_message_at"`
-	LastActivityAt    *time.Time      `json:"lastActivityAt,omitempty" gorm:"column:last_activity_at"`
-	UnreadCount       int             `json:"unreadCount" gorm:"column:unread_count;not null"`
-	Archived          *bool           `json:"archived,omitempty" gorm:"column:archived"`
-	Pinned            *bool           `json:"pinned,omitempty" gorm:"column:pinned"`
-	MutedUntil        *time.Time      `json:"mutedUntil,omitempty" gorm:"column:muted_until"`
-	DisappearingTimer *uint32         `json:"disappearingTimer,omitempty" gorm:"column:disappearing_timer"`
-	SourceOccurredAt  time.Time       `json:"sourceOccurredAt" gorm:"column:source_occurred_at;not null"`
-	SourceEventKey    string          `json:"-" gorm:"column:source_event_key;size:255;not null"`
-	FieldVersions     json.RawMessage `json:"-" gorm:"column:field_versions;type:jsonb;not null"`
-	LastSyncedAt      time.Time       `json:"lastSyncedAt" gorm:"column:last_synced_at;not null"`
-	TombstonedAt      *time.Time      `json:"tombstonedAt,omitempty" gorm:"column:tombstoned_at"`
-	CreatedAt         time.Time       `json:"createdAt"`
-	UpdatedAt         time.Time       `json:"updatedAt"`
+	InstanceID           string          `json:"instanceId" gorm:"column:instance_id;type:uuid;primaryKey"`
+	ChatID               string          `json:"chatId" gorm:"column:chat_id;size:255;primaryKey"`
+	ContactID            *string         `json:"contactId,omitempty" gorm:"column:contact_id;type:uuid"`
+	Type                 ChatType        `json:"type" gorm:"column:chat_type;size:32;not null"`
+	DisplayName          *string         `json:"displayName,omitempty" gorm:"column:display_name"`
+	DisplayNameSource    *string         `json:"displayNameSource,omitempty" gorm:"column:display_name_source;size:32"`
+	DisplayNameUpdatedAt *time.Time      `json:"displayNameUpdatedAt,omitempty" gorm:"column:display_name_updated_at"`
+	LastMessageID        *string         `json:"lastMessageId,omitempty" gorm:"column:last_message_id;size:255"`
+	LastMessageAt        *time.Time      `json:"lastMessageAt,omitempty" gorm:"column:last_message_at"`
+	LastActivityAt       *time.Time      `json:"lastActivityAt,omitempty" gorm:"column:last_activity_at"`
+	UnreadCount          int             `json:"unreadCount" gorm:"column:unread_count;not null"`
+	Archived             *bool           `json:"archived,omitempty" gorm:"column:archived"`
+	Pinned               *bool           `json:"pinned,omitempty" gorm:"column:pinned"`
+	MutedUntil           *time.Time      `json:"mutedUntil,omitempty" gorm:"column:muted_until"`
+	DisappearingTimer    *uint32         `json:"disappearingTimer,omitempty" gorm:"column:disappearing_timer"`
+	SourceOccurredAt     time.Time       `json:"sourceOccurredAt" gorm:"column:source_occurred_at;not null"`
+	SourceEventKey       string          `json:"-" gorm:"column:source_event_key;size:255;not null"`
+	FieldVersions        json.RawMessage `json:"-" gorm:"column:field_versions;type:jsonb;not null"`
+	LastSyncedAt         time.Time       `json:"lastSyncedAt" gorm:"column:last_synced_at;not null"`
+	TombstonedAt         *time.Time      `json:"tombstonedAt,omitempty" gorm:"column:tombstoned_at"`
+	CreatedAt            time.Time       `json:"createdAt"`
+	UpdatedAt            time.Time       `json:"updatedAt"`
 }
 
 func (Chat) TableName() string { return "projected_chats" }
