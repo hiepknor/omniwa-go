@@ -556,7 +556,7 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if _, _, err := groupRepository.Get(context.Background(), instance.Id, "group@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("tombstoned group remained readable: %v", err)
 	}
-	eligibilityRecords, err := groupRepository.GetForEligibility(context.Background(), instance.Id, []string{"group@g.us"})
+	eligibilityRecords, err := groupRepository.GetForEligibility(context.Background(), instance.Id, "user-b@s.whatsapp.net", []string{"group@g.us"})
 	if err != nil || len(eligibilityRecords) != 1 || eligibilityRecords[0].Group.TombstoneCause == nil || *eligibilityRecords[0].Group.TombstoneCause != projection_model.GroupTombstoneDissolved {
 		t.Fatalf("tombstone eligibility record = %#v, %v", eligibilityRecords, err)
 	}
@@ -568,7 +568,7 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if err != nil || !applied {
 		t.Fatalf("newer group patch = %v, %v", applied, err)
 	}
-	eligibilityRecords, err = groupRepository.GetForEligibility(context.Background(), instance.Id, []string{"group@g.us"})
+	eligibilityRecords, err = groupRepository.GetForEligibility(context.Background(), instance.Id, "user-c@s.whatsapp.net", []string{"group@g.us"})
 	if err != nil || len(eligibilityRecords) != 1 || eligibilityRecords[0].Group.TombstonedAt != nil || eligibilityRecords[0].Group.TombstoneCause != nil {
 		t.Fatalf("revived eligibility record = %#v, %v", eligibilityRecords, err)
 	}
@@ -808,7 +808,7 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 	if _, _, err := groupRepository.Get(context.Background(), instance.Id, "worker@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("missing group was not tombstoned: %v", err)
 	}
-	missingRecords, err := groupRepository.GetForEligibility(context.Background(), instance.Id, []string{"worker@g.us"})
+	missingRecords, err := groupRepository.GetForEligibility(context.Background(), instance.Id, "worker@s.whatsapp.net", []string{"worker@g.us"})
 	if err != nil || len(missingRecords) != 1 || missingRecords[0].Group.TombstoneCause == nil || *missingRecords[0].Group.TombstoneCause != projection_model.GroupTombstoneAccessLost {
 		t.Fatalf("reconciliation tombstone cause = %#v, %v", missingRecords, err)
 	}

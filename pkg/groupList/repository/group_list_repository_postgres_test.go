@@ -87,6 +87,47 @@ func TestPostgresRepositoryEnforcesIsolationVersioningAndAudit(t *testing.T) {
 	if _, err := repository.Update(context.Background(), instances[0].Id, created.ID, update); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale update = %v", err)
 	}
+	validationErr := errors.New("eligibility rejected")
+	evaluatorCalls := 0
+	guarded := New(db, WithMutationEligibilityEvaluator(func(_ context.Context, tx *gorm.DB, instanceID, instanceJID string, groupJIDs []string) ([]EntryInput, error) {
+		evaluatorCalls++
+		if tx == nil || instanceID != instances[0].Id || instanceJID != "5511@s.whatsapp.net" || len(groupJIDs) != 1 {
+			t.Fatalf("unexpected transaction evaluator input: tx=%v instance=%q jid=%q groups=%v", tx, instanceID, instanceJID, groupJIDs)
+		}
+		return nil, validationErr
+	}))
+	rejectedID := uuid.NewString()
+	rejectedCreate := createRepositoryInput(rejectedID, instances[0].Id, "Rejected", "rejected", "120363000099@g.us")
+	rejectedCreate.Entries = nil
+	rejectedCreate.InstanceJID = "5511@s.whatsapp.net"
+	rejectedCreate.GroupJIDs = []string{"120363000099@g.us"}
+	if _, err := guarded.Create(context.Background(), rejectedCreate); !errors.Is(err, validationErr) {
+		t.Fatalf("rejected create = %v", err)
+	}
+	var rejectedCount int64
+	if err := db.Table("group_lists").Where("id = ?", rejectedID).Count(&rejectedCount).Error; err != nil || rejectedCount != 0 {
+		t.Fatalf("rejected create persisted: count=%d err=%v", rejectedCount, err)
+	}
+	beforeStale := evaluatorCalls
+	guardedUpdate := update
+	guardedUpdate.Entries = nil
+	guardedUpdate.InstanceJID = "5511@s.whatsapp.net"
+	guardedUpdate.GroupJIDs = []string{"120363000099@g.us"}
+	guardedUpdate.ExpectedVersion = 1
+	if _, err := guarded.Update(context.Background(), instances[0].Id, created.ID, guardedUpdate); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale guarded update = %v", err)
+	}
+	if evaluatorCalls != beforeStale {
+		t.Fatalf("eligibility ran before version check: calls=%d before=%d", evaluatorCalls, beforeStale)
+	}
+	guardedUpdate.ExpectedVersion = 2
+	if _, err := guarded.Update(context.Background(), instances[0].Id, created.ID, guardedUpdate); !errors.Is(err, validationErr) {
+		t.Fatalf("rejected guarded update = %v", err)
+	}
+	unchanged, err := repository.Get(context.Background(), instances[0].Id, created.ID)
+	if err != nil || unchanged.Version != 2 || unchanged.Name != "Northern branches v2" {
+		t.Fatalf("rejected update changed list: %+v err=%v", unchanged, err)
+	}
 	audit, err := repository.ListAudit(context.Background(), instances[0].Id, created.ID, 10, nil)
 	if err != nil || len(audit.Items) != 2 || audit.Items[0].EventType != "created" || audit.Items[1].EventType != "updated" {
 		t.Fatalf("audit = %+v, %v", audit, err)

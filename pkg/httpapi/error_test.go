@@ -61,3 +61,26 @@ func TestWriteErrorCannotExposeHTTP500Detail(t *testing.T) {
 		t.Fatalf("unsafe HTTP 500 body: %s", body)
 	}
 }
+
+func TestWriteErrorWithDetailsPreservesSafeDetailsAndSuppressesThemForHTTP500(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	response := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(response)
+	ctx.Set(requestIDKey, "request-123")
+
+	WriteErrorWithDetails(ctx, http.StatusConflict, "group_list_group_unavailable", "unavailable", gin.H{"issueCount": 2})
+	body := response.Body.String()
+	for _, expected := range []string{`"code":"group_list_group_unavailable"`, `"requestId":"request-123"`, `"issueCount":2`} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("body=%s missing=%s", body, expected)
+		}
+	}
+
+	response = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(response)
+	WriteErrorWithDetails(ctx, http.StatusInternalServerError, "unsafe", "unsafe", gin.H{"secret": "value"})
+	body = response.Body.String()
+	if strings.Contains(body, "secret") || strings.Contains(body, "value") || !strings.Contains(body, `"code":"internal_error"`) {
+		t.Fatalf("unsafe HTTP 500 details: %s", body)
+	}
+}

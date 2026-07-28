@@ -71,6 +71,7 @@ type Config struct {
 	CheckUserExists                 bool
 	LicenseGateEnabled              bool
 	GroupListsEnabled               bool
+	GroupListEligibilityEnabled     bool
 	WAInfoRatePerSecond             float64
 	WAInfoBurst                     int
 	WAInfoMaxWait                   time.Duration
@@ -415,6 +416,10 @@ func Load() *Config {
 	// the associated remote heartbeat.
 	licenseGateEnabled := os.Getenv(config_env.LICENSE_GATE_ENABLED) != "false"
 	groupListsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LISTS_ENABLED)), "true")
+	groupListEligibilityEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED)), "true")
+	if groupListEligibilityEnabled && !groupListsEnabled {
+		logger.LogFatal("[CONFIG] %s requires %s=true", config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED, config_env.WA_GROUP_LISTS_ENABLED)
+	}
 	campaignDirectCreateEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_DIRECT_CREATE_ENABLED)), "true")
 	campaignGroupTargetsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_GROUP_TARGETS_ENABLED)), "true")
 	campaignImageContentEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED)), "true")
@@ -760,35 +765,36 @@ func Load() *Config {
 			MaxAttempts:           webhookMaxAttempts,
 			RetryBase:             webhookRetryBase,
 		},
-		ClientName:           clientName,
-		ApiAudioConverter:    apiAudioConverter,
-		ApiAudioConverterKey: apiAudioConverterKey,
-		PostgresHost:         postgresHost,
-		PostgresPort:         postgresPort,
-		PostgresUser:         postgresUser,
-		PostgresPassword:     postgresPassword,
-		PostgresDB:           postgresDB,
-		WhatsappVersionMajor: major,
-		WhatsappVersionMinor: minor,
-		WhatsappVersionPatch: patch,
-		ProxyProtocol:        proxyProtocol,
-		ProxyHost:            proxyHost,
-		ProxyPort:            proxyPort,
-		ProxyUsername:        proxyUsername,
-		ProxyPassword:        proxyPassword,
-		EventIgnoreGroup:     eventIgnoreGroup == "true",
-		EventIgnoreStatus:    eventIgnoreStatus == "true",
-		QrcodeMaxCount:       qrMaxCount,
-		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
-		LicenseGateEnabled:   licenseGateEnabled,
-		GroupListsEnabled:    groupListsEnabled,
-		WAInfoRatePerSecond:  waInfoRatePerSecond,
-		WAInfoBurst:          waInfoBurst,
-		WAInfoMaxWait:        waInfoMaxWait,
-		WAInfoCooldown:       waInfoCooldown,
-		GroupSyncInterval:    waGroupReconcileInterval,
-		MessageRetention:     messageRetention,
-		EventRetention:       eventRetention,
+		ClientName:                  clientName,
+		ApiAudioConverter:           apiAudioConverter,
+		ApiAudioConverterKey:        apiAudioConverterKey,
+		PostgresHost:                postgresHost,
+		PostgresPort:                postgresPort,
+		PostgresUser:                postgresUser,
+		PostgresPassword:            postgresPassword,
+		PostgresDB:                  postgresDB,
+		WhatsappVersionMajor:        major,
+		WhatsappVersionMinor:        minor,
+		WhatsappVersionPatch:        patch,
+		ProxyProtocol:               proxyProtocol,
+		ProxyHost:                   proxyHost,
+		ProxyPort:                   proxyPort,
+		ProxyUsername:               proxyUsername,
+		ProxyPassword:               proxyPassword,
+		EventIgnoreGroup:            eventIgnoreGroup == "true",
+		EventIgnoreStatus:           eventIgnoreStatus == "true",
+		QrcodeMaxCount:              qrMaxCount,
+		CheckUserExists:             checkUserExists != "false", // Default true, set to false to disable
+		LicenseGateEnabled:          licenseGateEnabled,
+		GroupListsEnabled:           groupListsEnabled,
+		GroupListEligibilityEnabled: groupListEligibilityEnabled,
+		WAInfoRatePerSecond:         waInfoRatePerSecond,
+		WAInfoBurst:                 waInfoBurst,
+		WAInfoMaxWait:               waInfoMaxWait,
+		WAInfoCooldown:              waInfoCooldown,
+		GroupSyncInterval:           waGroupReconcileInterval,
+		MessageRetention:            messageRetention,
+		EventRetention:              eventRetention,
 		RemoteMedia: RemoteMediaConfig{
 			Policy: remoteMediaFetchPolicy, AllowedHosts: remoteMediaAllowedHosts,
 			Timeout: remoteMediaFetchTimeout, MaxBytes: remoteMediaMaxBytes,

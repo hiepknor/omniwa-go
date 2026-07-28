@@ -2,6 +2,7 @@ package group_list_repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"time"
@@ -16,6 +17,7 @@ var (
 	ErrNotFound        = errors.New("group list not found")
 	ErrNameConflict    = errors.New("group list name already exists")
 	ErrVersionConflict = errors.New("group list version changed concurrently")
+	ErrEntryLimit      = errors.New("group list entry limit exceeded")
 )
 
 type EntryInput struct {
@@ -34,6 +36,8 @@ type CreateInput struct {
 	AuthorizedAt               time.Time
 	ActorReferenceHash         string
 	Entries                    []EntryInput
+	InstanceJID                string
+	GroupJIDs                  []string
 	AuditMetadata              json.RawMessage
 }
 
@@ -47,6 +51,8 @@ type UpdateInput struct {
 	AuthorizedAt               time.Time
 	ActorReferenceHash         string
 	Entries                    []EntryInput
+	InstanceJID                string
+	GroupJIDs                  []string
 	AuditMetadata              json.RawMessage
 }
 
@@ -87,22 +93,64 @@ type Repository interface {
 	Get(context.Context, string, string) (*Summary, error)
 	List(context.Context, string, string, int, *ListCursor) (*ListPage, error)
 	ListEntries(context.Context, string, string, int, *EntryCursor) (*EntryPage, error)
+	GetEligibilitySnapshot(context.Context, string, string, int) (*Summary, []group_list_model.Entry, error)
 	Update(context.Context, string, string, UpdateInput) (*group_list_model.GroupList, error)
 	Delete(context.Context, string, string, string) error
 	ListAudit(context.Context, string, string, int, *AuditCursor) (*AuditPage, error)
 }
 
-type repository struct {
-	db  *gorm.DB
-	now func() time.Time
+func (r *repository) GetEligibilitySnapshot(ctx context.Context, instanceID, groupListID string, maxEntries int) (*Summary, []group_list_model.Entry, error) {
+	if err := validateRead(r, ctx, instanceID, groupListID); err != nil || maxEntries < 1 || maxEntries > 10_000 {
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, errors.New("bounded eligibility snapshot is required")
+	}
+	var summary *Summary
+	var entries []group_list_model.Entry
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepository := &repository{db: tx, now: r.now}
+		current, err := txRepository.Get(ctx, instanceID, groupListID)
+		if err != nil {
+			return err
+		}
+		summary = current
+		if err := tx.Where("instance_id = ? AND group_list_id = ?", instanceID, groupListID).
+			Order("group_jid ASC").Limit(maxEntries + 1).Find(&entries).Error; err != nil {
+			return err
+		}
+		if len(entries) > maxEntries {
+			return ErrEntryLimit
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return summary, entries, err
 }
 
-func New(db *gorm.DB) Repository {
-	return &repository{db: db, now: time.Now}
+type repository struct {
+	db          *gorm.DB
+	now         func() time.Time
+	eligibility MutationEligibilityEvaluator
+}
+
+type MutationEligibilityEvaluator func(context.Context, *gorm.DB, string, string, []string) ([]EntryInput, error)
+
+type RepositoryOption func(*repository)
+
+func WithMutationEligibilityEvaluator(evaluator MutationEligibilityEvaluator) RepositoryOption {
+	return func(repository *repository) { repository.eligibility = evaluator }
+}
+
+func New(db *gorm.DB, options ...RepositoryOption) Repository {
+	repository := &repository{db: db, now: time.Now}
+	for _, option := range options {
+		option(repository)
+	}
+	return repository
 }
 
 func (r *repository) Create(ctx context.Context, input CreateInput) (*group_list_model.GroupList, error) {
-	if r == nil || r.db == nil || r.now == nil || ctx == nil || uuid.Validate(input.ID) != nil || uuid.Validate(input.InstanceID) != nil || len(input.Entries) == 0 {
+	if r == nil || r.db == nil || r.now == nil || ctx == nil || uuid.Validate(input.ID) != nil || uuid.Validate(input.InstanceID) != nil || len(input.Entries) == 0 && len(input.GroupJIDs) == 0 {
 		return nil, errors.New("group list repository and identities are required")
 	}
 	now := r.now().UTC()
@@ -112,17 +160,28 @@ func (r *repository) Create(ctx context.Context, input CreateInput) (*group_list
 		AuthorizationReferenceHash: input.AuthorizationReferenceHash, AuthorizedAt: input.AuthorizedAt.UTC(),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	entries := buildEntries(list, input.Entries, now)
-	audit := newAudit(list, "created", nil, 1, input.ActorReferenceHash, input.AuditMetadata, now)
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		entryInputs := input.Entries
+		if r.eligibility != nil {
+			var err error
+			entryInputs, err = r.eligibility(ctx, tx, input.InstanceID, input.InstanceJID, input.GroupJIDs)
+			if err != nil {
+				return err
+			}
+		}
+		if len(entryInputs) == 0 {
+			return errors.New("validated group list entries are required")
+		}
 		if err := tx.Create(list).Error; err != nil {
 			return err
 		}
+		entries := buildEntries(list, entryInputs, now)
 		if err := tx.CreateInBatches(&entries, 500).Error; err != nil {
 			return err
 		}
+		audit := newAudit(list, "created", nil, 1, input.ActorReferenceHash, input.AuditMetadata, now)
 		return tx.Create(audit).Error
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if uniqueViolation(err) {
 		return nil, ErrNameConflict
 	}
@@ -203,7 +262,7 @@ func (r *repository) ListEntries(ctx context.Context, instanceID, groupListID st
 }
 
 func (r *repository) Update(ctx context.Context, instanceID, groupListID string, input UpdateInput) (*group_list_model.GroupList, error) {
-	if err := validateRead(r, ctx, instanceID, groupListID); err != nil || input.ExpectedVersion < 1 || len(input.Entries) == 0 {
+	if err := validateRead(r, ctx, instanceID, groupListID); err != nil || input.ExpectedVersion < 1 || len(input.Entries) == 0 && len(input.GroupJIDs) == 0 {
 		if err == nil {
 			err = errors.New("non-empty versioned group list update is required")
 		}
@@ -220,6 +279,17 @@ func (r *repository) Update(ctx context.Context, instanceID, groupListID string,
 		}
 		if list.Version != input.ExpectedVersion {
 			return ErrVersionConflict
+		}
+		entryInputs := input.Entries
+		if r.eligibility != nil {
+			var validationErr error
+			entryInputs, validationErr = r.eligibility(ctx, tx, instanceID, input.InstanceJID, input.GroupJIDs)
+			if validationErr != nil {
+				return validationErr
+			}
+		}
+		if len(entryInputs) == 0 {
+			return errors.New("validated group list entries are required")
 		}
 		previousVersion := list.Version
 		list.Name = input.Name
@@ -242,15 +312,15 @@ func (r *repository) Update(ctx context.Context, instanceID, groupListID string,
 		if result.RowsAffected != 1 {
 			return ErrVersionConflict
 		}
-		groupIDs := make([]string, len(input.Entries))
-		for index := range input.Entries {
-			groupIDs[index] = input.Entries[index].GroupJID
+		groupIDs := make([]string, len(entryInputs))
+		for index := range entryInputs {
+			groupIDs[index] = entryInputs[index].GroupJID
 		}
 		if err := tx.Where("instance_id = ? AND group_list_id = ? AND group_jid NOT IN ?", instanceID, groupListID, groupIDs).
 			Delete(&group_list_model.Entry{}).Error; err != nil {
 			return err
 		}
-		entries := buildEntries(&list, input.Entries, now)
+		entries := buildEntries(&list, entryInputs, now)
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "group_list_id"}, {Name: "group_jid"}},
 			DoUpdates: clause.AssignmentColumns([]string{"group_name_snapshot"}),
@@ -259,9 +329,12 @@ func (r *repository) Update(ctx context.Context, instanceID, groupListID string,
 		}
 		audit := newAudit(&list, "updated", &previousVersion, list.Version, input.ActorReferenceHash, input.AuditMetadata, now)
 		return tx.Create(audit).Error
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if uniqueViolation(err) {
 		return nil, ErrNameConflict
+	}
+	if serializationFailure(err) {
+		return nil, ErrVersionConflict
 	}
 	return &list, err
 }
@@ -361,6 +434,12 @@ func uniqueViolation(err error) bool {
 	type sqlStateError interface{ SQLState() string }
 	var state sqlStateError
 	return errors.As(err, &state) && state.SQLState() == "23505"
+}
+
+func serializationFailure(err error) bool {
+	type sqlState interface{ SQLState() string }
+	var state sqlState
+	return errors.As(err, &state) && state.SQLState() == "40001"
 }
 
 func escapeLike(value string) string {

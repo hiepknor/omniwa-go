@@ -10,6 +10,7 @@ import (
 
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
+	"github.com/evolution-foundation/evolution-go/pkg/observability"
 	"github.com/google/uuid"
 )
 
@@ -22,6 +23,7 @@ type managementRepositoryStub struct {
 	campaigns   []campaign_model.Campaign
 	snapshots   map[string]campaign_repository.RecipientProgress
 	stored      *campaign_model.Campaign
+	groupErr    error
 }
 
 func (stub *managementRepositoryStub) GetCampaign(context.Context, string, string) (*campaign_model.Campaign, error) {
@@ -41,6 +43,9 @@ func (stub *managementRepositoryStub) CreateDraft(_ context.Context, instanceID 
 func (stub *managementRepositoryStub) CreateGroupDraft(_ context.Context, instanceID string, input campaign_repository.GroupDraftInput) (*campaign_model.Campaign, []campaign_model.Recipient, error) {
 	stub.groupCalls++
 	stub.groupInput = input
+	if stub.groupErr != nil {
+		return nil, nil, stub.groupErr
+	}
 	name, version := "Branches", input.GroupListVersion
 	campaign := &campaign_model.Campaign{
 		ID: uuid.NewString(), InstanceID: instanceID, ContentType: input.ContentType, TextBody: input.TextBody, TargetType: campaign_model.CampaignTargetGroupList,
@@ -50,6 +55,14 @@ func (stub *managementRepositoryStub) CreateGroupDraft(_ context.Context, instan
 		campaign.MediaAssetID = &input.MediaAssetID
 	}
 	return campaign, []campaign_model.Recipient{{Status: campaign_model.RecipientStatusPending}}, nil
+}
+
+type campaignEligibilityObserverStub struct{ rejections []string }
+
+func (*campaignEligibilityObserverStub) ObserveRequest(string, time.Duration, int, observability.EligibilityCounts) {
+}
+func (stub *campaignEligibilityObserverStub) ObserveMutationRejection(operation, code string) {
+	stub.rejections = append(stub.rejections, operation+":"+code)
 }
 
 func TestImageCampaignCreateIsGatedAndPreservesMediaReferenceAndCaption(t *testing.T) {
@@ -196,5 +209,18 @@ func TestCampaignListUsesTerminalProgressDefinition(t *testing.T) {
 		if !strings.Contains(string(payload), field) {
 			t.Fatalf("campaign summary omitted %s: %s", field, payload)
 		}
+	}
+}
+
+func TestGroupCampaignCreateObservesStableEligibilityRejection(t *testing.T) {
+	observer := &campaignEligibilityObserverStub{}
+	repository := &managementRepositoryStub{groupErr: campaign_repository.ErrGroupProjectionNotReady}
+	service := NewManagementService(repository, WithGroupTargetsEnabled(true), WithEligibilityObserver(observer))
+	_, err := service.Create(context.Background(), uuid.NewString(), CreateCampaignInput{
+		Name: "Groups", TextBody: "hello", InstanceJID: "1@s.whatsapp.net", Actor: campaign_repository.Actor{Type: "system"},
+		Target: &GroupListTargetInput{Type: campaign_model.CampaignTargetGroupList, GroupListID: uuid.NewString(), GroupListVersion: 1},
+	})
+	if !errors.Is(err, campaign_repository.ErrGroupProjectionNotReady) || len(observer.rejections) != 1 || observer.rejections[0] != "campaign_create:projection_not_ready" {
+		t.Fatalf("err=%v rejections=%v", err, observer.rejections)
 	}
 }

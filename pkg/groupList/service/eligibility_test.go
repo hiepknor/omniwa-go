@@ -17,7 +17,7 @@ type eligibilityGroupStub struct {
 	calls   int
 }
 
-func (stub *eligibilityGroupStub) GetForEligibility(context.Context, string, []string) ([]projection_repository.GroupRecord, error) {
+func (stub *eligibilityGroupStub) GetForEligibility(context.Context, string, string, []string) ([]projection_repository.GroupRecord, error) {
 	stub.calls++
 	return stub.records, nil
 }
@@ -57,6 +57,25 @@ func TestEligibilityRequiresReadyReconciledProjection(t *testing.T) {
 	if group.calls != 0 {
 		t.Fatalf("group projection read before readiness: %d calls", group.calls)
 	}
+}
+
+func TestEligibilityAssessmentReturnsTheEvaluatedProjectionMeta(t *testing.T) {
+	lastReconciledAt := time.Unix(8, 0)
+	state := &projection_model.State{
+		SyncStatus: projection_model.SyncStatusStale, SchemaVersion: projection_service.GroupsProjectionSchemaVersion,
+		LastReconciledAt: &lastReconciledAt,
+	}
+	service := NewEligibilityService(&eligibilityGroupStub{}, eligibilityStateStub{state: state})
+	service.now = func() time.Time { return time.Unix(10, 0) }
+	assessment, err := service.Assess(context.Background(), "instance", "5511@s.whatsapp.net", []string{"120363000001@g.us"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assessment.Meta.Source != "groups_projection" || assessment.Meta.SyncStatus != projection_model.SyncStatusStale ||
+		assessment.Meta.LastSyncedAt == nil || !assessment.Meta.LastSyncedAt.Equal(lastReconciledAt) {
+		t.Fatalf("meta = %+v", assessment.Meta)
+	}
+	assertEligibility(t, assessment.Results[0], EligibilityUnknown, ReasonProjectionNotReady, false)
 }
 
 func TestEligibilityMapsGroupAccessAndSendPermission(t *testing.T) {
@@ -129,6 +148,34 @@ func TestCanonicalGroupJIDRejectsNonGroupAndDuplicates(t *testing.T) {
 	_, err := service.Evaluate(context.Background(), "instance", "5511@s.whatsapp.net", []string{"120363000001@g.us", "120363000001@g.us"})
 	if err == nil || errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("duplicate result = %v", err)
+	}
+}
+
+func TestMutationEntriesCollectsIssuesWithUnknownPrecedenceAndTruncation(t *testing.T) {
+	results := make([]EligibilityResult, 102)
+	for index := range results {
+		reason := ReasonAccessLost
+		results[index] = EligibilityResult{GroupJID: "120363000001@g.us", Eligibility: EligibilityUnavailable, EligibilityReason: &reason, CheckedAt: time.Unix(10, 0)}
+	}
+	unknownReason := ReasonProjectionNotReady
+	results[101].Eligibility = EligibilityUnknown
+	results[101].EligibilityReason = &unknownReason
+	_, err := MutationEntries(results)
+	var issues *EligibilityIssuesError
+	if !errors.As(err, &issues) || !errors.Is(err, ErrProjectionNotReady) {
+		t.Fatalf("error = %T %v", err, err)
+	}
+	if issues.Details.IssueCount != 102 || !issues.Details.Truncated || len(issues.Details.Issues) != 100 {
+		t.Fatalf("details = %+v", issues.Details)
+	}
+}
+
+func TestMutationEntriesBuildsEligibleSnapshots(t *testing.T) {
+	entries, err := MutationEntries([]EligibilityResult{{
+		GroupJID: "120363000001@g.us", CurrentName: "Branch", Eligibility: EligibilityEligible, CanSend: true,
+	}})
+	if err != nil || len(entries) != 1 || entries[0].GroupNameSnapshot != "Branch" {
+		t.Fatalf("entries=%+v err=%v", entries, err)
 	}
 }
 

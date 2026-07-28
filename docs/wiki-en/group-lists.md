@@ -12,6 +12,17 @@ The routes are disabled by default. Operators enable the complete stack with:
 WA_GROUP_LISTS_ENABLED=true
 ```
 
+The advisory eligibility endpoints have an independent rollout flag and
+capability:
+
+```env
+WA_GROUP_LIST_ELIGIBILITY_ENABLED=true
+```
+
+This flag requires `WA_GROUP_LISTS_ENABLED=true`. Clients expose the preflight
+UI only when `group_list_eligibility` is advertised. The capability describes
+endpoint support; each response still carries the current projection status.
+
 Clients must still check `GET /server/capabilities`. The `group_lists`
 capability appears only when the feature is enabled and that instance's groups
 projection is ready at the required schema version. Use an instance token in
@@ -59,6 +70,9 @@ GET /group-lists/{groupListId}
 GET /group-lists/{groupListId}/groups?limit=50&cursor=...
 ```
 
+The groups response includes `meta.source`, `meta.syncStatus`,
+`meta.lastSyncedAt`, and `meta.nextCursor`, including an empty page.
+
 Each entry response keeps the stored name separate from the current projection
 and includes the backend's permission decision:
 
@@ -79,6 +93,72 @@ Eligibility is `eligible`, `unavailable`, or `unknown`. Stable reasons are
 `group_suspended`, and `projection_not_ready`. Clients must not infer send
 permission from group metadata. A provider-side rename changes `currentName`
 but does not change the list version or `snapshotName`.
+
+## Advisory preflight
+
+Evaluate an ordered batch before an operator submits a list:
+
+```http
+POST /group-lists/eligibility
+apikey: <instance-token>
+Content-Type: application/json
+
+{"groupJids":["120363000001@g.us"]}
+```
+
+The request accepts 1 to 100 unique canonical group JIDs. JSON is strict and
+the body is bounded. The response preserves request order and returns the same
+eligibility fields used by list mutations, plus projection metadata. A
+projection that is missing, stale, not ready, failed, or on an old schema
+returns HTTP 200 with `unknown / projection_not_ready / canSend:false`; this is
+an advisory result, not a mutation failure.
+
+Evaluate the complete current version of one list on demand:
+
+```text
+GET /group-lists/{groupListId}/eligibility?expectedVersion=4
+```
+
+The aggregate is bounded to 10,000 entries and returns `total`, state counts,
+`readyToTarget`, `byReason`, and `checkedAt`. If supplied, `expectedVersion`
+must match the current list or the request returns
+`409 group_list_version_conflict`. Historical list versions are not simulated.
+Neither endpoint calls WhatsApp, writes audit history, sends a message, or
+starts a retry.
+
+Preflight is intentionally advisory. Create/update Group List, group-list
+Campaign creation, Campaign activation, worker claim, and provider send retain
+their own backend revalidation boundaries.
+
+## Structured mutation issues
+
+When create/update or group-list Campaign creation rejects projected group
+state, the error contains at most 100 non-eligible entries under `details`:
+
+```json
+{
+  "error": "group list contains an unavailable group",
+  "code": "group_list_group_unavailable",
+  "requestId": "request-id",
+  "details": {
+    "issueCount": 1,
+    "truncated": false,
+    "issues": [{
+      "groupJid": "120363000001@g.us",
+      "currentName": "Branch 01",
+      "eligibility": "unavailable",
+      "eligibilityReason": "group_access_lost",
+      "canSend": false,
+      "checkedAt": "2026-07-26T10:00:00Z"
+    }]
+  }
+}
+```
+
+Eligible entries are omitted. If any issue is `unknown`, the response is
+`503 projection_not_ready`; otherwise unavailable issues produce
+`409 group_list_group_unavailable`. Invalid/duplicate input and version
+conflicts are rejected before eligibility evaluation where applicable.
 
 ## Replace, delete, and audit
 
@@ -116,8 +196,12 @@ endpoint, parent list, and search term. Do not reuse a cursor in another query.
 
 ## Rollout and rollback
 
-Apply the additive migration while `WA_GROUP_LISTS_ENABLED=false`, validate the
-projection and PostgreSQL checks, and then enable the flag. For application
-rollback, disable the flag or deploy the previous image. The tables and audit
-history are intentionally retained; schema defects are corrected with a
-forward migration rather than a destructive down migration.
+Apply the additive migration while `WA_GROUP_LIST_ELIGIBILITY_ENABLED=false`.
+Migration 29 creates identity-first participant indexes and can temporarily
+block writes to `projected_group_participants`; schedule it in a maintenance
+window appropriate to the table size and inspect PostgreSQL lock/statement
+duration. Validate the projection, query plan, PostgreSQL tests, and metrics,
+then enable the flag for a canary instance/client cohort. For application
+rollback, disable only the eligibility flag or deploy the previous image. The
+indexes, lists, and audit history remain in place; schema defects are corrected
+with a forward migration rather than a destructive down migration.

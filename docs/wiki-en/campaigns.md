@@ -118,6 +118,13 @@ name, list version, group JIDs, and current group labels in one transaction.
 Renaming, updating, or deleting the Group List afterward does not change the
 campaign snapshot.
 
+When `group_list_eligibility` is advertised, Console may call the advisory
+Group List aggregate before creation. That result is never a promise: Campaign
+creation performs the same authoritative checks again while holding the list
+snapshot lock. A creation-time projection race returns the bounded public-safe
+`details.issues` contract documented in [Group Lists](group-lists.md), with
+unknown issues taking `503 projection_not_ready` precedence.
+
 Schedule and then explicitly start it:
 
 ```http

@@ -14,6 +14,7 @@ import (
 	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
 	group_list_model "github.com/evolution-foundation/evolution-go/pkg/groupList/model"
 	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
+	group_list_service "github.com/evolution-foundation/evolution-go/pkg/groupList/service"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
 	"github.com/google/uuid"
@@ -88,6 +89,18 @@ func TestGroupDraftSnapshotIsAtomicScopedAndImmutable(t *testing.T) {
 	if _, _, err := repository.CreateGroupDraft(context.Background(), instance.Id, staleInput); !errors.Is(err, group_list_repository.ErrVersionConflict) {
 		t.Fatalf("stale group list error = %v", err)
 	}
+	checkedAt := time.Now().UTC()
+	eligibilityOverrides[entries[0].GroupJID] = campaign_repository.GroupEligibilityResult{Eligibility: group_list_service.EligibilityUnavailable, Reason: group_list_service.ReasonAccessLost, CheckedAt: checkedAt}
+	eligibilityOverrides[entries[1].GroupJID] = campaign_repository.GroupEligibilityResult{Eligibility: group_list_service.EligibilityUnknown, Reason: group_list_service.ReasonProjectionNotReady, CheckedAt: checkedAt}
+	if _, _, err := repository.CreateGroupDraft(context.Background(), instance.Id, input); err == nil {
+		t.Fatal("mixed invalid eligibility was accepted")
+	} else {
+		var issues *group_list_service.EligibilityIssuesError
+		if !errors.As(err, &issues) || !errors.Is(err, campaign_repository.ErrGroupProjectionNotReady) || issues.Details.IssueCount != 2 || len(issues.Details.Issues) != 2 {
+			t.Fatalf("mixed eligibility error = %T %+v", err, err)
+		}
+	}
+	eligibilityOverrides = map[string]campaign_repository.GroupEligibilityResult{}
 	campaign, targets, err := repository.CreateGroupDraft(context.Background(), instance.Id, input)
 	if err != nil {
 		t.Fatal(err)

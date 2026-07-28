@@ -46,6 +46,13 @@ type ErrorResponse struct {
 	RequestID string `json:"requestId,omitempty" example:"0123456789abcdef0123456789abcdef"`
 }
 
+type GroupListEligibilityErrorResponse struct {
+	Error     string                                     `json:"error" example:"group list contains an unavailable group"`
+	Code      string                                     `json:"code" example:"group_list_group_unavailable"`
+	RequestID string                                     `json:"requestId,omitempty" example:"0123456789abcdef0123456789abcdef"`
+	Details   group_list_service.EligibilityIssueDetails `json:"details"`
+}
+
 type CampaignErrorResponse struct {
 	Error string `json:"error" example:"campaign state conflict"`
 	Code  string `json:"code,omitempty" example:"campaign_state_conflict"`
@@ -101,6 +108,18 @@ type GroupListEntryListResponse struct {
 	Meta    ProjectionMeta                 `json:"meta"`
 }
 
+type GroupListEligibilityResponse struct {
+	Message string                                 `json:"message" example:"success"`
+	Data    []group_list_service.EligibilityResult `json:"data"`
+	Meta    group_list_service.EligibilityMeta     `json:"meta"`
+}
+
+type GroupListEligibilityAggregateResponse struct {
+	Message string                                  `json:"message" example:"success"`
+	Data    group_list_service.EligibilityAggregate `json:"data"`
+	Meta    group_list_service.EligibilityMeta      `json:"meta"`
+}
+
 type GroupListAuditListResponse struct {
 	Message string                `json:"message" example:"success"`
 	Data    []GroupListAuditEvent `json:"data"`
@@ -121,7 +140,7 @@ type GroupListAuditEvent struct {
 type CapabilitiesData struct {
 	Version      string   `json:"version" example:"1.2.3"`
 	Revision     string   `json:"revision" example:"0123456789abcdef0123456789abcdef01234567"`
-	Capabilities []string `json:"capabilities" example:"campaign_orchestration,rate_limit_retry_after,groups_projection,group_lists,campaign_group_targets,campaign_image_content,instance_metadata_views,instance_credential_health,instance_token_rotation"`
+	Capabilities []string `json:"capabilities" example:"campaign_orchestration,rate_limit_retry_after,groups_projection,group_lists,group_list_eligibility,campaign_group_targets,campaign_image_content,instance_metadata_views,instance_credential_health,instance_token_rotation"`
 }
 
 type CapabilitiesResponse struct {

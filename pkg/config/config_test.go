@@ -54,6 +54,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_PIXELS, "")
 	t.Setenv(config_env.CAMPAIGN_MEDIA_UNBOUND_TTL, "")
 	t.Setenv(config_env.WA_GROUP_LISTS_ENABLED, "")
+	t.Setenv(config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "")
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT, "")
@@ -104,6 +105,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	}
 	if config.GroupListsEnabled {
 		t.Fatal("expected Group Lists to be disabled by default")
+	}
+	if config.GroupListEligibilityEnabled {
+		t.Fatal("expected Group List eligibility to be disabled by default")
 	}
 	if config.CampaignDirectCreateEnabled {
 		t.Fatal("expected direct campaign creation to be disabled by default")
@@ -180,6 +184,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.CAMPAIGN_MEDIA_MAX_PIXELS, "12000000")
 	t.Setenv(config_env.CAMPAIGN_MEDIA_UNBOUND_TTL, "12h")
 	t.Setenv(config_env.WA_GROUP_LISTS_ENABLED, "true")
+	t.Setenv(config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED, "true")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "allowlist")
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "cdn.example.com, media.example.com")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT, "3s")
@@ -230,6 +235,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if !config.GroupListsEnabled {
 		t.Fatal("expected Group Lists feature flag override to be enabled")
+	}
+	if !config.GroupListEligibilityEnabled {
+		t.Fatal("expected Group List eligibility feature flag override to be enabled")
 	}
 	if !config.CampaignDirectCreateEnabled {
 		t.Fatal("expected direct campaign creation emergency override to be enabled")

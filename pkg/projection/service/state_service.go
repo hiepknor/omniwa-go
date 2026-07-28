@@ -17,6 +17,7 @@ const (
 	CapabilityCampaignOrchestration = "campaign_orchestration"
 	CapabilityFailureOperations     = "projection_failure_operations"
 	CapabilityGroupLists            = "group_lists"
+	CapabilityGroupListEligibility  = "group_list_eligibility"
 	CapabilityCampaignGroupTargets  = "campaign_group_targets"
 	CapabilityCampaignImageContent  = "campaign_image_content"
 	CapabilityChatImageContent      = "chat_image_content"
@@ -85,6 +86,7 @@ type stateService struct {
 	work                      projection_repository.WorkHealthRepository
 	policy                    ProjectionHealthPolicy
 	extraResourceCapabilities map[string][]string
+	staticCapabilities        []string
 	now                       func() time.Time
 }
 
@@ -96,6 +98,14 @@ func WithResourceCapability(resource, capability string) StateServiceOption {
 			return
 		}
 		service.extraResourceCapabilities[resource] = append(service.extraResourceCapabilities[resource], capability)
+	}
+}
+
+func WithStaticCapability(capability string) StateServiceOption {
+	return func(service *stateService) {
+		if capability != "" {
+			service.staticCapabilities = append(service.staticCapabilities, capability)
+		}
 	}
 }
 
@@ -207,6 +217,7 @@ func (s *stateService) Capabilities(instanceID string) ([]string, error) {
 	// Durable history has no initial-sync barrier: it is validly empty for a new
 	// instance and explicitly does not claim pre-deployment backfill.
 	capabilities := []string{CapabilityCampaignOrchestration, CapabilityEventsProjection, CapabilityOutboundRateLimit, CapabilityRateLimitRetryAfter}
+	capabilities = append(capabilities, s.staticCapabilities...)
 	if instanceID == "" {
 		capabilities = append(capabilities, CapabilityFailureOperations)
 		sort.Strings(capabilities)
