@@ -477,6 +477,15 @@ definitions:
       Timestamp:
         example: "2026-07-21T10:30:00Z"
         type: string
+      messageId:
+        description: |-
+          Present for the mediaAssetId branch. This is provider acknowledgement,
+          not a WhatsApp delivery receipt.
+        example: 3EB0C767D26A8D4E2A1B
+        type: string
+      timestamp:
+        example: "2026-07-21T10:30:00Z"
+        type: string
     type: object
   apidocs.SendMessageResponse:
     properties:
@@ -1725,13 +1734,34 @@ definitions:
       mediaType:
         type: string
       origin:
-        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetOrigin'
+        allOf:
+        - $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetOrigin'
+        enum:
+        - device_upload
+        - whatsapp_inbound
       readyAt:
         type: string
       status:
-        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetStatus'
+        allOf:
+        - $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetStatus'
+        enum:
+        - pending
+        - uploading
+        - downloading
+        - processing
+        - ready
+        - failed
+        - deleting
+        - deleted
       updatedAt:
         type: string
+    required:
+    - createdAt
+    - id
+    - mediaType
+    - origin
+    - status
+    - updatedAt
     type: object
   github_com_evolution-foundation_evolution-go_pkg_media_model.AssetOrigin:
     enum:
@@ -1768,15 +1798,30 @@ definitions:
       height:
         type: integer
       mimeType:
+        enum:
+        - image/jpeg
+        - image/png
         type: string
       sha256:
         type: string
       sizeBytes:
         type: integer
       variant:
-        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.VariantKind'
+        allOf:
+        - $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.VariantKind'
+        enum:
+        - canonical
+        - provider_original
       width:
         type: integer
+    required:
+    - createdAt
+    - height
+    - mimeType
+    - sha256
+    - sizeBytes
+    - variant
+    - width
     type: object
   github_com_evolution-foundation_evolution-go_pkg_media_model.VariantKind:
     enum:
@@ -2163,6 +2208,13 @@ definitions:
         type: string
       status:
         type: string
+    required:
+    - chatId
+    - direction
+    - messageId
+    - messageType
+    - provenance
+    - providerTimestamp
     type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessageReceipt:
     properties:
@@ -12691,8 +12743,11 @@ paths:
     post:
       consumes:
       - multipart/form-data
+      description: Accepts one genuine JPEG or PNG up to the server-configured MEDIA_ASSET_MAX_BYTES
+        limit (default 8388608 bytes). The authenticated instance owns the resulting
+        private asset.
       parameters:
-      - description: JPEG or PNG image
+      - description: JPEG or PNG image; default maximum 8388608 bytes
         in: formData
         name: file
         required: true
@@ -12756,6 +12811,10 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete shared image asset
@@ -12775,6 +12834,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/apidocs.MediaAssetResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -12808,6 +12871,10 @@ paths:
           description: Partial Content
           schema:
             type: file
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -12816,8 +12883,16 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "416":
           description: Requested Range Not Satisfiable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "503":
@@ -13869,12 +13944,36 @@ paths:
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "403":
+          description: Media asset ownership mismatch
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Media asset not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Media asset is not ready or processing failed
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "410":
+          description: Media asset expired or was deleted
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Media asset integrity failure
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
           description: Information or outbound rate limited; see Retry-After header
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Media asset storage unavailable
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:

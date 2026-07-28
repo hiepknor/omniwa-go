@@ -30,11 +30,11 @@ const (
 )
 
 type Asset struct {
-	ID                   string        `json:"id" gorm:"column:id;type:uuid;primaryKey"`
+	ID                   string        `json:"id" binding:"required" gorm:"column:id;type:uuid;primaryKey"`
 	InstanceID           string        `json:"-" gorm:"column:instance_id;type:uuid;not null"`
-	MediaType            string        `json:"mediaType" gorm:"column:media_type;size:32;not null"`
-	Origin               AssetOrigin   `json:"origin" gorm:"column:origin;size:32;not null"`
-	Status               AssetStatus   `json:"status" gorm:"column:status;size:32;not null"`
+	MediaType            string        `json:"mediaType" binding:"required" gorm:"column:media_type;size:32;not null"`
+	Origin               AssetOrigin   `json:"origin" binding:"required" enums:"device_upload,whatsapp_inbound" gorm:"column:origin;size:32;not null"`
+	Status               AssetStatus   `json:"status" binding:"required" enums:"pending,uploading,downloading,processing,ready,failed,deleting,deleted" gorm:"column:status;size:32;not null"`
 	FailureCode          *string       `json:"failureCode,omitempty" gorm:"column:failure_code;size:64"`
 	RequestReferenceHash *string       `json:"-" gorm:"column:request_reference_hash;size:64"`
 	CleanupClaimToken    *string       `json:"-" gorm:"column:cleanup_claim_token;type:uuid"`
@@ -42,8 +42,8 @@ type Asset struct {
 	ReadyAt              *time.Time    `json:"readyAt,omitempty" gorm:"column:ready_at"`
 	ExpiresAt            *time.Time    `json:"expiresAt,omitempty" gorm:"column:expires_at"`
 	DeletedAt            *time.Time    `json:"-" gorm:"column:deleted_at"`
-	CreatedAt            time.Time     `json:"createdAt" gorm:"column:created_at;not null"`
-	UpdatedAt            time.Time     `json:"updatedAt" gorm:"column:updated_at;not null"`
+	CreatedAt            time.Time     `json:"createdAt" binding:"required" gorm:"column:created_at;not null"`
+	UpdatedAt            time.Time     `json:"updatedAt" binding:"required" gorm:"column:updated_at;not null"`
 	Canonical            *AssetVariant `json:"canonical,omitempty" gorm:"-"`
 }
 
@@ -52,14 +52,14 @@ func (Asset) TableName() string { return "media_assets" }
 type AssetVariant struct {
 	MediaAssetID string      `json:"-" gorm:"column:media_asset_id;type:uuid;primaryKey"`
 	InstanceID   string      `json:"-" gorm:"column:instance_id;type:uuid;not null"`
-	Kind         VariantKind `json:"variant" gorm:"column:variant;size:32;primaryKey"`
+	Kind         VariantKind `json:"variant" binding:"required" enums:"canonical,provider_original" gorm:"column:variant;size:32;primaryKey"`
 	ObjectKey    string      `json:"-" gorm:"column:object_key;not null"`
-	MIMEType     string      `json:"mimeType" gorm:"column:mime_type;size:128;not null"`
-	SizeBytes    int64       `json:"sizeBytes" gorm:"column:size_bytes;not null"`
-	Width        int         `json:"width" gorm:"column:width;not null"`
-	Height       int         `json:"height" gorm:"column:height;not null"`
-	SHA256       string      `json:"sha256" gorm:"column:sha256;size:64;not null"`
-	CreatedAt    time.Time   `json:"createdAt" gorm:"column:created_at;not null"`
+	MIMEType     string      `json:"mimeType" binding:"required" enums:"image/jpeg,image/png" gorm:"column:mime_type;size:128;not null"`
+	SizeBytes    int64       `json:"sizeBytes" binding:"required" gorm:"column:size_bytes;not null"`
+	Width        int         `json:"width" binding:"required" gorm:"column:width;not null"`
+	Height       int         `json:"height" binding:"required" gorm:"column:height;not null"`
+	SHA256       string      `json:"sha256" binding:"required" gorm:"column:sha256;size:64;not null"`
+	CreatedAt    time.Time   `json:"createdAt" binding:"required" gorm:"column:created_at;not null"`
 }
 
 func (AssetVariant) TableName() string { return "media_asset_variants" }

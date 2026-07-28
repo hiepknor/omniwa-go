@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	media_service "github.com/evolution-foundation/evolution-go/pkg/media/service"
@@ -28,7 +29,8 @@ func (f *assetImageSenderFake) Send(_ context.Context, data *send_service.MediaS
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &send_service.MessageSendStruct{Info: types.MessageInfo{ID: "message-id"}}, nil
+	acknowledgedAt := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	return &send_service.MessageSendStruct{Info: types.MessageInfo{ID: "message-id"}, AcknowledgementID: "message-id", AcknowledgedAt: &acknowledgedAt}, nil
 }
 
 func TestSendMediaRoutesMediaAssetJSONToSingleAttemptSender(t *testing.T) {
@@ -45,7 +47,8 @@ func TestSendMediaRoutesMediaAssetJSONToSingleAttemptSender(t *testing.T) {
 	ctx.Set("instance", &instance_model.Instance{Id: uuid.NewString()})
 
 	handler.SendMedia(ctx)
-	if recorder.Code != http.StatusOK || sender.calls != 1 || sender.data == nil || sender.data.MediaAssetID != assetID {
+	if recorder.Code != http.StatusOK || sender.calls != 1 || sender.data == nil || sender.data.MediaAssetID != assetID ||
+		!strings.Contains(recorder.Body.String(), `"messageId":"message-id"`) || !strings.Contains(recorder.Body.String(), `"timestamp":"2026-07-29T12:00:00Z"`) {
 		t.Fatalf("status=%d calls=%d data=%+v body=%s", recorder.Code, sender.calls, sender.data, recorder.Body.String())
 	}
 }
@@ -93,5 +96,25 @@ func TestWriteAssetSendErrorMapsIntegrityFailure(t *testing.T) {
 	writeAssetSendError(ctx, media_service.ErrMediaAssetIntegrity)
 	if recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestWriteAssetSendErrorMapsLifecycleFailures(t *testing.T) {
+	for _, test := range []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{err: media_service.ErrMediaAssetFailed, status: http.StatusConflict, code: "media_asset_failed"},
+		{err: media_service.ErrMediaAssetExpired, status: http.StatusGone, code: "media_asset_expired"},
+		{err: media_service.ErrMediaAssetDeleted, status: http.StatusGone, code: "media_asset_deleted"},
+		{err: media_service.ErrMediaAssetInstance, status: http.StatusForbidden, code: "media_asset_instance_mismatch"},
+	} {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		writeAssetSendError(ctx, test.err)
+		if recorder.Code != test.status || !strings.Contains(recorder.Body.String(), test.code) {
+			t.Fatalf("error=%v status=%d body=%s", test.err, recorder.Code, recorder.Body.String())
+		}
 	}
 }

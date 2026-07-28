@@ -4923,6 +4923,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
+                "description": "Accepts one genuine JPEG or PNG up to the server-configured MEDIA_ASSET_MAX_BYTES limit (default 8388608 bytes). The authenticated instance owns the resulting private asset.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -4936,7 +4937,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "file",
-                        "description": "JPEG or PNG image",
+                        "description": "JPEG or PNG image; default maximum 8388608 bytes",
                         "name": "file",
                         "in": "formData",
                         "required": true
@@ -5018,6 +5019,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.MediaAssetResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -5063,6 +5070,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -5113,6 +5126,12 @@ const docTemplate = `{
                             "type": "file"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -5125,8 +5144,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "416": {
                         "description": "Requested Range Not Satisfiable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -6774,6 +6805,36 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Media asset ownership mismatch",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Media asset not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Media asset is not ready or processing failed",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Media asset expired or was deleted",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Media asset integrity failure",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "429": {
                         "description": "Information or outbound rate limited; see Retry-After header",
                         "schema": {
@@ -6782,6 +6843,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Media asset storage unavailable",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -9190,6 +9257,15 @@ const docTemplate = `{
                 "Timestamp": {
                     "type": "string",
                     "example": "2026-07-21T10:30:00Z"
+                },
+                "messageId": {
+                    "description": "Present for the mediaAssetId branch. This is provider acknowledgement,\nnot a WhatsApp delivery receipt.",
+                    "type": "string",
+                    "example": "3EB0C767D26A8D4E2A1B"
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2026-07-21T10:30:00Z"
                 }
             }
         },
@@ -11001,6 +11077,14 @@ const docTemplate = `{
         },
         "github_com_evolution-foundation_evolution-go_pkg_media_model.Asset": {
             "type": "object",
+            "required": [
+                "createdAt",
+                "id",
+                "mediaType",
+                "origin",
+                "status",
+                "updatedAt"
+            ],
             "properties": {
                 "canonical": {
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetVariant"
@@ -11021,13 +11105,35 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "origin": {
-                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetOrigin"
+                    "enum": [
+                        "device_upload",
+                        "whatsapp_inbound"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetOrigin"
+                        }
+                    ]
                 },
                 "readyAt": {
                     "type": "string"
                 },
                 "status": {
-                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetStatus"
+                    "enum": [
+                        "pending",
+                        "uploading",
+                        "downloading",
+                        "processing",
+                        "ready",
+                        "failed",
+                        "deleting",
+                        "deleted"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.AssetStatus"
+                        }
+                    ]
                 },
                 "updatedAt": {
                     "type": "string"
@@ -11070,6 +11176,15 @@ const docTemplate = `{
         },
         "github_com_evolution-foundation_evolution-go_pkg_media_model.AssetVariant": {
             "type": "object",
+            "required": [
+                "createdAt",
+                "height",
+                "mimeType",
+                "sha256",
+                "sizeBytes",
+                "variant",
+                "width"
+            ],
             "properties": {
                 "createdAt": {
                     "type": "string"
@@ -11078,7 +11193,11 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "mimeType": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "image/jpeg",
+                        "image/png"
+                    ]
                 },
                 "sha256": {
                     "type": "string"
@@ -11087,7 +11206,15 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "variant": {
-                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.VariantKind"
+                    "enum": [
+                        "canonical",
+                        "provider_original"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_media_model.VariantKind"
+                        }
+                    ]
                 },
                 "width": {
                     "type": "integer"
@@ -11573,6 +11700,14 @@ const docTemplate = `{
         },
         "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessage": {
             "type": "object",
+            "required": [
+                "chatId",
+                "direction",
+                "messageId",
+                "messageType",
+                "provenance",
+                "providerTimestamp"
+            ],
             "properties": {
                 "caption": {
                     "type": "string"

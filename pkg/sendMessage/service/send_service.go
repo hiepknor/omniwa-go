@@ -390,6 +390,8 @@ type MessageSendStruct struct {
 	Info               types.MessageInfo
 	Message            *waE2E.Message
 	MessageContextInfo *waE2E.ContextInfo
+	AcknowledgementID  string     `json:"messageId,omitempty"`
+	AcknowledgedAt     *time.Time `json:"timestamp,omitempty"`
 }
 
 func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {

@@ -46,12 +46,18 @@ func (s *OutboundImageService) Send(ctx context.Context, data *send_service.Medi
 		data.Type != "image" || data.Url != "" || s.maxBytes < 1 || s.retention <= 0 || !utf8.ValidString(data.Caption) || utf8.RuneCountInString(data.Caption) > 1024 {
 		return nil, ErrInvalidMediaAsset
 	}
-	asset, err := s.repository.Get(ctx, instance.Id, data.MediaAssetID)
+	asset, err := s.repository.GetMetadata(ctx, instance.Id, data.MediaAssetID)
 	if err != nil {
 		return nil, err
 	}
-	if asset.ID != data.MediaAssetID || asset.InstanceID != instance.Id || asset.Status != media_model.AssetStatusReady || asset.Canonical == nil || asset.CleanupClaimToken != nil || asset.DeletedAt != nil {
-		return nil, ErrMediaAssetNotReady
+	if asset.ID != data.MediaAssetID || asset.InstanceID != instance.Id {
+		return nil, ErrMediaAssetInstance
+	}
+	if err := AssetAvailability(asset, s.now().UTC()); err != nil {
+		return nil, err
+	}
+	if asset.Canonical == nil {
+		return nil, ErrMediaAssetIntegrity
 	}
 	canonical := asset.Canonical
 	if canonical.MediaAssetID != asset.ID || canonical.InstanceID != instance.Id || canonical.Kind != media_model.VariantCanonical ||
@@ -100,7 +106,34 @@ func (s *OutboundImageService) Send(ctx context.Context, data *send_service.Medi
 	if result == nil || result.Info.ID == "" || string(result.Info.ID) != data.Id {
 		return nil, &send_service.ProviderSendError{Cause: errors.New("provider acknowledgement is missing a message ID")}
 	}
+	acknowledgedAt := result.Info.Timestamp
+	if acknowledgedAt.IsZero() {
+		acknowledgedAt = s.now().UTC()
+	}
+	result.AcknowledgementID = string(result.Info.ID)
+	result.AcknowledgedAt = &acknowledgedAt
 	return result, nil
+}
+
+// AssetAvailability maps the persisted lifecycle to stable public error
+// semantics without consulting WhatsApp or private storage.
+func AssetAvailability(asset *media_model.Asset, now time.Time) error {
+	if asset == nil {
+		return media_repository.ErrAssetNotFound
+	}
+	if asset.Status == media_model.AssetStatusDeleted || asset.DeletedAt != nil {
+		return ErrMediaAssetDeleted
+	}
+	if asset.ExpiresAt != nil && !asset.ExpiresAt.After(now) {
+		return ErrMediaAssetExpired
+	}
+	if asset.Status == media_model.AssetStatusFailed {
+		return ErrMediaAssetFailed
+	}
+	if asset.Status != media_model.AssetStatusReady || asset.CleanupClaimToken != nil {
+		return ErrMediaAssetNotReady
+	}
+	return nil
 }
 
 func sha256Bytes(value []byte) string {

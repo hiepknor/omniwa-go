@@ -28,6 +28,9 @@ type outboundRepositoryFake struct {
 func (f *outboundRepositoryFake) Get(context.Context, string, string) (*media_model.Asset, error) {
 	return f.asset, f.getErr
 }
+func (f *outboundRepositoryFake) GetMetadata(context.Context, string, string) (*media_model.Asset, error) {
+	return f.asset, f.getErr
+}
 func (f *outboundRepositoryFake) AddReference(_ context.Context, reference media_model.AssetReference) error {
 	if f.addErr == nil {
 		f.added = append(f.added, reference)
@@ -96,9 +99,43 @@ func TestOutboundImageSendFencesAssetAndKeepsReferenceOnSuccess(t *testing.T) {
 	if err != nil || result == nil || sender.calls != 1 || data.Id == "" {
 		t.Fatalf("send result=%+v calls=%d id=%q err=%v", result, sender.calls, data.Id, err)
 	}
+	if result.AcknowledgementID != data.Id || result.AcknowledgedAt == nil || !result.AcknowledgedAt.Equal(now) {
+		t.Fatalf("acknowledgement=%+v", result)
+	}
 	if len(repository.added) != 1 || len(repository.removed) != 0 || repository.added[0].OwnerID != data.Id ||
 		repository.added[0].RetentionUntil == nil || !repository.added[0].RetentionUntil.Equal(now.Add(24*time.Hour)) {
 		t.Fatalf("references added=%+v removed=%+v", repository.added, repository.removed)
+	}
+}
+
+func TestOutboundImageSendRejectsUnavailableLifecycleStates(t *testing.T) {
+	instanceID := uuid.NewString()
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name   string
+		status media_model.AssetStatus
+		mutate func(*media_model.Asset)
+		want   error
+	}{
+		{name: "pending", status: media_model.AssetStatusPending, want: ErrMediaAssetNotReady},
+		{name: "failed", status: media_model.AssetStatusFailed, want: ErrMediaAssetFailed},
+		{name: "expired", status: media_model.AssetStatusReady, mutate: func(asset *media_model.Asset) { expired := now.Add(-time.Second); asset.ExpiresAt = &expired }, want: ErrMediaAssetExpired},
+		{name: "deleted", status: media_model.AssetStatusDeleted, mutate: func(asset *media_model.Asset) { deleted := now; asset.DeletedAt = &deleted }, want: ErrMediaAssetDeleted},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			asset := readyOutboundAsset(instanceID, "content")
+			asset.Status = test.status
+			if test.mutate != nil {
+				test.mutate(asset)
+			}
+			sender := &outboundSenderFake{}
+			service := NewOutboundImageService(&outboundRepositoryFake{asset: asset}, &outboundStoreFake{bytes: "content"}, sender, 1024, time.Hour)
+			service.now = func() time.Time { return now }
+			_, err := service.Send(context.Background(), &send_service.MediaStruct{Number: "120363000001@g.us", Type: "image", MediaAssetID: asset.ID}, &instance_model.Instance{Id: instanceID})
+			if !errors.Is(err, test.want) || sender.calls != 0 {
+				t.Fatalf("err=%v calls=%d", err, sender.calls)
+			}
+		})
 	}
 }
 

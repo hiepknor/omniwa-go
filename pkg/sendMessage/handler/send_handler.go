@@ -160,7 +160,13 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 // @Security ApiKeyAuth
 // @Success 200 {object} apidocs.SendMessageResponse "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 403 {object} apidocs.ErrorResponse "Media asset ownership mismatch"
+// @Failure 404 {object} apidocs.ErrorResponse "Media asset not found"
+// @Failure 409 {object} apidocs.ErrorResponse "Media asset is not ready or processing failed"
+// @Failure 410 {object} apidocs.ErrorResponse "Media asset expired or was deleted"
+// @Failure 422 {object} apidocs.ErrorResponse "Media asset integrity failure"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Failure 503 {object} apidocs.ErrorResponse "Media asset storage unavailable"
 // @Failure 429 {object} apidocs.RateLimitResponse "Information or outbound rate limited; see Retry-After header"
 // @Router /send/media [post]
 func (s *sendHandler) SendMedia(ctx *gin.Context) {
@@ -919,6 +925,14 @@ func writeAssetSendError(ctx *gin.Context, err error) {
 		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_media_asset", "invalid media asset request")
 	case errors.Is(err, media_repository.ErrAssetNotFound):
 		httpapi.WriteError(ctx, http.StatusNotFound, "media_asset_not_found", "media asset not found")
+	case errors.Is(err, media_service.ErrMediaAssetInstance):
+		httpapi.WriteError(ctx, http.StatusForbidden, "media_asset_instance_mismatch", "media asset does not belong to the authenticated instance")
+	case errors.Is(err, media_service.ErrMediaAssetFailed):
+		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_failed", "media asset processing failed")
+	case errors.Is(err, media_service.ErrMediaAssetExpired):
+		httpapi.WriteError(ctx, http.StatusGone, "media_asset_expired", "media asset expired")
+	case errors.Is(err, media_service.ErrMediaAssetDeleted):
+		httpapi.WriteError(ctx, http.StatusGone, "media_asset_deleted", "media asset was deleted")
 	case errors.Is(err, media_repository.ErrAssetConflict), errors.Is(err, media_service.ErrMediaAssetNotReady):
 		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_not_ready", "media asset is not ready")
 	case errors.Is(err, media_service.ErrMediaAssetIntegrity):

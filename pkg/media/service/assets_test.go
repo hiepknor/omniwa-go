@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"testing"
@@ -72,6 +73,27 @@ func TestNormalizeAssetImageAcceptsPNGAndRewindsCanonicalFile(t *testing.T) {
 	header := make([]byte, 8)
 	if _, err := normalized.file.Read(header); err != nil || !bytes.Equal(header, []byte("\x89PNG\r\n\x1a\n")) {
 		t.Fatalf("canonical file was not rewound: %x, %v", header, err)
+	}
+}
+
+func TestNormalizeAssetImageAcceptsJPEGAndRewindsCanonicalFile(t *testing.T) {
+	var source bytes.Buffer
+	input := image.NewRGBA(image.Rect(0, 0, 2, 3))
+	input.Set(1, 2, color.RGBA{R: 255, A: 255})
+	if err := jpeg.Encode(&source, input, &jpeg.Options{Quality: 80}); err != nil {
+		t.Fatal(err)
+	}
+	normalized, err := normalizeAssetImage(&source, 1024*1024, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer normalized.Close()
+	if normalized.mimeType != "image/jpeg" || normalized.width != 2 || normalized.height != 3 || normalized.size < 1 || len(normalized.sha256) != 64 {
+		t.Fatalf("normalized=%+v", normalized)
+	}
+	header := make([]byte, 2)
+	if _, err := normalized.file.Read(header); err != nil || !bytes.Equal(header, []byte{0xff, 0xd8}) {
+		t.Fatalf("canonical JPEG was not rewound: %x, %v", header, err)
 	}
 }
 

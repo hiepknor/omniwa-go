@@ -30,9 +30,10 @@ late and duplicate receipts will update through source-version comparison.
 
 The normalized message model stores direction, sender/recipient/participant,
 content text or summary, quoted-message identity, bounded media metadata,
-lifecycle timestamps, provenance, and retention/deletion state. Media bytes and
-raw provider payloads are not stored. `mediaObjectKey` may reference configured
-object storage after media persistence is implemented.
+lifecycle timestamps, provenance, and retention/deletion state. Media bytes,
+raw provider payloads, object keys, and private storage URLs are not stored in
+or returned by the public projection. An optional opaque `mediaAssetId` links
+to the instance-scoped shared private media contract.
 
 The additive public contract will be:
 

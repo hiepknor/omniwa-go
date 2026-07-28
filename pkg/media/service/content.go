@@ -2,11 +2,13 @@ package media_service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
+	"os"
 
 	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
-	storage_interfaces "github.com/evolution-foundation/evolution-go/pkg/storage/interfaces"
 	"github.com/google/uuid"
 )
 
@@ -23,31 +25,63 @@ func (s *AssetService) OpenContent(ctx context.Context, instanceID, assetID stri
 	if err := s.validate(ctx); err != nil || uuid.Validate(instanceID) != nil || uuid.Validate(assetID) != nil || offset < 0 || length < 1 {
 		return nil, ErrInvalidMediaAsset
 	}
-	asset, err := s.repository.Get(ctx, instanceID, assetID)
+	asset, err := s.repository.GetMetadata(ctx, instanceID, assetID)
 	if err != nil {
 		return nil, err
 	}
-	if asset.Status != media_model.AssetStatusReady || asset.Canonical == nil || asset.CleanupClaimToken != nil || asset.DeletedAt != nil {
-		return nil, ErrMediaAssetNotReady
+	if asset.InstanceID != instanceID {
+		return nil, ErrMediaAssetInstance
+	}
+	if err := AssetAvailability(asset, s.now().UTC()); err != nil {
+		return nil, err
+	}
+	if asset.Canonical == nil {
+		return nil, ErrMediaAssetIntegrity
 	}
 	variant := asset.Canonical
-	if variant.SizeBytes < 1 || variant.SizeBytes > s.settings.MaxBytes || offset >= variant.SizeBytes || length > variant.SizeBytes-offset {
+	if variant.MediaAssetID != asset.ID || variant.InstanceID != instanceID || variant.Kind != media_model.VariantCanonical ||
+		variant.MIMEType != "image/jpeg" && variant.MIMEType != "image/png" || variant.SizeBytes < 1 || variant.SizeBytes > s.settings.MaxBytes ||
+		len(variant.SHA256) != 64 {
+		return nil, ErrMediaAssetIntegrity
+	}
+	if offset >= variant.SizeBytes || length > variant.SizeBytes-offset {
 		return nil, ErrInvalidMediaAsset
 	}
-	var reader io.ReadCloser
-	if ranged, ok := s.store.(storage_interfaces.MediaAssetRangeStore); ok {
-		reader, err = ranged.OpenRange(ctx, variant.ObjectKey, offset, length)
-	} else {
-		reader, err = s.store.Open(ctx, variant.ObjectKey)
-		if err == nil && offset > 0 {
-			_, err = io.CopyN(io.Discard, reader, offset)
-		}
-	}
+	object, err := s.store.Open(ctx, variant.ObjectKey)
 	if err != nil {
-		if reader != nil {
-			_ = reader.Close()
-		}
 		return nil, errors.Join(ErrMediaAssetStorage, err)
 	}
-	return &AssetContent{Reader: reader, MIMEType: variant.MIMEType, SHA256: variant.SHA256, Total: variant.SizeBytes, Offset: offset, Length: length}, nil
+	temporary, err := os.CreateTemp("", "omniwa-media-content-*")
+	if err != nil {
+		_ = object.Close()
+		return nil, errors.Join(ErrMediaAssetStorage, err)
+	}
+	removeTemporary := true
+	defer func() {
+		if removeTemporary {
+			_ = temporary.Close()
+			_ = os.Remove(temporary.Name())
+		}
+	}()
+	hash := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(temporary, hash), io.LimitReader(object, s.settings.MaxBytes+1))
+	closeErr := object.Close()
+	if copyErr != nil || closeErr != nil {
+		return nil, errors.Join(ErrMediaAssetStorage, copyErr, closeErr)
+	}
+	if written != variant.SizeBytes || written > s.settings.MaxBytes || hex.EncodeToString(hash.Sum(nil)) != variant.SHA256 {
+		return nil, ErrMediaAssetIntegrity
+	}
+	if _, err := temporary.Seek(offset, io.SeekStart); err != nil {
+		return nil, errors.Join(ErrMediaAssetStorage, err)
+	}
+	removeTemporary = false
+	return &AssetContent{Reader: &temporaryContent{File: temporary}, MIMEType: variant.MIMEType, SHA256: variant.SHA256, Total: variant.SizeBytes, Offset: offset, Length: length}, nil
+}
+
+type temporaryContent struct{ *os.File }
+
+func (content *temporaryContent) Close() error {
+	name := content.Name()
+	return errors.Join(content.File.Close(), os.Remove(name))
 }

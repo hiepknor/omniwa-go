@@ -341,6 +341,22 @@ func TestInboundImageCapabilityRequiresCurrentMessagesProjection(t *testing.T) {
 	}
 }
 
+func TestConversationMediaCapabilityRequiresCurrentMessagesProjection(t *testing.T) {
+	repository := newMemoryRepository()
+	service := NewStateService(repository, WithResourceCapability("messages", CapabilityConversationMediaAssets))
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityConversationMediaAssets) {
+		t.Fatalf("capability advertised before projection readiness: %v/%v", capabilities, err)
+	}
+	repository.states[stateKey("instance-a", "messages")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "messages", SyncStatus: projection_model.SyncStatusReady, SchemaVersion: MessagesProjectionSchemaVersion,
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, CapabilityConversationMediaAssets) {
+		t.Fatalf("capability missing for ready projection: %v/%v", capabilities, err)
+	}
+}
+
 func TestProjectionHealthMetricsAreScopedAndTimestamped(t *testing.T) {
 	repository := newMemoryRepository()
 	now := time.Unix(1000, 0).UTC()

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -22,6 +23,7 @@ const multipartEnvelopeAllowance int64 = 1 << 20
 type assetService interface {
 	Upload(context.Context, media_service.AssetUploadInput) (*media_model.Asset, error)
 	Get(context.Context, string, string) (*media_model.Asset, error)
+	GetMetadata(context.Context, string, string) (*media_model.Asset, error)
 	Delete(context.Context, string, string) error
 	OpenContent(context.Context, string, string, int64, int64) (*media_service.AssetContent, error)
 }
@@ -67,7 +69,8 @@ func (h *handler) ContentEnabled() bool       { return h != nil && h.content }
 // @Tags Media Assets
 // @Accept multipart/form-data
 // @Produce json
-// @Param file formData file true "JPEG or PNG image"
+// @Description Accepts one genuine JPEG or PNG up to the server-configured MEDIA_ASSET_MAX_BYTES limit (default 8388608 bytes). The authenticated instance owns the resulting private asset.
+// @Param file formData file true "JPEG or PNG image; default maximum 8388608 bytes"
 // @Param Idempotency-Key header string false "Instance-scoped upload idempotency key"
 // @Success 201 {object} apidocs.MediaAssetResponse
 // @Failure 400 {object} apidocs.ErrorResponse
@@ -127,6 +130,7 @@ func (h *handler) Upload(ctx *gin.Context) {
 // @Produce json
 // @Param mediaId path string true "Media asset UUID"
 // @Success 200 {object} apidocs.MediaAssetResponse
+// @Failure 403 {object} apidocs.ErrorResponse
 // @Failure 404 {object} apidocs.ErrorResponse
 // @Security ApiKeyAuth
 // @Router /media-assets/{mediaId} [get]
@@ -135,7 +139,7 @@ func (h *handler) Get(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	asset, err := h.service.Get(ctx.Request.Context(), instance.Id, ctx.Param("mediaId"))
+	asset, err := h.service.GetMetadata(ctx.Request.Context(), instance.Id, ctx.Param("mediaId"))
 	if err != nil {
 		writeError(ctx, err)
 		return
@@ -151,6 +155,7 @@ func (h *handler) Get(ctx *gin.Context) {
 // @Success 200 {object} apidocs.SuccessResponse
 // @Failure 404 {object} apidocs.ErrorResponse
 // @Failure 409 {object} apidocs.ErrorResponse
+// @Failure 503 {object} apidocs.ErrorResponse
 // @Security ApiKeyAuth
 // @Router /media-assets/{mediaId} [delete]
 func (h *handler) Delete(ctx *gin.Context) {
@@ -177,9 +182,12 @@ func (h *handler) Delete(ctx *gin.Context) {
 // @Param Range header string false "Single bytes range"
 // @Success 200 {file} binary
 // @Success 206 {file} binary
+// @Failure 403 {object} apidocs.ErrorResponse
 // @Failure 404 {object} apidocs.ErrorResponse
 // @Failure 409 {object} apidocs.ErrorResponse
+// @Failure 410 {object} apidocs.ErrorResponse
 // @Failure 416 {object} apidocs.ErrorResponse
+// @Failure 422 {object} apidocs.ErrorResponse
 // @Failure 503 {object} apidocs.ErrorResponse
 // @Security ApiKeyAuth
 // @Router /media-assets/{mediaId}/content [get]
@@ -192,13 +200,17 @@ func (h *handler) Content(ctx *gin.Context) {
 		httpapi.WriteError(ctx, http.StatusNotImplemented, "media_asset_content_disabled", "media content streaming is disabled")
 		return
 	}
-	asset, err := h.service.Get(ctx.Request.Context(), instance.Id, ctx.Param("mediaId"))
+	asset, err := h.service.GetMetadata(ctx.Request.Context(), instance.Id, ctx.Param("mediaId"))
 	if err != nil {
 		writeError(ctx, err)
 		return
 	}
-	if asset.Status != media_model.AssetStatusReady || asset.Canonical == nil {
-		writeError(ctx, media_service.ErrMediaAssetNotReady)
+	if err := media_service.AssetAvailability(asset, time.Now().UTC()); err != nil {
+		writeError(ctx, err)
+		return
+	}
+	if asset.Canonical == nil {
+		writeError(ctx, media_service.ErrMediaAssetIntegrity)
 		return
 	}
 	offset, length, partial, err := parseRange(ctx.GetHeader("Range"), asset.Canonical.SizeBytes)
@@ -294,12 +306,22 @@ func writeError(ctx *gin.Context, err error) {
 		httpapi.WriteError(ctx, http.StatusUnprocessableEntity, "invalid_media_asset_dimensions", "invalid media asset dimensions")
 	case errors.Is(err, media_service.ErrMediaAssetStorage):
 		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "media_asset_storage_unavailable", "media asset storage is unavailable")
+	case errors.Is(err, media_service.ErrMediaAssetInstance):
+		httpapi.WriteError(ctx, http.StatusForbidden, "media_asset_instance_mismatch", "media asset does not belong to the authenticated instance")
 	case errors.Is(err, media_repository.ErrAssetNotFound):
 		httpapi.WriteError(ctx, http.StatusNotFound, "media_asset_not_found", "media asset not found")
+	case errors.Is(err, media_service.ErrMediaAssetFailed):
+		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_failed", "media asset processing failed")
+	case errors.Is(err, media_service.ErrMediaAssetExpired):
+		httpapi.WriteError(ctx, http.StatusGone, "media_asset_expired", "media asset expired")
+	case errors.Is(err, media_service.ErrMediaAssetDeleted):
+		httpapi.WriteError(ctx, http.StatusGone, "media_asset_deleted", "media asset was deleted")
 	case errors.Is(err, media_repository.ErrAssetConflict):
 		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_conflict", "media asset state conflict")
 	case errors.Is(err, media_service.ErrMediaAssetNotReady):
 		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_not_ready", "media asset is not ready")
+	case errors.Is(err, media_service.ErrMediaAssetIntegrity):
+		httpapi.WriteError(ctx, http.StatusUnprocessableEntity, "media_asset_integrity_failed", "media asset integrity check failed")
 	default:
 		httpapi.WriteInternal(ctx, err)
 	}

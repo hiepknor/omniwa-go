@@ -19,6 +19,10 @@ type contentRepositoryFake struct {
 	err   error
 }
 
+func (f *contentRepositoryFake) GetMetadata(ctx context.Context, instanceID, assetID string) (*media_model.Asset, error) {
+	return f.Get(ctx, instanceID, assetID)
+}
+
 func (f *contentRepositoryFake) Get(_ context.Context, instanceID, assetID string) (*media_model.Asset, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -31,20 +35,59 @@ func (f *contentRepositoryFake) Get(_ context.Context, instanceID, assetID strin
 
 type rangeStoreFake struct {
 	assetUploadStoreFake
-	key            string
-	offset, length int64
+	key     string
+	content string
 }
 
-func (f *rangeStoreFake) OpenRange(_ context.Context, key string, offset, length int64) (io.ReadCloser, error) {
-	f.key, f.offset, f.length = key, offset, length
-	return io.NopCloser(strings.NewReader("content")), nil
+func (f *rangeStoreFake) Open(_ context.Context, key string) (io.ReadCloser, error) {
+	f.key = key
+	content := f.content
+	if content == "" {
+		content = "content"
+	}
+	return io.NopCloser(strings.NewReader(content)), nil
+}
+
+func TestOpenContentRejectsFailedExpiredDeletedAndTamperedAssets(t *testing.T) {
+	instanceID, assetID := uuid.NewString(), uuid.NewString()
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	asset := &media_model.Asset{ID: assetID, InstanceID: instanceID, Status: media_model.AssetStatusFailed}
+	service := NewAssetService(&contentRepositoryFake{asset: asset}, &rangeStoreFake{}, AssetSettings{
+		MaxBytes: 1024, MaxPixels: 100, UnboundTTL: time.Hour, DeleteLease: time.Minute,
+	})
+	service.now = func() time.Time { return now }
+	if _, err := service.OpenContent(context.Background(), instanceID, assetID, 0, 1); !errors.Is(err, ErrMediaAssetFailed) {
+		t.Fatalf("failed error=%v", err)
+	}
+	asset.Status = media_model.AssetStatusReady
+	expired := now.Add(-time.Second)
+	asset.ExpiresAt = &expired
+	if _, err := service.OpenContent(context.Background(), instanceID, assetID, 0, 1); !errors.Is(err, ErrMediaAssetExpired) {
+		t.Fatalf("expired error=%v", err)
+	}
+	asset.Status = media_model.AssetStatusDeleted
+	deleted := now
+	asset.DeletedAt = &deleted
+	if _, err := service.OpenContent(context.Background(), instanceID, assetID, 0, 1); !errors.Is(err, ErrMediaAssetDeleted) {
+		t.Fatalf("deleted error=%v", err)
+	}
+	asset.Status, asset.DeletedAt, asset.ExpiresAt = media_model.AssetStatusReady, nil, nil
+	asset.Canonical = &media_model.AssetVariant{
+		MediaAssetID: assetID, InstanceID: instanceID, Kind: media_model.VariantCanonical,
+		ObjectKey: "media-assets/" + instanceID + "/" + assetID + "/canonical", MIMEType: "image/png",
+		SizeBytes: 7, SHA256: sha256Bytes([]byte("content")),
+	}
+	service.store = &rangeStoreFake{content: "altered"}
+	if _, err := service.OpenContent(context.Background(), instanceID, assetID, 0, 1); !errors.Is(err, ErrMediaAssetIntegrity) {
+		t.Fatalf("integrity error=%v", err)
+	}
 }
 
 func TestOpenContentUsesCanonicalInstanceScopedRange(t *testing.T) {
 	instanceID, assetID := uuid.NewString(), uuid.NewString()
 	repository := &contentRepositoryFake{asset: &media_model.Asset{
 		ID: assetID, InstanceID: instanceID, Status: media_model.AssetStatusReady,
-		Canonical: &media_model.AssetVariant{ObjectKey: "media-assets/" + instanceID + "/" + assetID + "/canonical", MIMEType: "image/png", SizeBytes: 7, SHA256: strings.Repeat("a", 64)},
+		Canonical: &media_model.AssetVariant{MediaAssetID: assetID, InstanceID: instanceID, Kind: media_model.VariantCanonical, ObjectKey: "media-assets/" + instanceID + "/" + assetID + "/canonical", MIMEType: "image/png", SizeBytes: 7, SHA256: sha256Bytes([]byte("content"))},
 	}}
 	store := &rangeStoreFake{}
 	service := NewAssetService(repository, store, AssetSettings{MaxBytes: 1024, MaxPixels: 100, UnboundTTL: time.Hour, DeleteLease: time.Minute})
@@ -53,7 +96,8 @@ func TestOpenContentUsesCanonicalInstanceScopedRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer content.Reader.Close()
-	if content.Offset != 2 || content.Length != 3 || content.Total != 7 || store.offset != 2 || store.length != 3 || store.key != repository.asset.Canonical.ObjectKey {
+	read, readErr := io.ReadAll(content.Reader)
+	if content.Offset != 2 || content.Length != 3 || content.Total != 7 || store.key != repository.asset.Canonical.ObjectKey || readErr != nil || string(read[:3]) != "nte" {
 		t.Fatalf("content=%+v store=%+v", content, store)
 	}
 	if _, err := service.OpenContent(context.Background(), uuid.NewString(), assetID, 0, 1); !errors.Is(err, media_repository.ErrAssetNotFound) {
@@ -71,7 +115,7 @@ func TestOpenContentRejectsNonReadyAndOutOfBounds(t *testing.T) {
 		t.Fatalf("non-ready error=%v", err)
 	}
 	asset.Status = media_model.AssetStatusReady
-	asset.Canonical = &media_model.AssetVariant{SizeBytes: 4, ObjectKey: "media-assets/" + instanceID + "/" + assetID + "/canonical"}
+	asset.Canonical = &media_model.AssetVariant{MediaAssetID: assetID, InstanceID: instanceID, Kind: media_model.VariantCanonical, MIMEType: "image/png", SizeBytes: 4, SHA256: sha256Bytes([]byte("data")), ObjectKey: "media-assets/" + instanceID + "/" + assetID + "/canonical"}
 	if _, err := service.OpenContent(context.Background(), instanceID, assetID, 3, 2); !errors.Is(err, ErrInvalidMediaAsset) {
 		t.Fatalf("out-of-bounds error=%v", err)
 	}
