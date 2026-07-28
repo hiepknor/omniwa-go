@@ -35,6 +35,7 @@ type ProjectionMeta struct {
 	SyncStatus   string     `json:"syncStatus" example:"ready"`
 	LastSyncedAt *time.Time `json:"lastSyncedAt,omitempty"`
 	NextCursor   string     `json:"nextCursor,omitempty"`
+	Total        *int64     `json:"total,omitempty" example:"1930"`
 }
 
 // ErrorResponse is the standard error envelope returned on 4xx/5xx:
@@ -163,7 +164,7 @@ type GroupListAuditEvent struct {
 type CapabilitiesData struct {
 	Version         string   `json:"version" example:"1.2.3"`
 	Revision        string   `json:"revision" example:"0123456789abcdef0123456789abcdef01234567"`
-	Capabilities    []string `json:"capabilities" example:"campaign_orchestration,rate_limit_retry_after,groups_projection,group_lists,group_list_eligibility,campaign_group_targets,campaign_image_content,instance_metadata_views,instance_credential_health,instance_token_rotation"`
+	Capabilities    []string `json:"capabilities" example:"campaign_orchestration,rate_limit_retry_after,groups_projection,contacts_projection,chats_projection,canonical_contact_identity,group_lists,group_list_eligibility,campaign_group_targets,campaign_image_content,instance_metadata_views,instance_credential_health,instance_token_rotation"`
 	CredentialScope string   `json:"credentialScope" binding:"required" enums:"admin,instance" example:"instance"`
 	InstanceID      *string  `json:"instanceId,omitempty" format:"uuid" example:"0bca2c34-ef2a-463c-98fd-e2afb6978457"`
 }

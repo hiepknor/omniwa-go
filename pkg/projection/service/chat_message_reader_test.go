@@ -83,6 +83,7 @@ func TestChatMessageReaderReturnsStableOpaqueCursors(t *testing.T) {
 		chatPage: &projection_repository.ChatPage{
 			Items:      []projection_model.Chat{{ChatID: "chat-a"}},
 			NextCursor: &projection_repository.ChatCursor{ChatID: "chat-a", LastActivityAt: &chatAt},
+			Total:      42,
 		},
 		messagePage: &projection_repository.MessagePage{
 			Items:      []projection_model.ProjectedMessage{{MessageID: "message-a"}},
@@ -92,7 +93,7 @@ func TestChatMessageReaderReturnsStableOpaqueCursors(t *testing.T) {
 	reader := NewChatMessageReader(repository, readyChatMessageState("chats", messageResource))
 
 	_, chatMeta, err := reader.ListChats(context.Background(), "instance-a", 10, "")
-	if err != nil || chatMeta.NextCursor == "" {
+	if err != nil || chatMeta.NextCursor == "" || chatMeta.Total == nil || *chatMeta.Total != 42 {
 		t.Fatalf("ListChats() meta = %#v, %v", chatMeta, err)
 	}
 	if _, _, err := reader.ListChats(context.Background(), "instance-a", 10, chatMeta.NextCursor); err != nil {

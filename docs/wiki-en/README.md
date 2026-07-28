@@ -34,6 +34,8 @@ OmniWA GO HTTP API (a WhatsApp API built on [whatsmeow](https://github.com/tulir
    validation limits, lifecycle cleanup, and staged rollout boundaries.
 9. **[Shared Media Assets](media-assets.md)** — private shared schema, bucket
    isolation, and the staged campaign/chat migration.
+10. **[Conversation Projections](conversation-projections.md)** — canonical
+    contacts, chat naming, exact totals, and cursor/readiness semantics.
 
 ## The API in one paragraph
 

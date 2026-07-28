@@ -72,6 +72,51 @@ func TestChatMessageRepositoryPostgresOrderingPaginationAndConcurrency(t *testin
 	if err != nil || storedChat.Archived == nil || !*storedChat.Archived || storedChat.LastActivityAt == nil || !storedChat.LastActivityAt.Equal(activityTime) || !storedChat.SourceOccurredAt.Equal(settingsTime) {
 		t.Fatalf("stored chat = %#v, %v", storedChat, err)
 	}
+	fullName := "Canonical Name"
+	contactRepository := NewContactRepository(db)
+	contact, _, err := contactRepository.Apply(context.Background(), ContactPatch{
+		InstanceID: instance.Id, Identities: []ContactIdentityRef{{Kind: projection_model.ContactIdentityKindJID, Value: chat.ChatID}},
+		Aspect: ContactAspectDetails, OccurredAt: time.Unix(310, 0).UTC(), EventKey: "contact-name-310", FullName: &fullName,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedChat, err = repository.GetChat(context.Background(), instance.Id, chat.ChatID)
+	if err != nil || storedChat.ContactID == nil || *storedChat.ContactID != contact.ContactID || storedChat.DisplayName == nil ||
+		*storedChat.DisplayName != fullName || storedChat.DisplayNameSource == nil || *storedChat.DisplayNameSource != "full_name" {
+		t.Fatalf("canonical direct chat identity = %#v, %v", storedChat, err)
+	}
+	renamed := "Renamed Contact"
+	if _, _, err := contactRepository.Apply(context.Background(), ContactPatch{
+		InstanceID: instance.Id, Identities: []ContactIdentityRef{{Kind: projection_model.ContactIdentityKindJID, Value: chat.ChatID}},
+		Aspect: ContactAspectDetails, OccurredAt: time.Unix(320, 0).UTC(), EventKey: "contact-name-320", FullName: &renamed,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	replayedIdentity := projection_model.Chat{InstanceID: instance.Id, ChatID: chat.ChatID, Type: projection_model.ChatTypeDirect, SourceOccurredAt: time.Unix(330, 0).UTC(), SourceEventKey: "chat-330"}
+	if _, err := repository.ApplyChat(context.Background(), &replayedIdentity, ChatAspectIdentity); err != nil {
+		t.Fatal(err)
+	}
+	storedChat, err = repository.GetChat(context.Background(), instance.Id, chat.ChatID)
+	if err != nil || storedChat.DisplayName == nil || *storedChat.DisplayName != renamed {
+		t.Fatalf("contact rename or replayed chat identity lost = %#v, %v", storedChat, err)
+	}
+	groupName := "Group Subject"
+	group := projection_model.Chat{InstanceID: instance.Id, ChatID: "group@g.us", Type: projection_model.ChatTypeGroup, DisplayName: &groupName, SourceOccurredAt: time.Unix(340, 0).UTC(), SourceEventKey: "group-340"}
+	if _, err := repository.ApplyChat(context.Background(), &group, ChatAspectIdentity); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := contactRepository.Apply(context.Background(), ContactPatch{
+		InstanceID: instance.Id, Identities: []ContactIdentityRef{{Kind: projection_model.ContactIdentityKindJID, Value: group.ChatID}},
+		Aspect: ContactAspectDetails, OccurredAt: time.Unix(350, 0).UTC(), EventKey: "group-contact-350", FullName: &fullName,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	storedGroup, err := repository.GetChat(context.Background(), instance.Id, group.ChatID)
+	if err != nil || storedGroup.ContactID != nil || storedGroup.DisplayName == nil || *storedGroup.DisplayName != groupName ||
+		storedGroup.DisplayNameSource == nil || *storedGroup.DisplayNameSource != "group_subject" {
+		t.Fatalf("group name overwritten by contact logic = %#v, %v", storedGroup, err)
+	}
 
 	content := "first"
 	message := projection_model.ProjectedMessage{
@@ -141,15 +186,15 @@ func TestChatMessageRepositoryPostgresOrderingPaginationAndConcurrency(t *testin
 		t.Fatal(err)
 	}
 	firstChats, err := repository.ListChats(context.Background(), instance.Id, 2, nil)
-	if err != nil || len(firstChats.Items) != 2 || firstChats.NextCursor == nil {
+	if err != nil || len(firstChats.Items) != 2 || firstChats.NextCursor == nil || firstChats.Total != 6 {
 		t.Fatalf("first chat page = %#v, %v", firstChats, err)
 	}
 	secondChats, err := repository.ListChats(context.Background(), instance.Id, 2, firstChats.NextCursor)
-	if err != nil || len(secondChats.Items) != 2 || secondChats.NextCursor == nil || firstChats.Items[1].ChatID == secondChats.Items[0].ChatID {
+	if err != nil || len(secondChats.Items) != 2 || secondChats.NextCursor == nil || secondChats.Total != firstChats.Total || firstChats.Items[1].ChatID == secondChats.Items[0].ChatID {
 		t.Fatalf("second chat page = %#v, %v", secondChats, err)
 	}
 	thirdChats, err := repository.ListChats(context.Background(), instance.Id, 2, secondChats.NextCursor)
-	if err != nil || len(thirdChats.Items) != 1 || thirdChats.Items[0].ChatID != nullActivityChat.ChatID || thirdChats.NextCursor != nil {
+	if err != nil || len(thirdChats.Items) != 2 || thirdChats.Items[1].ChatID != nullActivityChat.ChatID || thirdChats.NextCursor != nil || thirdChats.Total != firstChats.Total {
 		t.Fatalf("third chat page = %#v, %v", thirdChats, err)
 	}
 

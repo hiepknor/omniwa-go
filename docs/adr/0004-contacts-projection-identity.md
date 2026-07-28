@@ -20,8 +20,8 @@ unrelated field received a newer event.
 
 Each projected contact has an instance-scoped UUID identity. Provider
 identifiers are stored in a separate alias table and resolve to that stable
-identity. The API-facing preferred JID remains explicit on the contact record,
-so existing contracts do not need to expose the internal UUID.
+identity. The API exposes the UUID additively as `contactId` while retaining the
+legacy preferred-JID fields.
 
 Contact records store normalized fields only. Provider event payloads are not
 part of the public read model. A JSON field-version map records independent
@@ -54,10 +54,10 @@ version enables `contacts_projection`.
 
 `GET /user/contacts` keeps its existing message/data envelope and legacy
 Pascal-cased contact fields, but reads exclusively from the projection and adds
-freshness metadata. A valid ready-empty projection returns an empty JSON array;
+canonical identity fields and exact `meta.total`. A valid ready-empty projection returns an empty JSON array;
 an unreconciled projection returns HTTP 503. The additive
-`GET /user/contact/{contactId}` endpoint resolves the JID returned by the list
-and exposes the same normalized model. Optional phone/LID identity, username,
+`GET /user/contact/{contactId}` endpoint resolves a canonical UUID, permanent
+absorbed-UUID redirect, or JID alias and exposes the same normalized model. Optional phone/LID identity, username,
 redacted phone, picture, and user-about fields are additive; raw provider event
 payloads remain internal.
 

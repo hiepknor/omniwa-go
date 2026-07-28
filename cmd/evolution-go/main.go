@@ -74,6 +74,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/outbound"
 	passkey_handler "github.com/evolution-foundation/evolution-go/pkg/passkey/handler"
 	poll_handler "github.com/evolution-foundation/evolution-go/pkg/poll/handler"
+	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	routes "github.com/evolution-foundation/evolution-go/pkg/routes"
@@ -331,6 +332,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		projectionHealthPolicy.MaxReconcileAge = map[string]time.Duration{"groups": 2 * config.GroupSyncInterval}
 	}
 	var projectionStateOptions []projection_service.StateServiceOption
+	contactIdentityBackfillRepository := projection_repository.NewContactIdentityBackfillRepository(db)
 	groupCampaignsEnabled := config.GroupListsEnabled && config.CampaignGroupTargetsEnabled
 	if config.CampaignImageContentEnabled && !groupCampaignsEnabled {
 		logger.LogFatal("component=campaign_media action=initialize result=failed error=group_campaign_targets_required")
@@ -367,6 +369,20 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	if config.InboundImageContentEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("messages", projection_service.CapabilityInboundImageContent))
+	}
+	if config.ContactIdentityReconciliationEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
+			projection_service.CapabilityCanonicalContactIdentity,
+			[]string{"contacts", "chats"},
+			func(instanceID string) (bool, error) {
+				state, err := contactIdentityBackfillRepository.GetState(context.Background(), instanceID)
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return false, nil
+				}
+				return err == nil && state.Version == projection_service.ContactIdentityBackfillVersion &&
+					state.Status == projection_model.ContactIdentityBackfillComplete, err
+			},
+		))
 	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(
 		projection_repository.NewStateRepository(db),
@@ -418,7 +434,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	var contactIdentityReconciler *projection_service.ContactIdentityReconciler
 	if config.ContactIdentityReconciliationEnabled {
 		contactIdentityReconciler = projection_service.NewContactIdentityReconciler(
-			projection_repository.NewContactIdentityBackfillRepository(db), contactProjectionRepository,
+			contactIdentityBackfillRepository, contactProjectionRepository,
 		)
 	}
 	contactReader := projection_service.NewContactReader(contactProjectionRepository, projectionStateService)

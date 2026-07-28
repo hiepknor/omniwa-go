@@ -160,6 +160,40 @@ func TestStaticCapabilityIsAdvertisedOnlyWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestConditionalCapabilityRequiresAllResourcesAndDurableReadiness(t *testing.T) {
+	ready := false
+	service := NewStateService(newMemoryRepository(), WithConditionalCapability(
+		CapabilityCanonicalContactIdentity, []string{"contacts", "chats"},
+		func(instanceID string) (bool, error) { return instanceID == "instance-a" && ready, nil },
+	))
+	if err := service.MarkReady("instance-a", "contacts", ContactsProjectionSchemaVersion, time.Unix(100, 0)); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityCanonicalContactIdentity) {
+		t.Fatalf("capability advertised without chats/backfill = %v, %v", capabilities, err)
+	}
+	if err := service.MarkReady("instance-a", "chats", ChatsProjectionSchemaVersion, time.Unix(100, 0)); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityCanonicalContactIdentity) {
+		t.Fatalf("capability advertised before durable readiness = %v, %v", capabilities, err)
+	}
+	ready = true
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, CapabilityCanonicalContactIdentity) {
+		t.Fatalf("ready conditional capability = %v, %v", capabilities, err)
+	}
+	if err := service.MarkFailed("instance-a", "contacts", ContactsProjectionSchemaVersion); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityCanonicalContactIdentity) {
+		t.Fatalf("capability survived failed projection = %v, %v", capabilities, err)
+	}
+}
+
 func TestContactsCapabilityRequiresReadyCurrentSchema(t *testing.T) {
 	service := NewStateService(newMemoryRepository())
 	if err := service.MarkReady("instance-a", "contacts", ContactsProjectionSchemaVersion-1, time.Unix(100, 0)); err != nil {

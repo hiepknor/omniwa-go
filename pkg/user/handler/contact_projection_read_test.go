@@ -91,7 +91,7 @@ func TestGetContactValidatesJIDAndMapsNotFound(t *testing.T) {
 		err             error
 		status          int
 	}{
-		{name: "invalid JID", contactID: "invalid", status: http.StatusBadRequest},
+		{name: "invalid reference", contactID: "invalid", err: projection_service.ErrInvalidContactReference, status: http.StatusBadRequest},
 		{name: "missing contact", contactID: "15550001@s.whatsapp.net", err: gorm.ErrRecordNotFound, status: http.StatusNotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {

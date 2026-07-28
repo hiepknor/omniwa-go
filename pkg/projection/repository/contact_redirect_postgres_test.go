@@ -61,6 +61,9 @@ func TestContactMergeKeepsPermanentFlattenedRedirectsAndChatReferences(t *testin
 	phone := create(projection_model.ContactIdentityKindPhoneJID, "15551230001@s.whatsapp.net", 100)
 	lid := create(projection_model.ContactIdentityKindLID, "900000000001@lid", 101)
 	current := create(projection_model.ContactIdentityKindJID, "current@s.whatsapp.net", 102)
+	if total, countErr := repository.Count(context.Background(), instances[0].Id); countErr != nil || total != 3 {
+		t.Fatalf("incomplete aliases merged without mapping: total=%d error=%v", total, countErr)
+	}
 	createdAt := map[string]time.Time{
 		phone.ContactID:   time.Unix(300, 0).UTC(),
 		lid.ContactID:     time.Unix(200, 0).UTC(),
@@ -117,6 +120,10 @@ func TestContactMergeKeepsPermanentFlattenedRedirectsAndChatReferences(t *testin
 		}
 		if _, getErr = repository.Get(context.Background(), instances[1].Id, absorbedID); !errors.Is(getErr, gorm.ErrRecordNotFound) {
 			t.Fatalf("cross-instance redirect error = %v", getErr)
+		}
+		page, searchErr := repository.Search(context.Background(), instances[0].Id, absorbedID, 10, nil)
+		if searchErr != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].ContactID != current.ContactID {
+			t.Fatalf("absorbed ID search %s = %#v, %v", absorbedID, page, searchErr)
 		}
 	}
 

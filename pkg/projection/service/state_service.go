@@ -28,6 +28,7 @@ const (
 	CapabilityGroupManagementAudit       = "group_management_audit"
 	CapabilityGroupPhotoAssets           = "group_photo_assets"
 	CapabilityGroupSummary               = "group_summary"
+	CapabilityCanonicalContactIdentity   = "canonical_contact_identity"
 )
 
 var resourceCapabilities = map[string]string{
@@ -93,7 +94,14 @@ type stateService struct {
 	policy                    ProjectionHealthPolicy
 	extraResourceCapabilities map[string][]string
 	staticCapabilities        []string
+	conditionalCapabilities   []conditionalCapability
 	now                       func() time.Time
+}
+
+type conditionalCapability struct {
+	capability        string
+	requiredResources []string
+	ready             func(string) (bool, error)
 }
 
 type StateServiceOption func(*stateService)
@@ -112,6 +120,20 @@ func WithStaticCapability(capability string) StateServiceOption {
 		if capability != "" {
 			service.staticCapabilities = append(service.staticCapabilities, capability)
 		}
+	}
+}
+
+// WithConditionalCapability advertises an instance capability only after all
+// required projections are ready and the additional durable readiness check
+// succeeds.
+func WithConditionalCapability(capability string, requiredResources []string, ready func(string) (bool, error)) StateServiceOption {
+	return func(service *stateService) {
+		if capability == "" || len(requiredResources) == 0 || ready == nil {
+			return
+		}
+		service.conditionalCapabilities = append(service.conditionalCapabilities, conditionalCapability{
+			capability: capability, requiredResources: append([]string(nil), requiredResources...), ready: ready,
+		})
 	}
 }
 
@@ -239,6 +261,7 @@ func (s *stateService) Capabilities(instanceID string) ([]string, error) {
 	}
 	states = appendMissingWorkStates(states, workByResource)
 	now := s.now().UTC()
+	readyResources := make(map[string]bool, len(states))
 	for index := range states {
 		state, _ := s.effectiveState(&states[index], workByResource[projectionWorkKey(states[index].InstanceID, states[index].Resource)], now)
 		if state.SyncStatus == projection_model.SyncStatusReady {
@@ -248,7 +271,27 @@ func (s *stateService) Capabilities(instanceID string) ([]string, error) {
 			if capability := resourceCapabilities[state.Resource]; capability != "" {
 				capabilities = append(capabilities, capability)
 			}
+			readyResources[state.Resource] = true
 			capabilities = append(capabilities, s.extraResourceCapabilities[state.Resource]...)
+		}
+	}
+	for _, conditional := range s.conditionalCapabilities {
+		eligible := true
+		for _, resource := range conditional.requiredResources {
+			if !readyResources[resource] {
+				eligible = false
+				break
+			}
+		}
+		if !eligible {
+			continue
+		}
+		ready, err := conditional.ready(instanceID)
+		if err != nil {
+			return nil, err
+		}
+		if ready {
+			capabilities = append(capabilities, conditional.capability)
 		}
 	}
 	sort.Strings(capabilities)

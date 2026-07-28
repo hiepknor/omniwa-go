@@ -48,21 +48,28 @@ type userService struct {
 }
 
 type ContactInfo struct {
-	Jid              string     `json:"Jid"`
-	Found            bool       `json:"Found"`
-	FirstName        string     `json:"FirstName"`
-	FullName         string     `json:"FullName"`
-	PushName         string     `json:"PushName"`
-	BusinessName     string     `json:"BusinessName"`
-	PhoneJID         string     `json:"PhoneJID,omitempty"`
-	LID              string     `json:"LID,omitempty"`
-	Username         string     `json:"Username,omitempty"`
-	RedactedPhone    string     `json:"RedactedPhone,omitempty"`
-	PictureID        string     `json:"PictureID,omitempty"`
-	PictureRemoved   *bool      `json:"PictureRemoved,omitempty"`
-	PictureUpdatedAt *time.Time `json:"PictureUpdatedAt,omitempty"`
-	About            string     `json:"About,omitempty"`
-	AboutUpdatedAt   *time.Time `json:"AboutUpdatedAt,omitempty"`
+	ContactID         string     `json:"contactId" binding:"required"`
+	AddressingJID     string     `json:"addressingJid" binding:"required"`
+	Aliases           []string   `json:"aliases" binding:"required"`
+	IdentityStatus    string     `json:"identityStatus" binding:"required" enums:"complete,partial"`
+	DisplayName       string     `json:"displayName,omitempty"`
+	DisplayNameSource string     `json:"displayNameSource,omitempty" enums:"full_name,business_name,push_name,first_name,username"`
+	IdentityUpdatedAt time.Time  `json:"identityUpdatedAt" binding:"required"`
+	Jid               string     `json:"Jid"`
+	Found             bool       `json:"Found"`
+	FirstName         string     `json:"FirstName"`
+	FullName          string     `json:"FullName"`
+	PushName          string     `json:"PushName"`
+	BusinessName      string     `json:"BusinessName"`
+	PhoneJID          string     `json:"PhoneJID,omitempty"`
+	LID               string     `json:"LID,omitempty"`
+	Username          string     `json:"Username,omitempty"`
+	RedactedPhone     string     `json:"RedactedPhone,omitempty"`
+	PictureID         string     `json:"PictureID,omitempty"`
+	PictureRemoved    *bool      `json:"PictureRemoved,omitempty"`
+	PictureUpdatedAt  *time.Time `json:"PictureUpdatedAt,omitempty"`
+	About             string     `json:"About,omitempty"`
+	AboutUpdatedAt    *time.Time `json:"AboutUpdatedAt,omitempty"`
 }
 
 type UserInfo struct {
@@ -439,11 +446,11 @@ func (u *userService) SearchContacts(ctx context.Context, instance *instance_mod
 	return result, meta, nil
 }
 
-func (u *userService) GetContact(ctx context.Context, instance *instance_model.Instance, jid string) (*ContactInfo, *projection_service.ProjectionReadMeta, error) {
-	if instance == nil || u.contactReader == nil || jid == "" {
-		return nil, nil, errors.New("contact projection reader, instance, and JID are required")
+func (u *userService) GetContact(ctx context.Context, instance *instance_model.Instance, reference string) (*ContactInfo, *projection_service.ProjectionReadMeta, error) {
+	if instance == nil || u.contactReader == nil || reference == "" {
+		return nil, nil, errors.New("contact projection reader, instance, and reference are required")
 	}
-	contact, meta, err := u.contactReader.GetByJID(ctx, instance.Id, jid)
+	contact, meta, err := u.contactReader.GetByReference(ctx, instance.Id, reference)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -455,7 +462,22 @@ func (u *userService) GetContact(ctx context.Context, instance *instance_model.I
 }
 
 func contactInfoFromProjection(contact *projection_model.Contact) ContactInfo {
-	result := ContactInfo{Jid: contact.PreferredJID, Found: contact.Found}
+	result := ContactInfo{
+		ContactID: contact.ContactID, AddressingJID: contact.AddressingJID(), Aliases: make([]string, 0),
+		IdentityStatus: "partial", IdentityUpdatedAt: contact.UpdatedAt.UTC(), Jid: contact.PreferredJID, Found: contact.Found,
+	}
+	if contact.PhoneJID != nil && contact.LID != nil {
+		result.IdentityStatus = "complete"
+	}
+	result.DisplayName, result.DisplayNameSource = contact.CanonicalDisplayName()
+	seenAliases := make(map[string]struct{}, len(contact.Aliases))
+	for _, alias := range contact.Aliases {
+		if _, exists := seenAliases[alias.Value]; exists {
+			continue
+		}
+		seenAliases[alias.Value] = struct{}{}
+		result.Aliases = append(result.Aliases, alias.Value)
+	}
 	if contact.FirstName != nil {
 		result.FirstName = *contact.FirstName
 	}

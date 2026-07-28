@@ -864,6 +864,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
+                "description": "Return a projected chat with locally denormalized contact or type-specific display-name metadata.",
                 "produces": [
                     "application/json"
                 ],
@@ -927,6 +928,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
+                "description": "Cursor-page projected chats without live reads. meta.total is the exact active projected-chat count at request time, not a cross-page snapshot.",
                 "produces": [
                     "application/json"
                 ],
@@ -7894,7 +7896,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get one normalized contact from the persisted instance projection",
+                "description": "Resolve a canonical UUID, permanent absorbed-ID redirect, or JID alias from the persisted instance projection and return the canonical contactId.",
                 "produces": [
                     "application/json"
                 ],
@@ -7905,7 +7907,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Contact JID",
+                        "description": "Canonical contact ID, absorbed contact ID, or contact JID alias",
                         "name": "contactId",
                         "in": "path",
                         "required": true
@@ -7931,7 +7933,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid contact JID",
+                        "description": "Invalid contact reference",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -7964,7 +7966,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get a user's contacts",
+                "description": "Return all canonical contacts without live reads. meta.total counts canonical contacts, never aliases.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8019,7 +8021,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Prefix-search normalized contacts from the persisted instance projection without querying WhatsApp",
+                "description": "Prefix-search canonical contacts without querying WhatsApp. meta.total is the exact normalized-query match count at request time; cursors are opaque and versioned.",
                 "produces": [
                     "application/json"
                 ],
@@ -8600,6 +8602,9 @@ const docTemplate = `{
                         "campaign_orchestration",
                         "rate_limit_retry_after",
                         "groups_projection",
+                        "contacts_projection",
+                        "chats_projection",
+                        "canonical_contact_identity",
                         "group_lists",
                         "group_list_eligibility",
                         "campaign_group_targets",
@@ -9117,6 +9122,10 @@ const docTemplate = `{
                 "syncStatus": {
                     "type": "string",
                     "example": "ready"
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 1930
                 }
             }
         },
@@ -11501,6 +11510,11 @@ const docTemplate = `{
         },
         "github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat": {
             "type": "object",
+            "required": [
+                "chatId",
+                "type",
+                "unreadCount"
+            ],
             "properties": {
                 "archived": {
                     "type": "boolean"
@@ -11515,6 +11529,23 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "displayName": {
+                    "type": "string"
+                },
+                "displayNameSource": {
+                    "type": "string",
+                    "enum": [
+                        "full_name",
+                        "business_name",
+                        "push_name",
+                        "first_name",
+                        "username",
+                        "provider_chat",
+                        "group_subject",
+                        "newsletter_name",
+                        "broadcast_name"
+                    ]
+                },
+                "displayNameUpdatedAt": {
                     "type": "string"
                 },
                 "lastActivityAt": {
@@ -12557,6 +12588,13 @@ const docTemplate = `{
         },
         "github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo": {
             "type": "object",
+            "required": [
+                "addressingJid",
+                "aliases",
+                "contactId",
+                "identityStatus",
+                "identityUpdatedAt"
+            ],
             "properties": {
                 "About": {
                     "type": "string"
@@ -12601,6 +12639,41 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "Username": {
+                    "type": "string"
+                },
+                "addressingJid": {
+                    "type": "string"
+                },
+                "aliases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "contactId": {
+                    "type": "string"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "displayNameSource": {
+                    "type": "string",
+                    "enum": [
+                        "full_name",
+                        "business_name",
+                        "push_name",
+                        "first_name",
+                        "username"
+                    ]
+                },
+                "identityStatus": {
+                    "type": "string",
+                    "enum": [
+                        "complete",
+                        "partial"
+                    ]
+                },
+                "identityUpdatedAt": {
                     "type": "string"
                 }
             }

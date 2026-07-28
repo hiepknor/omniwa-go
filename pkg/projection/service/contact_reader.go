@@ -12,6 +12,8 @@ import (
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	"github.com/google/uuid"
+	"go.mau.fi/whatsmeow/types"
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
 )
 
@@ -19,17 +21,20 @@ var (
 	ErrContactsProjectionNotReady = errors.New("contacts projection is not ready")
 	ErrInvalidContactCursor       = errors.New("invalid contact search cursor")
 	ErrInvalidContactSearch       = errors.New("invalid contact search query")
+	ErrInvalidContactReference    = errors.New("invalid contact reference")
 )
 
 const (
-	contactCursorVersion  = 1
+	contactCursorVersion  = 2
 	maxContactCursorKey   = 255
 	maxContactSearchTerm  = 128
 	maxContactSearchLimit = 200
 )
 
 type contactReadRepository interface {
+	Get(context.Context, string, string) (*projection_model.Contact, error)
 	List(context.Context, string) ([]projection_model.Contact, error)
+	Count(context.Context, string) (int64, error)
 	GetByIdentity(context.Context, string, projection_model.ContactIdentityKind, string) (*projection_model.Contact, error)
 	Search(context.Context, string, string, int, *projection_repository.ContactCursor) (*projection_repository.ContactPage, error)
 }
@@ -54,6 +59,26 @@ func (r *ContactReader) GetByJID(ctx context.Context, instanceID, jid string) (*
 	return contact, meta, err
 }
 
+func (r *ContactReader) GetByReference(ctx context.Context, instanceID, reference string) (*projection_model.Contact, *ProjectionReadMeta, error) {
+	if reference == "" {
+		return nil, nil, errors.New("contact reference is required")
+	}
+	meta, err := r.readMeta(instanceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if uuid.Validate(reference) == nil {
+		contact, getErr := r.contacts.Get(ctx, instanceID, reference)
+		return contact, meta, getErr
+	}
+	jid, parseErr := types.ParseJID(reference)
+	if parseErr != nil || jid.IsEmpty() || !isContactJID(jid) {
+		return nil, meta, ErrInvalidContactReference
+	}
+	contact, getErr := r.contacts.GetByIdentity(ctx, instanceID, projection_model.ContactIdentityKindJID, jid.ToNonAD().String())
+	return contact, meta, getErr
+}
+
 type ContactReader struct {
 	contacts contactReadRepository
 	state    groupReadState
@@ -72,11 +97,18 @@ func (r *ContactReader) List(ctx context.Context, instanceID string) ([]projecti
 	if contacts == nil && err == nil {
 		contacts = make([]projection_model.Contact, 0)
 	}
+	if err == nil {
+		total, countErr := r.contacts.Count(ctx, instanceID)
+		if countErr != nil {
+			return nil, nil, countErr
+		}
+		meta.Total = &total
+	}
 	return contacts, meta, err
 }
 
 func (r *ContactReader) Search(ctx context.Context, instanceID, term string, limit int, encodedCursor string) ([]projection_model.Contact, *ProjectionReadMeta, error) {
-	term = strings.ToLower(strings.TrimSpace(term))
+	term = normalizeContactSearchTerm(term)
 	if len(term) > maxContactSearchTerm || limit < 1 || limit > maxContactSearchLimit {
 		return nil, nil, ErrInvalidContactSearch
 	}
@@ -105,7 +137,12 @@ func (r *ContactReader) Search(ctx context.Context, instanceID, term string, lim
 			return nil, nil, err
 		}
 	}
+	meta.Total = &page.Total
 	return page.Items, meta, nil
+}
+
+func normalizeContactSearchTerm(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(norm.NFKC.String(value)), " "))
 }
 
 func contactCursorScope(instanceID, term string) string {

@@ -47,6 +47,7 @@ type MessageCursor struct {
 type ChatPage struct {
 	Items      []projection_model.Chat
 	NextCursor *ChatCursor
+	Total      int64
 }
 
 type MessagePage struct {
@@ -106,6 +107,11 @@ func (r *chatMessageRepository) ApplyChat(ctx context.Context, incoming *project
 				FieldVersions: json.RawMessage(`{}`),
 			}
 		}
+		if containsChatAspect(aspects, ChatAspectIdentity) {
+			if err := resolveChatIdentity(tx, incoming, &stored, created, now); err != nil {
+				return err
+			}
+		}
 		versions, err := decodeProjectionVersions(stored.FieldVersions)
 		if err != nil {
 			return fmt.Errorf("decode chat field versions: %w", err)
@@ -141,6 +147,64 @@ func (r *chatMessageRepository) ApplyChat(ctx context.Context, incoming *project
 		return false, fmt.Errorf("apply chat projection: %w", err)
 	}
 	return applied, nil
+}
+
+func resolveChatIdentity(tx *gorm.DB, incoming, stored *projection_model.Chat, created bool, now time.Time) error {
+	if incoming.Type == projection_model.ChatTypeDirect {
+		var contact projection_model.Contact
+		err := tx.Table("projected_contacts AS contacts").Select("contacts.*").
+			Joins("JOIN projected_contact_identities AS identities ON identities.instance_id = contacts.instance_id AND identities.contact_id = contacts.contact_id").
+			Where("identities.instance_id = ? AND identities.identity_kind = ? AND identities.identity_value = ?", incoming.InstanceID, projection_model.ContactIdentityKindJID, incoming.ChatID).
+			Where("contacts.tombstoned_at IS NULL AND identities.tombstoned_at IS NULL").First(&contact).Error
+		switch {
+		case err == nil:
+			incoming.ContactID = &contact.ContactID
+			if name, source := contact.CanonicalDisplayName(); name != "" {
+				incoming.DisplayName, incoming.DisplayNameSource = &name, &source
+				updatedAt := contact.UpdatedAt.UTC()
+				incoming.DisplayNameUpdatedAt = &updatedAt
+			} else if incoming.DisplayName != nil && *incoming.DisplayName != "" {
+				source, updatedAt := "provider_chat", now
+				incoming.DisplayNameSource, incoming.DisplayNameUpdatedAt = &source, &updatedAt
+			} else if !created && stored.DisplayNameSource != nil && *stored.DisplayNameSource == "provider_chat" {
+				incoming.DisplayName, incoming.DisplayNameSource = stored.DisplayName, stored.DisplayNameSource
+				incoming.DisplayNameUpdatedAt = stored.DisplayNameUpdatedAt
+			} else {
+				incoming.DisplayName, incoming.DisplayNameSource, incoming.DisplayNameUpdatedAt = nil, nil, nil
+			}
+			return nil
+		case !errors.Is(err, gorm.ErrRecordNotFound):
+			return err
+		}
+		if incoming.DisplayName != nil && *incoming.DisplayName != "" {
+			source, updatedAt := "provider_chat", now
+			incoming.DisplayNameSource, incoming.DisplayNameUpdatedAt = &source, &updatedAt
+		} else if !created {
+			incoming.ContactID = stored.ContactID
+			incoming.DisplayName, incoming.DisplayNameSource = stored.DisplayName, stored.DisplayNameSource
+			incoming.DisplayNameUpdatedAt = stored.DisplayNameUpdatedAt
+		}
+		return nil
+	}
+
+	incoming.ContactID = nil
+	if incoming.DisplayName == nil || *incoming.DisplayName == "" {
+		if !created && stored.Type == incoming.Type {
+			incoming.DisplayName, incoming.DisplayNameSource = stored.DisplayName, stored.DisplayNameSource
+			incoming.DisplayNameUpdatedAt = stored.DisplayNameUpdatedAt
+		}
+		return nil
+	}
+	source := map[projection_model.ChatType]string{
+		projection_model.ChatTypeGroup:      "group_subject",
+		projection_model.ChatTypeNewsletter: "newsletter_name",
+		projection_model.ChatTypeBroadcast:  "broadcast_name",
+	}[incoming.Type]
+	if source == "" {
+		source = "provider_chat"
+	}
+	incoming.DisplayNameSource, incoming.DisplayNameUpdatedAt = &source, &now
+	return nil
 }
 
 func (r *chatMessageRepository) ApplyMessage(ctx context.Context, incoming *projection_model.ProjectedMessage, aspects ...MessageAspect) (bool, error) {
@@ -262,6 +326,11 @@ func (r *chatMessageRepository) ListChats(ctx context.Context, instanceID string
 	if instanceID == "" || limit < 1 || limit > maxProjectionPageSize || (cursor != nil && cursor.ChatID == "") {
 		return nil, errors.New("valid chat projection instance, limit, and cursor are required")
 	}
+	base := r.db.WithContext(ctx).Model(&projection_model.Chat{}).Where("instance_id = ? AND tombstoned_at IS NULL", instanceID)
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, err
+	}
 	query := r.db.WithContext(ctx).Where("instance_id = ? AND tombstoned_at IS NULL", instanceID)
 	if cursor != nil && cursor.LastActivityAt == nil {
 		query = query.Where("last_activity_at IS NULL AND chat_id < ?", cursor.ChatID)
@@ -273,7 +342,7 @@ func (r *chatMessageRepository) ListChats(ctx context.Context, instanceID string
 	if err := query.Order("last_activity_at DESC NULLS LAST, chat_id DESC").Limit(limit + 1).Find(&chats).Error; err != nil {
 		return nil, err
 	}
-	page := &ChatPage{Items: chats}
+	page := &ChatPage{Items: chats, Total: total}
 	if len(chats) > limit {
 		page.Items = chats[:limit]
 		last := page.Items[len(page.Items)-1]
@@ -387,6 +456,7 @@ func applyChatAspect(stored, incoming *projection_model.Chat, aspect ChatAspect)
 	switch aspect {
 	case ChatAspectIdentity:
 		stored.ContactID, stored.Type, stored.DisplayName = incoming.ContactID, incoming.Type, incoming.DisplayName
+		stored.DisplayNameSource, stored.DisplayNameUpdatedAt = incoming.DisplayNameSource, incoming.DisplayNameUpdatedAt
 	case ChatAspectActivity:
 		stored.LastMessageID, stored.LastMessageAt, stored.LastActivityAt = incoming.LastMessageID, incoming.LastMessageAt, incoming.LastActivityAt
 	case ChatAspectSettings:

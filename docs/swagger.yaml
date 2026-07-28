@@ -68,6 +68,9 @@ definitions:
         - campaign_orchestration
         - rate_limit_retry_after
         - groups_projection
+        - contacts_projection
+        - chats_projection
+        - canonical_contact_identity
         - group_lists
         - group_list_eligibility
         - campaign_group_targets
@@ -427,6 +430,9 @@ definitions:
       syncStatus:
         example: ready
         type: string
+      total:
+        example: 1930
+        type: integer
     type: object
   apidocs.QRCodeData:
     properties:
@@ -2066,6 +2072,20 @@ definitions:
         type: integer
       displayName:
         type: string
+      displayNameSource:
+        enum:
+        - full_name
+        - business_name
+        - push_name
+        - first_name
+        - username
+        - provider_chat
+        - group_subject
+        - newsletter_name
+        - broadcast_name
+        type: string
+      displayNameUpdatedAt:
+        type: string
       lastActivityAt:
         type: string
       lastMessageAt:
@@ -2080,6 +2100,10 @@ definitions:
         $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.ChatType'
       unreadCount:
         type: integer
+    required:
+    - chatId
+    - type
+    - unreadCount
     type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessage:
     properties:
@@ -2819,6 +2843,37 @@ definitions:
         type: string
       Username:
         type: string
+      addressingJid:
+        type: string
+      aliases:
+        items:
+          type: string
+        type: array
+      contactId:
+        type: string
+      displayName:
+        type: string
+      displayNameSource:
+        enum:
+        - full_name
+        - business_name
+        - push_name
+        - first_name
+        - username
+        type: string
+      identityStatus:
+        enum:
+        - complete
+        - partial
+        type: string
+      identityUpdatedAt:
+        type: string
+    required:
+    - addressingJid
+    - aliases
+    - contactId
+    - identityStatus
+    - identityUpdatedAt
     type: object
   github_com_evolution-foundation_evolution-go_pkg_user_service.GetAvatarStruct:
     properties:
@@ -10143,6 +10198,8 @@ paths:
       - Chat
   /chat/info/{chatId}:
     get:
+      description: Return a projected chat with locally denormalized contact or type-specific
+        display-name metadata.
       parameters:
       - description: Chat JID
         in: path
@@ -10180,6 +10237,8 @@ paths:
       - Chat
   /chat/list:
     get:
+      description: Cursor-page projected chats without live reads. meta.total is the
+        exact active projected-chat count at request time, not a cross-page snapshot.
       parameters:
       - description: Page size (1-200)
         in: query
@@ -14496,9 +14555,10 @@ paths:
       - User
   /user/contact/{contactId}:
     get:
-      description: Get one normalized contact from the persisted instance projection
+      description: Resolve a canonical UUID, permanent absorbed-ID redirect, or JID
+        alias from the persisted instance projection and return the canonical contactId.
       parameters:
-      - description: Contact JID
+      - description: Canonical contact ID, absorbed contact ID, or contact JID alias
         in: path
         name: contactId
         required: true
@@ -14516,7 +14576,7 @@ paths:
                   $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_user_service.ContactInfo'
               type: object
         "400":
-          description: Invalid contact JID
+          description: Invalid contact reference
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "404":
@@ -14540,7 +14600,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get a user's contacts
+      description: Return all canonical contacts without live reads. meta.total counts
+        canonical contacts, never aliases.
       produces:
       - application/json
       responses:
@@ -14570,8 +14631,9 @@ paths:
       - User
   /user/contacts/search:
     get:
-      description: Prefix-search normalized contacts from the persisted instance projection
-        without querying WhatsApp
+      description: Prefix-search canonical contacts without querying WhatsApp. meta.total
+        is the exact normalized-query match count at request time; cursors are opaque
+        and versioned.
       parameters:
       - description: Case-insensitive prefix matched against normalized contact fields
         in: query
