@@ -21,6 +21,11 @@ type groupManagementCommandServiceStub struct {
 	metadata group_service.ManagementCommandMetadata
 }
 
+func (s *groupManagementCommandServiceStub) ExecuteSetGroupPhoto(_ context.Context, _ *group_service.SetGroupPhotoAssetRequest, _ *instance_model.Instance, metadata group_service.ManagementCommandMetadata) (*group_service.CommandAcknowledgement, error) {
+	s.metadata = metadata
+	return s.result, s.err
+}
+
 func (s *groupManagementCommandServiceStub) ExecuteSetGroupName(_ context.Context, _ *group_service.SetGroupNameStruct, _ *instance_model.Instance, metadata group_service.ManagementCommandMetadata) (*group_service.CommandAcknowledgement, error) {
 	s.metadata = metadata
 	return s.result, s.err
@@ -67,5 +72,31 @@ func TestManagementCommandHandlerReturnsRetryAfter(t *testing.T) {
 	(&groupHandler{groupService: service, managementContract: true}).SetGroupName(ctx)
 	if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "2" || !strings.Contains(response.Body.String(), `"code":"outbound_rate_limited"`) {
 		t.Fatalf("status=%d retry=%q body=%s", response.Code, response.Header().Get("Retry-After"), response.Body.String())
+	}
+}
+
+func TestGroupPhotoAssetHandlerAcceptsOnlyNormalizedAssetContract(t *testing.T) {
+	assetID := "f6ad67ec-23dc-4130-a898-233cc67df2a2"
+	service := &groupManagementCommandServiceStub{result: &group_service.CommandAcknowledgement{
+		CommandID: "f8c0557a-9cf7-4aa6-8e67-f3c037579d1e", Command: "photo_updated", GroupJID: "123@g.us", Status: "completed", ProjectionRefreshExpected: true,
+	}}
+	ctx, response := managementCommandContext(`{"groupJid":"123@g.us","mediaAssetId":"` + assetID + `"}`)
+	(&groupHandler{groupService: service, managementContract: true, photoAssets: true}).SetGroupPhoto(ctx)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"command":"photo_updated"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	ctx, response = managementCommandContext(`{"groupJid":"123@g.us","image":"data:image/png;base64,AA=="}`)
+	(&groupHandler{groupService: service, managementContract: true, photoAssets: true}).SetGroupPhoto(ctx)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
+		t.Fatalf("legacy photo status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestGroupPhotoAssetHandlerMapsSafeAssetErrors(t *testing.T) {
+	service := &groupManagementCommandServiceStub{err: group_service.ErrGroupPhotoAssetInvalidType}
+	ctx, response := managementCommandContext(`{"groupJid":"123@g.us","mediaAssetId":"f6ad67ec-23dc-4130-a898-233cc67df2a2"}`)
+	(&groupHandler{groupService: service, managementContract: true, photoAssets: true}).SetGroupPhoto(ctx)
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), `"code":"media_asset_invalid_type"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

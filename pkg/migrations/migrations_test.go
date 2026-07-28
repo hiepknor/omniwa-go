@@ -481,3 +481,19 @@ func TestUnresolvedGroupManagementCommandMigrationIsNarrowAndAdditive(t *testing
 		}
 	}
 }
+
+func TestGroupPhotoAssetReferenceMigrationIsScopedAndAdditive(t *testing.T) {
+	migration := registeredMigration(t, 33)
+	if migration.Name != "add_group_photo_asset_references" {
+		t.Fatalf("group photo asset migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"media_asset_references_owner_check", "'group_photo'", "'group_photo_pending'", "picture_media_asset_id UUID NULL",
+		"projected_groups_picture_media_asset_fk", "FOREIGN KEY (picture_media_asset_id, instance_id)",
+		"REFERENCES media_assets(id, instance_id) ON DELETE RESTRICT",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("group photo asset migration missing %q", required)
+		}
+	}
+}

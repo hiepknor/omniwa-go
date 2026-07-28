@@ -36,6 +36,7 @@ type GroupHandler interface {
 	LeaveGroup(ctx *gin.Context)
 	UpdateGroupSettings(ctx *gin.Context)
 	ManagementContractEnabled() bool
+	PhotoAssetsEnabled() bool
 }
 
 // GroupAudit returns terminal, public-safe management command history.
@@ -197,6 +198,7 @@ func (g *groupHandler) SearchGroups(ctx *gin.Context) {
 type groupHandler struct {
 	groupService       group_service.GroupService
 	managementContract bool
+	photoAssets        bool
 }
 
 type Option func(*groupHandler)
@@ -205,7 +207,12 @@ func WithManagementContract(enabled bool) Option {
 	return func(handler *groupHandler) { handler.managementContract = enabled }
 }
 
+func WithPhotoAssets(enabled bool) Option {
+	return func(handler *groupHandler) { handler.photoAssets = enabled }
+}
+
 func (g *groupHandler) ManagementContractEnabled() bool { return g != nil && g.managementContract }
+func (g *groupHandler) PhotoAssetsEnabled() bool        { return g != nil && g.photoAssets }
 
 func decodeStrictManagementBody[T any](ctx *gin.Context, target *T) bool {
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxGroupManagementBodyBytes)
@@ -241,6 +248,18 @@ func writeManagementCommandError(ctx *gin.Context, err error) {
 		httpapi.WriteError(ctx, http.StatusConflict, "group_state_changed", "group management permission could not be established")
 	case errors.Is(err, group_service.ErrManagementProviderNotReady):
 		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "provider_disconnected", "WhatsApp provider is disconnected")
+	case errors.Is(err, group_service.ErrGroupPhotoAssetNotFound):
+		httpapi.WriteError(ctx, http.StatusNotFound, "media_asset_not_found", "media asset was not found")
+	case errors.Is(err, group_service.ErrGroupPhotoAssetNotReady):
+		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_not_ready", "media asset is not ready")
+	case errors.Is(err, group_service.ErrGroupPhotoAssetInvalidType):
+		httpapi.WriteError(ctx, http.StatusUnprocessableEntity, "media_asset_invalid_type", "media asset type is not supported for a Group photo")
+	case errors.Is(err, group_service.ErrGroupPhotoAssetTooLarge):
+		httpapi.WriteError(ctx, http.StatusRequestEntityTooLarge, "media_asset_too_large", "media asset exceeds Group photo limits")
+	case errors.Is(err, group_service.ErrGroupPhotoAssetIntegrity):
+		httpapi.WriteError(ctx, http.StatusConflict, "media_asset_integrity_failed", "media asset integrity could not be verified")
+	case errors.Is(err, group_service.ErrGroupPhotoAssetStorage):
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "media_asset_storage_unavailable", "media asset storage is unavailable")
 	case errors.Is(err, group_repository.ErrManagementIdempotencyConflict):
 		httpapi.WriteError(ctx, http.StatusConflict, "idempotency_conflict", "idempotency key was reused with different input")
 	case errors.Is(err, group_repository.ErrManagementCommandConflict):
@@ -469,13 +488,20 @@ func writeGroupProjectionReadError(ctx *gin.Context, err error) {
 
 // Set group photo
 // @Summary Set group photo
-// @Description Set group photo
+// @Description Set a Group photo from an instance-owned ready shared media asset. The normalized contract performs command-time permission revalidation and never accepts a URL or base64 image.
 // @Tags Group
 // @Accept json
 // @Produce json
-// @Param message body group_service.SetGroupPhotoStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse{data=string} "success"
-// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Param message body group_service.SetGroupPhotoAssetRequest true "Group photo asset command"
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.CommandAcknowledgement} "accepted"
+// @Failure 400 {object} apidocs.ErrorResponse "invalid_request"
+// @Failure 403 {object} apidocs.ErrorResponse "group_permission_denied"
+// @Failure 404 {object} apidocs.ErrorResponse "media_asset_not_found"
+// @Failure 409 {object} apidocs.ErrorResponse "group_state_changed, media_asset_not_ready, media_asset_integrity_failed, or idempotency_conflict"
+// @Failure 413 {object} apidocs.ErrorResponse "media_asset_too_large"
+// @Failure 422 {object} apidocs.ErrorResponse "media_asset_invalid_type"
+// @Failure 429 {object} apidocs.RateLimitResponse "Mutation rate limited; see Retry-After header"
+// @Failure 503 {object} apidocs.ErrorResponse "projection_not_ready, provider_disconnected, or media_asset_storage_unavailable"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /group/photo [post]
@@ -485,6 +511,19 @@ func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
 		httpapi.WriteInternal(ctx, nil)
+		return
+	}
+	if g.photoAssets {
+		data := &group_service.SetGroupPhotoAssetRequest{}
+		if !decodeStrictManagementBody(ctx, data) {
+			return
+		}
+		acknowledgement, err := g.groupService.ExecuteSetGroupPhoto(ctx.Request.Context(), data, instance, managementCommandMetadata(ctx))
+		if err != nil {
+			writeManagementCommandError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "accepted", "data": acknowledgement})
 		return
 	}
 

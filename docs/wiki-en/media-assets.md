@@ -1,8 +1,10 @@
 # Shared media asset foundation
 
-OmniWA GO uses one private, instance-scoped media asset domain for campaign and
-chat images. Migration 26 creates the additive storage foundation. Migration 27
-backfills campaign metadata and references without moving existing objects.
+OmniWA GO uses one private, instance-scoped media asset domain for campaign,
+chat, and Group photo images. Migration 26 creates the additive storage
+foundation. Migration 27 backfills campaign metadata and references without
+moving existing objects; migration 33 adds durable and pending Group photo
+ownership.
 
 ## Configuration
 
@@ -12,6 +14,7 @@ Keep the feature disabled while applying the migration:
 WA_MEDIA_ASSETS_ENABLED=false
 WA_CHAT_IMAGE_CONTENT_ENABLED=false
 WA_INBOUND_IMAGE_CONTENT_ENABLED=false
+WA_GROUP_PHOTO_ASSETS_ENABLED=false
 MINIO_ENABLED=true
 MEDIA_ASSET_BUCKET=omniwa-media-assets
 MEDIA_ASSET_MAX_BYTES=8388608
@@ -118,6 +121,37 @@ When enabled and the messages projection is serving, the server advertises
 `chat_image_content`. Disable `WA_CHAT_IMAGE_CONTENT_ENABLED` to roll back this
 stage. The upload routes and `mediaAssetId` sender are removed, while legacy
 media sends and stored shared assets remain unchanged.
+
+## Group photos from device uploads
+
+Enable this stage only with the normalized Group management contract and the
+shared private asset foundation:
+
+```env
+WA_MEDIA_ASSETS_ENABLED=true
+WA_GROUP_MANAGEMENT_CONTRACT_ENABLED=true
+WA_GROUP_PHOTO_ASSETS_ENABLED=true
+```
+
+Upload a JPEG or PNG through `POST /media-assets`, then send its opaque ID to
+`POST /group/photo` with `groupJid` and `mediaAssetId`. URLs, base64, and data
+URLs are rejected by the normalized contract. The server verifies instance
+ownership and ready state, enforces byte and decoded-pixel bounds, and produces
+a metadata-free 640-by-640 JPEG before the provider call.
+
+A 24-hour pending reference fences cleanup while the non-transactional provider
+command runs. Confirmed success replaces the Group's prior durable photo
+reference. Unknown provider outcomes are journaled, never retried, and leave
+only the expiring reservation. Public Group detail may expose the opaque asset
+ID but never the object key, bucket, URL, filename, or image bytes.
+Authenticated clients may read the canonical preview through
+`GET /media-assets/{mediaId}/content`; the endpoint never redirects to storage.
+
+Migration 33 is additive. Apply it with the photo gate disabled, verify device
+upload and private-bucket access, then canary the gate and require the
+`group_photo_assets` capability in Console. Roll back by disabling only
+`WA_GROUP_PHOTO_ASSETS_ENABLED`; retain referenced assets and keep the shared
+bucket reachable.
 
 ## Live inbound chat images
 

@@ -2960,7 +2960,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Set group photo",
+                "description": "Set a Group photo from an instance-owned ready shared media asset. The normalized contract performs command-time permission revalidation and never accepts a URL or base64 image.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2973,18 +2973,18 @@ const docTemplate = `{
                 "summary": "Set group photo",
                 "parameters": [
                     {
-                        "description": "Group data",
+                        "description": "Group photo asset command",
                         "name": "message",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.SetGroupPhotoStruct"
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.SetGroupPhotoAssetRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "success",
+                        "description": "accepted",
                         "schema": {
                             "allOf": [
                                 {
@@ -2994,7 +2994,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "type": "string"
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement"
                                         }
                                     }
                                 }
@@ -3002,13 +3002,55 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Error on validation",
+                        "description": "invalid_request",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "group_permission_denied",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "media_asset_not_found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "group_state_changed, media_asset_not_ready, media_asset_integrity_failed, or idempotency_conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "media_asset_too_large",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "media_asset_invalid_type",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Mutation rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "projection_not_ready, provider_disconnected, or media_asset_storage_unavailable",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -10186,6 +10228,10 @@ const docTemplate = `{
                 "available": {
                     "type": "boolean"
                 },
+                "mediaAssetId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
                 "updatedAt": {
                     "type": "string"
                 }
@@ -10500,14 +10546,15 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_evolution-foundation_evolution-go_pkg_group_service.SetGroupPhotoStruct": {
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.SetGroupPhotoAssetRequest": {
             "type": "object",
             "properties": {
                 "groupJid": {
                     "type": "string"
                 },
-                "image": {
-                    "type": "string"
+                "mediaAssetId": {
+                    "type": "string",
+                    "format": "uuid"
                 }
             }
         },

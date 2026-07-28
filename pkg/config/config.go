@@ -73,6 +73,7 @@ type Config struct {
 	GroupListsEnabled               bool
 	GroupListEligibilityEnabled     bool
 	GroupManagementEnabled          bool
+	GroupPhotoAssetsEnabled         bool
 	WAInfoRatePerSecond             float64
 	WAInfoBurst                     int
 	WAInfoMaxWait                   time.Duration
@@ -419,6 +420,7 @@ func Load() *Config {
 	groupListsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LISTS_ENABLED)), "true")
 	groupListEligibilityEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED)), "true")
 	groupManagementContractEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_MANAGEMENT_CONTRACT_ENABLED)), "true")
+	groupPhotoAssetsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_PHOTO_ASSETS_ENABLED)), "true")
 	if groupListEligibilityEnabled && !groupListsEnabled {
 		logger.LogFatal("[CONFIG] %s requires %s=true", config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED, config_env.WA_GROUP_LISTS_ENABLED)
 	}
@@ -791,6 +793,7 @@ func Load() *Config {
 		GroupListsEnabled:           groupListsEnabled,
 		GroupListEligibilityEnabled: groupListEligibilityEnabled,
 		GroupManagementEnabled:      groupManagementContractEnabled,
+		GroupPhotoAssetsEnabled:     groupPhotoAssetsEnabled,
 		WAInfoRatePerSecond:         waInfoRatePerSecond,
 		WAInfoBurst:                 waInfoBurst,
 		WAInfoMaxWait:               waInfoMaxWait,

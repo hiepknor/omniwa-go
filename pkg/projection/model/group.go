@@ -68,6 +68,7 @@ type Group struct {
 	PictureID            *string              `json:"pictureId,omitempty" gorm:"column:picture_id;size:255"`
 	PictureRemoved       *bool                `json:"pictureRemoved,omitempty" gorm:"column:picture_removed"`
 	PictureUpdatedAt     *time.Time           `json:"pictureUpdatedAt,omitempty" gorm:"column:picture_updated_at"`
+	PictureMediaAssetID  *string              `json:"pictureMediaAssetId,omitempty" gorm:"column:picture_media_asset_id;type:uuid"`
 	CreatedAt            time.Time            `json:"createdAt"`
 	UpdatedAt            time.Time            `json:"updatedAt"`
 }

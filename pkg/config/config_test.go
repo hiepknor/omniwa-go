@@ -56,6 +56,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_GROUP_LISTS_ENABLED, "")
 	t.Setenv(config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED, "")
 	t.Setenv(config_env.WA_GROUP_MANAGEMENT_CONTRACT_ENABLED, "")
+	t.Setenv(config_env.WA_GROUP_PHOTO_ASSETS_ENABLED, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "")
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT, "")
@@ -113,6 +114,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.GroupManagementEnabled {
 		t.Fatal("expected Group Management contract to be disabled by default")
 	}
+	if config.GroupPhotoAssetsEnabled {
+		t.Fatal("expected Group photo assets to be disabled by default")
+	}
 	if config.CampaignDirectCreateEnabled {
 		t.Fatal("expected direct campaign creation to be disabled by default")
 	}
@@ -169,6 +173,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_CAMPAIGN_FAILURE_PAUSE_THRESHOLD, "12")
 	t.Setenv(config_env.WA_CAMPAIGN_IMAGE_CONTENT_ENABLED, "true")
 	t.Setenv(config_env.WA_MEDIA_ASSETS_ENABLED, "true")
+	t.Setenv(config_env.WA_GROUP_PHOTO_ASSETS_ENABLED, "true")
 	t.Setenv(config_env.WA_CHAT_IMAGE_CONTENT_ENABLED, "true")
 	t.Setenv(config_env.WA_INBOUND_IMAGE_CONTENT_ENABLED, "true")
 	t.Setenv(config_env.MEDIA_DESCRIPTOR_KEY, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)))
@@ -254,6 +259,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if !config.MediaAssetsEnabled || config.MediaAssetBucket != "private-media-assets" || config.MediaAssetMaxBytes != 3*1024*1024 || config.MediaAssetMaxPixels != 9_000_000 || config.MediaAssetUnboundTTL != 6*time.Hour {
 		t.Fatalf("media asset overrides are invalid: enabled=%t bucket=%q bytes=%d pixels=%d ttl=%v", config.MediaAssetsEnabled, config.MediaAssetBucket, config.MediaAssetMaxBytes, config.MediaAssetMaxPixels, config.MediaAssetUnboundTTL)
+	}
+	if !config.GroupPhotoAssetsEnabled {
+		t.Fatal("expected Group photo asset override to be enabled")
 	}
 	if !config.ChatImageContentEnabled {
 		t.Fatal("expected chat image content override to be enabled")

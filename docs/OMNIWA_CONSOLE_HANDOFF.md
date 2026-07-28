@@ -50,6 +50,7 @@ are returned only to an admin-authenticated request.
 | `group_members_projection` | Use the projection-backed member directory with opaque member references and advisory per-member actions | `GET /group/{groupJid}/members` |
 | `group_management_commands` | Use strict journaled mutations, typed acknowledgements/outcomes, command-time permission checks, and `Idempotency-Key` | Existing `/group/*` mutation routes except photo |
 | `group_management_audit` | Show bounded public-safe terminal management history | `GET /group/{groupJid}/audit` |
+| `group_photo_assets` | Upload a private image asset, then set the Group photo by opaque asset ID | `POST /media-assets`, `POST /group/photo` |
 | `labels_projection` | Use persisted label list/detail reads | `GET /label/list`, `GET /label/info/{labelId}` |
 | `contacts_projection` | Use normalized persisted contacts for list/search/detail | `GET /user/contacts`, `GET /user/contacts/search`, `GET /user/contact/{contactId}` |
 | `chats_projection` | Use cursor-paged chat reads | `GET /chat/list`, `GET /chat/info/{chatId}` |
@@ -177,6 +178,37 @@ Rollout commands/audit only after migrations 30-32 are applied, Groups schema
 version 4 is serving, and Console recognizes both capabilities. Disable
 `WA_GROUP_MANAGEMENT_CONTRACT_ENABLED` to restore legacy route behavior; retain
 the append-only journal and audit data during rollback.
+
+## Shared-media Group photos
+
+When `group_photo_assets` is present, Console must first upload a JPEG or PNG
+from the operator device through `POST /media-assets`, then call:
+
+```json
+{
+  "groupJid": "120363000001@g.us",
+  "mediaAssetId": "927beb51-46c2-4331-b3b4-d96f67280bd3"
+}
+```
+
+The Group photo route does not accept a URL, data URL, base64 image, filename,
+or object-storage reference in this mode. The asset must be ready and owned by
+the authenticated instance. The backend validates the canonical image, applies
+a bounded square normalization, revalidates `actions.setPhoto`, journals the
+command, and calls the provider once. `completed` confirms the provider call;
+`unknown` must be shown for review and must not be retried automatically.
+
+`GroupDetail.photo.mediaAssetId` is an opaque safe reference when the current
+photo was set through this contract. Console may retrieve its canonical bytes
+only through authenticated `GET /media-assets/{mediaId}/content`; it must not
+construct a storage URL. An absent asset ID does not prove there is no provider
+photo, so `photo.available` remains a separate nullable fact.
+
+Deploy migration 33 with `WA_GROUP_PHOTO_ASSETS_ENABLED=false`, verify the
+private shared bucket and device upload path, then enable the Group management
+contract and photo gate for a canary. Disable only the photo gate to restore the
+legacy photo request path. Existing private objects and durable references must
+remain in place during rollback.
 
 ## Shared response behavior
 
