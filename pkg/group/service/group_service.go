@@ -21,8 +21,9 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
-	"gorm.io/gorm"
 )
+
+var ErrGroupInviteLinkNotFound = errors.New("cached group invite link is not available")
 
 type GroupService interface {
 	ListGroups(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, error)
@@ -44,7 +45,7 @@ type GroupService interface {
 	ExecuteCreateGroup(context.Context, *CreateGroupStruct, *instance_model.Instance, ManagementCommandMetadata) (*CreateGroupCommandResult, error)
 	ExecuteJoinGroup(context.Context, *JoinGroupStruct, *instance_model.Instance, ManagementCommandMetadata) (*JoinGroupCommandResult, error)
 	ExecuteSetGroupPhoto(context.Context, *SetGroupPhotoAssetRequest, *instance_model.Instance, ManagementCommandMetadata) (*CommandAcknowledgement, error)
-	GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error)
+	GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, *projection_service.ProjectionReadMeta, error)
 	SetGroupPhoto(data *SetGroupPhotoStruct, instance *instance_model.Instance) (string, error)
 	SetGroupName(data *SetGroupNameStruct, instance *instance_model.Instance) error
 	SetGroupDescription(data *SetGroupDescriptionStruct, instance *instance_model.Instance) error
@@ -307,28 +308,37 @@ func (g *groupService) ExecuteSetGroupPhoto(ctx context.Context, data *SetGroupP
 	return g.commandManager.SetPhoto(ctx, instance, data, metadata)
 }
 
-func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {
+func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, *projection_service.ProjectionReadMeta, error) {
+	if g == nil || data == nil || instance == nil || instance.Id == "" {
+		return "", nil, ErrInvalidManagementFilter
+	}
 	recipient, ok := utils.ParseJID(data.GroupJID)
-	if !ok {
-		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid group jid")
+	if !ok || recipient.Server != types.GroupServer {
+		return "", nil, ErrInvalidManagementFilter
 	}
 	if !data.Reset {
-		if g.groupReader == nil {
-			return "", errors.New("group projection reader is required")
+		if g.managementReader == nil {
+			return "", nil, errors.New("group management projection reader is required")
 		}
-		inviteLink, _, found, err := g.groupReader.InviteLink(ctx, instance.Id, recipient.String())
+		inviteLink, found, decision, meta, err := g.managementReader.InviteLink(ctx, instance, recipient.String())
 		if err != nil {
-			return "", err
+			return "", meta, err
+		}
+		switch decision.State {
+		case "allowed":
+		case "denied":
+			return "", meta, ErrManagementPermissionDenied
+		default:
+			return "", meta, ErrManagementPermissionUnknown
 		}
 		if !found {
-			return "", gorm.ErrRecordNotFound
+			return "", meta, ErrGroupInviteLinkNotFound
 		}
-		return inviteLink, nil
+		return inviteLink, meta, nil
 	}
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	var resp string
@@ -340,13 +350,13 @@ func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInv
 	}
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error mute chat: %v", instance.Id, err)
-		return "", err
+		return "", nil, err
 	}
 	g.writeGroupProjection(instance.Id, func(writeCtx context.Context) error {
 		return g.groupWriter.WriteInviteLink(writeCtx, instance.Id, recipient.String(), resp)
 	})
 
-	return resp, nil
+	return resp, nil, nil
 }
 
 func (g *groupService) SetGroupPhoto(data *SetGroupPhotoStruct, instance *instance_model.Instance) (string, error) {
@@ -705,17 +715,27 @@ func (g *groupService) UpdateGroupSettings(data *UpdateGroupSettingsStruct, inst
 }
 
 func (g *groupService) writeGroupProjection(instanceID string, write func(context.Context) error) {
+	_ = g.writeGroupProjectionResult(instanceID, write)
+}
+
+func (g *groupService) writeGroupProjectionResult(instanceID string, write func(context.Context) error) error {
 	if g.groupWriter == nil || write == nil {
-		return
+		return errors.New("group projection writer is required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), groupProjectionWriteTimeout)
 	defer cancel()
 	if err := write(ctx); err != nil {
-		g.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=write_through instance_id=%s resource=groups result=failed error_code=projection_write_failed", instanceID)
-		if staleErr := g.groupWriter.MarkStale(instanceID); staleErr != nil {
-			g.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=mark_stale instance_id=%s resource=groups result=failed error_code=projection_state_write_failed", instanceID)
+		if g.loggerWrapper != nil {
+			g.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=write_through instance_id=%s resource=groups result=failed error_code=projection_write_failed", instanceID)
 		}
+		if staleErr := g.groupWriter.MarkStale(instanceID); staleErr != nil {
+			if g.loggerWrapper != nil {
+				g.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=mark_stale instance_id=%s resource=groups result=failed error_code=projection_state_write_failed", instanceID)
+			}
+		}
+		return errors.New("group projection write-through failed")
 	}
+	return nil
 }
 
 func (g *groupService) PrepareManagementCommand(ctx context.Context, instanceID string) error {
@@ -831,10 +851,9 @@ func (g *groupService) ResetManagementInviteLink(ctx context.Context, instanceID
 	if err != nil {
 		return err
 	}
-	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
+	return g.writeGroupProjectionResult(instanceID, func(writeCtx context.Context) error {
 		return g.groupWriter.WriteInviteLink(writeCtx, instanceID, groupJID.String(), inviteLink)
 	})
-	return nil
 }
 
 func (g *groupService) SetManagementPhoto(ctx context.Context, instanceID string, groupJID types.JID, photo []byte) (string, error) {

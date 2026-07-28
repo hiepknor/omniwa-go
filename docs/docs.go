@@ -2407,7 +2407,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get group invite link",
+                "description": "Read the cached group invite link from the instance-scoped Groups projection. This endpoint never calls WhatsApp when reset=false. Permission and cache availability are separate facts.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2431,21 +2431,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "success",
+                        "description": "data is a cached-link string for reset=false or a CommandAcknowledgement for reset=true",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/apidocs.SuccessResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/apidocs.SuccessResponse"
                         }
                     },
                     "400": {
@@ -2454,10 +2442,22 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
-                    "404": {
-                        "description": "Cached invite link not found",
+                    "403": {
+                        "description": "group_permission_denied",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                            "$ref": "#/definitions/apidocs.GroupProjectionErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "group_not_found or group_invite_link_not_found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.GroupInviteLinkNotFoundErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "group_state_changed",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.GroupProjectionErrorResponse"
                         }
                     },
                     "429": {
@@ -8686,6 +8686,38 @@ const docTemplate = `{
                 }
             }
         },
+        "apidocs.GroupInviteLinkNotFoundDetails": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "meta": {
+                    "$ref": "#/definitions/apidocs.ProjectionMeta"
+                }
+            }
+        },
+        "apidocs.GroupInviteLinkNotFoundErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "group_invite_link_not_found"
+                },
+                "details": {
+                    "$ref": "#/definitions/apidocs.GroupInviteLinkNotFoundDetails"
+                },
+                "error": {
+                    "type": "string",
+                    "example": "cached group invite link is not available"
+                },
+                "requestId": {
+                    "type": "string",
+                    "example": "0123456789abcdef0123456789abcdef"
+                }
+            }
+        },
         "apidocs.GroupListAuditEvent": {
             "type": "object",
             "properties": {
@@ -8829,6 +8861,34 @@ const docTemplate = `{
                 },
                 "meta": {
                     "$ref": "#/definitions/apidocs.ProjectionMeta"
+                }
+            }
+        },
+        "apidocs.GroupProjectionErrorDetails": {
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "$ref": "#/definitions/apidocs.ProjectionMeta"
+                }
+            }
+        },
+        "apidocs.GroupProjectionErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "group_permission_denied"
+                },
+                "details": {
+                    "$ref": "#/definitions/apidocs.GroupProjectionErrorDetails"
+                },
+                "error": {
+                    "type": "string",
+                    "example": "group management permission denied"
+                },
+                "requestId": {
+                    "type": "string",
+                    "example": "0123456789abcdef0123456789abcdef"
                 }
             }
         },
@@ -10146,6 +10206,9 @@ const docTemplate = `{
                 "groupJid": {
                     "type": "string"
                 },
+                "inviteLink": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupInviteLinkMetadata"
+                },
                 "isDefaultSubgroup": {
                     "type": "boolean"
                 },
@@ -10250,6 +10313,17 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.GroupInviteLinkMetadata": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
                 },
                 "updatedAt": {
                     "type": "string"

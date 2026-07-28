@@ -35,7 +35,8 @@ func TestManagementGroupInfoReturnsNormalizedDetailWithoutParticipants(t *testin
 	ctx.Request.Header.Set("Content-Type", "application/json")
 	ctx.Set("instance", &instance_model.Instance{Id: "instance-a", Jid: "actor@s.whatsapp.net"})
 	(&groupHandler{groupService: &groupManagementInfoServiceStub{}, managementContract: true}).GetGroupInfo(ctx)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"actions"`) || !strings.Contains(response.Body.String(), `"state":"allowed"`) || strings.Contains(response.Body.String(), "participants") {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"actions"`) || !strings.Contains(response.Body.String(), `"state":"allowed"`) ||
+		!strings.Contains(response.Body.String(), `"inviteLink":{"available":false}`) || strings.Contains(response.Body.String(), "participants") {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

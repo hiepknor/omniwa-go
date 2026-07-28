@@ -46,6 +46,29 @@ type ErrorResponse struct {
 	RequestID string `json:"requestId,omitempty" example:"0123456789abcdef0123456789abcdef"`
 }
 
+type GroupInviteLinkNotFoundDetails struct {
+	Available *bool           `json:"available,omitempty" example:"false"`
+	Meta      *ProjectionMeta `json:"meta,omitempty"`
+}
+
+type GroupInviteLinkNotFoundErrorResponse struct {
+	Error     string                         `json:"error" example:"cached group invite link is not available"`
+	Code      string                         `json:"code" example:"group_invite_link_not_found"`
+	RequestID string                         `json:"requestId,omitempty" example:"0123456789abcdef0123456789abcdef"`
+	Details   GroupInviteLinkNotFoundDetails `json:"details"`
+}
+
+type GroupProjectionErrorDetails struct {
+	Meta *ProjectionMeta `json:"meta,omitempty"`
+}
+
+type GroupProjectionErrorResponse struct {
+	Error     string                      `json:"error" example:"group management permission denied"`
+	Code      string                      `json:"code" example:"group_permission_denied"`
+	RequestID string                      `json:"requestId,omitempty" example:"0123456789abcdef0123456789abcdef"`
+	Details   GroupProjectionErrorDetails `json:"details"`
+}
+
 type GroupListEligibilityErrorResponse struct {
 	Error     string                                     `json:"error" example:"group list contains an unavailable group"`
 	Code      string                                     `json:"code" example:"group_list_group_unavailable"`

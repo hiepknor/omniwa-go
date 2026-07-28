@@ -128,6 +128,25 @@ func TestGroupReaderReturnsCachedInviteLink(t *testing.T) {
 	}
 }
 
+func TestGroupReaderDistinguishesMissingCacheFromMissingGroup(t *testing.T) {
+	reconciledAt := time.Unix(500, 0)
+	state := groupReaderStateStub{state: &projection_model.State{
+		SyncStatus: projection_model.SyncStatusReady, SchemaVersion: GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
+	}}
+
+	withoutCache := NewGroupReader(&groupReaderRepositoryStub{get: &projection_repository.GroupRecord{}}, state)
+	_, meta, available, err := withoutCache.InviteLink(context.Background(), "instance-a", "group@g.us")
+	if err != nil || available || meta == nil {
+		t.Fatalf("missing cache = meta=%#v available=%v error=%v", meta, available, err)
+	}
+
+	missingGroup := NewGroupReader(&groupReaderRepositoryStub{}, state)
+	_, meta, available, err = missingGroup.InviteLink(context.Background(), "instance-a", "group@g.us")
+	if !errors.Is(err, gorm.ErrRecordNotFound) || available || meta == nil {
+		t.Fatalf("missing group = meta=%#v available=%v error=%v", meta, available, err)
+	}
+}
+
 func TestGroupReaderSearchCursorIsOpaqueAndQueryScoped(t *testing.T) {
 	reconciledAt := time.Unix(500, 0)
 	repository := &groupReaderRepositoryStub{page: &projection_repository.GroupPage{

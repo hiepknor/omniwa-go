@@ -18,6 +18,7 @@ import (
 type managementReadRepositoryStub struct {
 	page               *projection_repository.GroupManagementPage
 	record             *projection_repository.GroupManagementRecord
+	recordErr          error
 	filter             projection_repository.GroupManagementFilter
 	cursor             *projection_repository.GroupCursor
 	identity           string
@@ -47,6 +48,9 @@ func (s *managementReadRepositoryStub) GetManagementSummary(_ context.Context, i
 }
 
 func (s *managementReadRepositoryStub) GetManagement(context.Context, string, string, string) (*projection_repository.GroupManagementRecord, error) {
+	if s.recordErr != nil {
+		return nil, s.recordErr
+	}
 	if s.record == nil {
 		return nil, gorm.ErrRecordNotFound
 	}
@@ -173,6 +177,41 @@ func TestManagementDetailUsesTriStateDecisions(t *testing.T) {
 	}
 }
 
+func TestManagementDetailSeparatesInvitePermissionFromCacheAvailability(t *testing.T) {
+	suspended, announce, isParent := false, false, false
+	membership := projection_model.GroupActorMembershipJoined
+	now := time.Unix(300, 0).UTC()
+	repository := &managementReadRepositoryStub{record: &projection_repository.GroupManagementRecord{
+		Group: projection_model.Group{
+			GroupID: "120363000001@g.us", Suspended: &suspended, Announce: &announce, IsParent: &isParent,
+			MembershipState: &membership, UpdatedAt: now,
+		},
+		ActorParticipant: &projection_model.GroupParticipant{ParticipantID: "actor@s.whatsapp.net", Role: projection_model.ParticipantRoleAdmin},
+	}}
+	reader := NewManagementReader(repository, managementReadStateStub{state: readyManagementState()})
+	reader.now = func() time.Time { return now }
+	detail, _, err := reader.Get(context.Background(), &instance_model.Instance{Id: "instance-a", Jid: "actor@s.whatsapp.net"}, "120363000001@g.us")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Actions.ReadInviteLink.State != "allowed" || detail.Actions.ResetInviteLink.State != "allowed" || detail.InviteLink.Available || detail.InviteLink.UpdatedAt != nil {
+		t.Fatalf("detail = %#v", detail)
+	}
+	link, available, decision, meta, err := reader.InviteLink(context.Background(), &instance_model.Instance{Id: "instance-a", Jid: "actor@s.whatsapp.net"}, "120363000001@g.us")
+	if err != nil || link != "" || available || decision.State != "allowed" || meta == nil {
+		t.Fatalf("invite link = %q available=%v decision=%#v meta=%#v error=%v", link, available, decision, meta, err)
+	}
+
+	cachedAt := now.Add(time.Minute)
+	cachedLink := "https://chat.whatsapp.com/cached"
+	repository.record.Group.InviteLink = &cachedLink
+	repository.record.Group.InviteLinkUpdatedAt = &cachedAt
+	link, available, decision, _, err = reader.InviteLink(context.Background(), &instance_model.Instance{Id: "instance-a", Jid: "actor@s.whatsapp.net"}, "120363000001@g.us")
+	if err != nil || link != cachedLink || !available || decision.State != "allowed" {
+		t.Fatalf("cached invite link = %q available=%v decision=%#v error=%v", link, available, decision, err)
+	}
+}
+
 func TestManagementReaderFailsClosedForUnreadyProjection(t *testing.T) {
 	reader := NewManagementReader(&managementReadRepositoryStub{}, managementReadStateStub{err: gorm.ErrRecordNotFound})
 	_, _, err := reader.Search(context.Background(), &instance_model.Instance{Id: "instance-a", Jid: "actor@s.whatsapp.net"}, GroupManagementFilters{}, 50, "")
@@ -234,12 +273,16 @@ func TestManagementActionDecisionsRespectRoleSendModeAndState(t *testing.T) {
 		{name: "community send support is not fabricated", summary: GroupSummary{Type: "community", State: "active", MembershipState: "joined", MyRole: "admin", SendMode: "admins_only"}, sendState: "unknown", adminState: "allowed", reason: "unsupported"},
 		{name: "unknown group type keeps permissions unknown", summary: GroupSummary{Type: "unknown", State: "active", MembershipState: "joined", MyRole: "admin", SendMode: "all_members"}, sendState: "unknown", adminState: "unknown", reason: "permission_unknown"},
 		{name: "suspension denies management", summary: GroupSummary{State: "suspended", MembershipState: "joined", MyRole: "admin", SendMode: "all_members"}, sendState: "denied", adminState: "denied", reason: "group_suspended"},
+		{name: "unavailable group denies management", summary: GroupSummary{State: "unavailable", MembershipState: "joined", MyRole: "admin", SendMode: "all_members"}, sendState: "denied", adminState: "denied", reason: "group_unavailable"},
+		{name: "dissolved group denies management", summary: GroupSummary{State: "dissolved", MembershipState: "joined", MyRole: "admin", SendMode: "all_members"}, sendState: "denied", adminState: "denied", reason: "group_unavailable"},
 		{name: "left actor is not a member", summary: GroupSummary{State: "active", MembershipState: "left", MyRole: "not_member", SendMode: "all_members"}, sendState: "denied", adminState: "denied", reason: "not_a_member"},
+		{name: "removed actor is not a member", summary: GroupSummary{State: "active", MembershipState: "removed", MyRole: "not_member", SendMode: "all_members"}, sendState: "denied", adminState: "denied", reason: "not_a_member"},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			actions := managementActions(test.summary, checkedAt)
-			if actions.SendMessage.State != test.sendState || actions.EditName.State != test.adminState {
+			if actions.SendMessage.State != test.sendState || actions.EditName.State != test.adminState ||
+				actions.ReadInviteLink.State != test.adminState || actions.ResetInviteLink.State != test.adminState {
 				t.Fatalf("actions = %#v", actions)
 			}
 			if test.reason != "" {

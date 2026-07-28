@@ -438,14 +438,16 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 
 // Get group invite link
 // @Summary Get group invite link
-// @Description Get group invite link
+// @Description Read the cached group invite link from the instance-scoped Groups projection. This endpoint never calls WhatsApp when reset=false. Permission and cache availability are separate facts.
 // @Tags Group
 // @Accept json
 // @Produce json
 // @Param message body group_service.GetGroupInviteLinkStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse{data=string} "success"
+// @Success 200 {object} apidocs.SuccessResponse "data is a cached-link string for reset=false or a CommandAcknowledgement for reset=true"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
-// @Failure 404 {object} apidocs.ErrorResponse "Cached invite link not found"
+// @Failure 403 {object} apidocs.GroupProjectionErrorResponse "group_permission_denied"
+// @Failure 404 {object} apidocs.GroupInviteLinkNotFoundErrorResponse "group_not_found or group_invite_link_not_found"
+// @Failure 409 {object} apidocs.GroupProjectionErrorResponse "group_state_changed"
 // @Failure 503 {object} apidocs.ErrorResponse "Groups projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
@@ -485,16 +487,39 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := g.groupService.GetGroupInviteLink(ctx.Request.Context(), data, instance)
+	resp, meta, err := g.groupService.GetGroupInviteLink(ctx.Request.Context(), data, instance)
 	if err != nil {
 		if httpapi.WriteRateLimit(ctx, err) {
+			return
+		}
+		if errors.Is(err, group_service.ErrGroupInviteLinkNotFound) {
+			httpapi.WriteErrorWithDetails(ctx, http.StatusNotFound, "group_invite_link_not_found", "cached group invite link is not available", gin.H{
+				"available": false,
+				"meta":      meta,
+			})
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			httpapi.WriteErrorWithDetails(ctx, http.StatusNotFound, "group_not_found", "group projection record not found", gin.H{"meta": meta})
+			return
+		}
+		if errors.Is(err, group_service.ErrManagementPermissionDenied) {
+			httpapi.WriteErrorWithDetails(ctx, http.StatusForbidden, "group_permission_denied", "group management permission denied", gin.H{"meta": meta})
+			return
+		}
+		if errors.Is(err, group_service.ErrManagementPermissionUnknown) {
+			httpapi.WriteErrorWithDetails(ctx, http.StatusConflict, "group_state_changed", "group management permission could not be established", gin.H{"meta": meta})
 			return
 		}
 		writeGroupProjectionReadError(ctx, err)
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": resp})
+	response := gin.H{"message": "success", "data": resp}
+	if meta != nil {
+		response["meta"] = meta
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func writeGroupProjectionReadError(ctx *gin.Context, err error) {

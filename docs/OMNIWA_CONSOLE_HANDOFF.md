@@ -164,6 +164,55 @@ to false or active. `updatedAt` is the last authoritative reconciliation time.
 Console must omit global metrics when the capability is absent or the endpoint
 returns `projection_not_ready`; it must never sum the current cursor page.
 
+### Group invite-link reads
+
+When `group_management_permissions` is present, `GroupDetail.inviteLink`
+separates cached-link availability from the advisory permission decisions:
+
+```json
+{
+  "inviteLink": {
+    "available": false,
+    "updatedAt": null
+  },
+  "actions": {
+    "readInviteLink": { "state": "allowed", "reason": null },
+    "resetInviteLink": { "state": "allowed", "reason": null }
+  }
+}
+```
+
+`available=false` means only that the Groups projection does not currently
+hold a non-empty link. It does not assert that WhatsApp has no invite link.
+`POST /group/invitelink` with `reset=false` is projection-only and never probes
+WhatsApp. It revalidates `actions.readInviteLink` from the current normalized
+Group row before returning the cached secret. Its existing successful `data`
+string is unchanged and the envelope now includes projection `meta`.
+
+An existing Group without a cached link returns HTTP 404 with
+`code=group_invite_link_not_found`, the public-safe message `cached group
+invite link is not available`, and bounded details containing
+`available=false` plus projection metadata. A missing instance-scoped Group row
+returns HTTP 404 with `code=group_not_found`. Missing/not-serving state or
+schema older than 4 returns HTTP 503 `projection_not_ready`. A stale or syncing
+projection with a prior reconciliation remains readable and reports that
+status in `meta`.
+
+Denied read permission returns HTTP 403 `group_permission_denied`; permission
+that cannot be established returns HTTP 409 `group_state_changed`. Both errors
+include the projection metadata in bounded `details`. This also prevents a
+cached link from being returned after the instance has left or been removed,
+or when the Group is suspended, dissolved, or unavailable.
+
+The missing-cache response is deterministic for the current projection
+snapshot. Console must not poll it aggressively, call WhatsApp, or implicitly
+reset the link. It may read again after a projection update or an operator
+reset. A `reset=true` acknowledgement is `completed` only after the new link is
+written through to the projection, so a following read can return it. A
+provider success with unconfirmed write-through is `unknown`; Console must not
+retry it automatically and an identical `Idempotency-Key` returns the stored
+outcome without another provider call.
+
 ## Group management commands and audit
 
 When both `group_management_permissions` and `group_management_commands` are
