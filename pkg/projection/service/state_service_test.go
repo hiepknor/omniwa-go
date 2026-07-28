@@ -251,6 +251,28 @@ func TestOptionalResourceCapabilityRequiresReadyCurrentProjection(t *testing.T) 
 	}
 }
 
+func TestGroupManagementCapabilityRequiresReadyCurrentGroupProjection(t *testing.T) {
+	repository := newMemoryRepository()
+	reconciledAt := time.Now().UTC()
+	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "groups", SyncStatus: projection_model.SyncStatusReady,
+		SchemaVersion: GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
+	}
+	service := NewStateService(repository, WithResourceCapability("groups", CapabilityGroupManagementPermissions))
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, CapabilityGroupManagementPermissions) {
+		t.Fatalf("ready capabilities = %v, %v", capabilities, err)
+	}
+	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
+		InstanceID: "instance-a", Resource: "groups", SyncStatus: projection_model.SyncStatusReady,
+		SchemaVersion: GroupsProjectionSchemaVersion - 1, LastReconciledAt: &reconciledAt,
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityGroupManagementPermissions) {
+		t.Fatalf("schema-old capabilities = %v, %v", capabilities, err)
+	}
+}
+
 func TestInboundImageCapabilityRequiresCurrentMessagesProjection(t *testing.T) {
 	repository := newMemoryRepository()
 	service := NewStateService(repository, WithResourceCapability("messages", CapabilityInboundImageContent))

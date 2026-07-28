@@ -137,6 +137,7 @@ func participantChangesFromGroupEvent(payload *groupEventPayload) []projection_r
 }
 
 func groupFromSnapshot(event *projection_model.Event, payload *groupEventPayload) *projection_model.Group {
+	membership := projection_model.GroupActorMembershipJoined
 	group := &projection_model.Group{
 		InstanceID: event.InstanceID, GroupID: payload.GroupID, SourceOccurredAt: event.OccurredAt, SourceEventKey: event.EventKey,
 		OwnerJID: optionalString(payload.Owner), OwnerPhoneJID: optionalString(payload.OwnerPN),
@@ -147,6 +148,7 @@ func groupFromSnapshot(event *projection_model.Event, payload *groupEventPayload
 		IsParent: boolPointer(payload.IsParent), IsDefaultSubgroup: boolPointer(payload.IsDefaultSubgroup),
 		Incognito: boolPointer(payload.Incognito), CreatorCountryCode: optionalString(payload.CreatorCountryCode),
 		ParticipantCount: intPointer(payload.ParticipantCount), DefaultApprovalMode: optionalString(payload.DefaultMembershipApproval),
+		MembershipState: &membership,
 	}
 	if payload.Name != nil {
 		group.Name = &payload.Name.Name

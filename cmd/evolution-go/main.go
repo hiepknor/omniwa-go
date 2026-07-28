@@ -339,6 +339,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if config.GroupListsEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupLists))
 	}
+	if config.GroupManagementEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupManagementPermissions))
+	}
 	if config.GroupListEligibilityEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithStaticCapability(projection_service.CapabilityGroupListEligibility))
 	}
@@ -407,6 +410,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	labelWriter := projection_service.NewLabelWriter(labelProjectionRepository, projectionStateService)
 	groupReconciler := projection_service.NewGroupReconciler(queryGuard, groupProjectionRepository, projectionStateService)
 	groupReader := projection_service.NewGroupReader(groupProjectionRepository, projectionStateService)
+	groupManagementReader := group_service.NewManagementReader(groupProjectionRepository, projectionStateService)
 	groupWriter := projection_service.NewGroupWriter(groupProjectionRepository, projectionStateService)
 	groupWorker := projection_service.NewWorker(
 		projectionEventService, "groups", []string{"joined_group", "group_info"}, 50, time.Second, groupProjector.Handle,
@@ -769,7 +773,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		Timeout:  config.MediaDownloadTimeout,
 	}, loggerWrapper)
 	chatService := chat_service.NewChatService(runtimeRegistry, whatsmeowService, loggerWrapper)
-	groupService := group_service.NewGroupService(runtimeRegistry, whatsmeowService, queryGuard, groupReader, groupWriter, remoteMediaFetcher, loggerWrapper)
+	groupService := group_service.NewGroupService(runtimeRegistry, whatsmeowService, queryGuard, groupReader, groupManagementReader, groupWriter, remoteMediaFetcher, loggerWrapper)
 	callService := call_service.NewCallService(runtimeRegistry, whatsmeowService, loggerWrapper)
 	communityService := community_service.NewCommunityService(runtimeRegistry, whatsmeowService, loggerWrapper)
 	labelService := label_service.NewLabelService(runtimeRegistry, whatsmeowService, labelRepository, labelReader, labelWriter, loggerWrapper)
@@ -826,7 +830,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		send_handler.NewSendHandler(sendMessageService, sendHandlerOptions...),
 		message_handler.NewMessageHandler(messageService, chatMessageReader),
 		chat_handler.NewChatHandler(chatService, chatMessageReader),
-		group_handler.NewGroupHandler(groupService),
+		group_handler.NewGroupHandler(groupService, group_handler.WithManagementContract(config.GroupManagementEnabled)),
 		groupListHandler,
 		call_handler.NewCallHandler(callService),
 		campaign_handler.NewCampaignHandler(campaign_service.NewManagementService(

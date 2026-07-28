@@ -46,6 +46,7 @@ are returned only to an admin-authenticated request.
 |---|---|---|
 | `rate_limit_retry_after` | Parse public 429 responses and honor `Retry-After` | Existing information-query endpoints |
 | `groups_projection` | Use projection-backed groups; do not fan out live refreshes | `GET /group/list`, `GET /group/search`, `POST /group/info` |
+| `group_management_permissions` | Use normalized Group summaries/detail and tri-state advisory action decisions; never infer permissions from members | `GET /group/list`, `GET /group/search`, `POST /group/info` |
 | `labels_projection` | Use persisted label list/detail reads | `GET /label/list`, `GET /label/info/{labelId}` |
 | `contacts_projection` | Use normalized persisted contacts for list/search/detail | `GET /user/contacts`, `GET /user/contacts/search`, `GET /user/contact/{contactId}` |
 | `chats_projection` | Use cursor-paged chat reads | `GET /chat/list`, `GET /chat/info/{chatId}` |
@@ -64,6 +65,55 @@ Absence of a projection capability does not mean a valid empty collection. It
 means Console must use its legacy-compatible behavior or show a syncing/not
 available state. Console must not manufacture `[]` while the projection is not
 ready.
+
+## Group management read cutover
+
+`WA_GROUP_MANAGEMENT_CONTRACT_ENABLED=false` preserves the provider-shaped
+Group read responses for rollback. When the flag is enabled, the server only
+advertises `group_management_permissions` after the Groups projection is
+serving schema version 4. Console must switch the three existing Group read
+routes to their normalized DTOs only when that capability is present.
+
+`GET /group/search` accepts `q`, `type`, `myRole`, `sendMode`, `state`,
+`membershipState`, `limit`, and `cursor`. `GET /group/list` is the unfiltered,
+paginated form. Both return `GroupSummary` rows and never return participants.
+The default page size is 50 and the maximum is 200. Cursors are opaque and
+bound to the instance and every filter. A changed scope returns
+`invalid_cursor`; an unknown enum returns `invalid_filter`.
+
+`POST /group/info` keeps its existing `{ "groupJid": "...@g.us" }` request and
+returns `GroupDetail` without an embedded member list. Its `actions` entries
+are advisory decisions with `state=allowed|denied|unknown`, a public-safe
+reason, and `checkedAt`. `unknown` is a first-class result: Console must disable
+the action and explain that permission cannot currently be established. It
+must never turn missing facts into either an allow or a denial. Every mutation
+will independently revalidate current permission and group state in the
+command stage.
+
+The read model does not currently prove that a community parent is a sendable
+chat, so `actions.sendMessage` is `unknown` with reason `unsupported` for
+`type=community`. Console must target a supported subgroup instead of treating
+the community container as a chat.
+
+The backend resolves the current instance through persisted Phone, LID, and
+JID aliases. A positive projected participant match can establish membership
+and role. An incomplete alias graph or missing participant cannot establish
+`not_member`; the response remains `unknown` unless the projection contains an
+explicit `left` or `removed` membership state. Owner references are opaque
+member IDs, not provider aliases.
+
+Deployment order for this read stage is:
+
+1. Deploy the backend with the flag disabled and allow reconciliation to
+   publish Groups schema version 4.
+2. Deploy Console support for both the legacy and normalized response shapes.
+3. Enable the flag for a canary instance and require
+   `group_management_permissions` before using the normalized path.
+4. Monitor `projection_not_ready`, invalid cursor/filter responses, and the
+   proportion of `unknown` action decisions before broader rollout.
+
+Disable the flag to restore the legacy read behavior. The additive projection
+columns and schema version remain in place; no data rollback is required.
 
 ## Shared response behavior
 

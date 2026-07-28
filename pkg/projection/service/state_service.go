@@ -11,17 +11,18 @@ import (
 )
 
 const (
-	CapabilityRateLimitRetryAfter   = "rate_limit_retry_after"
-	CapabilityEventsProjection      = "events_projection"
-	CapabilityOutboundRateLimit     = "outbound_rate_limit"
-	CapabilityCampaignOrchestration = "campaign_orchestration"
-	CapabilityFailureOperations     = "projection_failure_operations"
-	CapabilityGroupLists            = "group_lists"
-	CapabilityGroupListEligibility  = "group_list_eligibility"
-	CapabilityCampaignGroupTargets  = "campaign_group_targets"
-	CapabilityCampaignImageContent  = "campaign_image_content"
-	CapabilityChatImageContent      = "chat_image_content"
-	CapabilityInboundImageContent   = "chat_inbound_image_content"
+	CapabilityRateLimitRetryAfter        = "rate_limit_retry_after"
+	CapabilityEventsProjection           = "events_projection"
+	CapabilityOutboundRateLimit          = "outbound_rate_limit"
+	CapabilityCampaignOrchestration      = "campaign_orchestration"
+	CapabilityFailureOperations          = "projection_failure_operations"
+	CapabilityGroupLists                 = "group_lists"
+	CapabilityGroupListEligibility       = "group_list_eligibility"
+	CapabilityCampaignGroupTargets       = "campaign_group_targets"
+	CapabilityCampaignImageContent       = "campaign_image_content"
+	CapabilityChatImageContent           = "chat_image_content"
+	CapabilityInboundImageContent        = "chat_inbound_image_content"
+	CapabilityGroupManagementPermissions = "group_management_permissions"
 )
 
 var resourceCapabilities = map[string]string{

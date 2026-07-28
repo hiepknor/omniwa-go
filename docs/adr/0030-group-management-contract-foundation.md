@@ -6,6 +6,10 @@ Accepted as an additive, disabled-by-default foundation. Public Group API
 cutover, permission decisions, command execution, audit reads, and shared-media
 photo behavior remain separate rollout stages.
 
+The normalized directory/detail and tri-state permission read stage is now
+implemented behind the same disabled-by-default gate. Member reads, commands,
+audit reads, and shared-media photos remain later stages.
+
 ## Context
 
 The current Group HTTP surface returns whatsmeow provider structures, expands
@@ -64,6 +68,14 @@ Migration 30 is expand-only. It adds participant public IDs, nullable actor
 membership and group picture projection fields, the command journal, and the
 append-only audit table. It deliberately does not advance a serving projection
 schema version or publish a capability.
+
+The read stage advances the Groups projection schema to version 4 after a full
+authoritative reconciliation. It adds no migration: version 4 consumes the
+nullable projection fields and participant identity indexes introduced by
+earlier migrations. Directory queries select Group rows plus only the bounded
+current-actor and owner references needed for decisions; they do not hydrate
+participant collections. Alias resolution reads the persisted contact identity
+graph and never falls back to WhatsApp.
 
 ## Alternatives considered
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	"gorm.io/gorm"
@@ -23,6 +24,8 @@ type GroupRepository interface {
 	List(ctx context.Context, instanceID string) ([]GroupRecord, error)
 	Search(ctx context.Context, instanceID, term string, limit int, cursor *GroupCursor) (*GroupPage, error)
 	GetInviteLink(ctx context.Context, instanceID, groupID string) (*string, error)
+	SearchManagement(ctx context.Context, instanceID, instanceIdentity string, filter GroupManagementFilter, limit int, cursor *GroupCursor) (*GroupManagementPage, error)
+	GetManagement(ctx context.Context, instanceID, instanceIdentity, groupID string) (*GroupManagementRecord, error)
 }
 
 type GroupRecord struct {
@@ -31,6 +34,28 @@ type GroupRecord struct {
 }
 
 type GroupCursor struct{ GroupID string }
+
+type GroupManagementFilter struct {
+	Term            string
+	Type            string
+	MyRole          string
+	SendMode        string
+	State           string
+	MembershipState string
+}
+
+type GroupManagementRecord struct {
+	Group            projection_model.Group
+	ActorParticipant *projection_model.GroupParticipant
+	ActorIsOwner     bool
+	OwnerPublicID    *string
+	AdminCount       *int64
+}
+
+type GroupManagementPage struct {
+	Items      []GroupManagementRecord
+	NextCursor *GroupCursor
+}
 
 type GroupPage struct {
 	Items      []GroupRecord
@@ -583,6 +608,292 @@ func (r *groupRepository) Search(ctx context.Context, instanceID, term string, l
 	return page, nil
 }
 
+func (r *groupRepository) SearchManagement(ctx context.Context, instanceID, instanceIdentity string, filter GroupManagementFilter, limit int, cursor *GroupCursor) (*GroupManagementPage, error) {
+	filter.Term = strings.ToLower(strings.TrimSpace(filter.Term))
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" || instanceIdentity == "" || utf8.RuneCountInString(filter.Term) > 128 || limit < 1 || limit > 200 ||
+		(cursor != nil && (cursor.GroupID == "" || len(cursor.GroupID) > 255)) {
+		return nil, errors.New("valid group management search parameters are required")
+	}
+	aliases, err := r.resolveActorAliases(ctx, instanceID, instanceIdentity)
+	if err != nil {
+		return nil, err
+	}
+	query := r.db.WithContext(ctx).Model(&projection_model.Group{}).Where("instance_id = ?", instanceID)
+	if filter.Term != "" {
+		pattern := escapeGroupSearchPattern(filter.Term) + "%"
+		query = query.Where("(LOWER(group_id) LIKE ? OR LOWER(LEFT(COALESCE(name, ''), 255)) LIKE ?)", pattern, pattern)
+	}
+	query = applyManagementGroupFilters(query, filter, aliases)
+	if cursor != nil {
+		query = query.Where("group_id > ?", cursor.GroupID)
+	}
+	var groups []projection_model.Group
+	if err := query.Order("group_id ASC").Limit(limit + 1).Find(&groups).Error; err != nil {
+		return nil, err
+	}
+	hasNext := len(groups) > limit
+	if hasNext {
+		groups = groups[:limit]
+	}
+	records, err := r.managementRecords(ctx, instanceID, aliases, groups, false)
+	if err != nil {
+		return nil, err
+	}
+	page := &GroupManagementPage{Items: records}
+	if hasNext {
+		page.NextCursor = &GroupCursor{GroupID: groups[len(groups)-1].GroupID}
+	}
+	return page, nil
+}
+
+func (r *groupRepository) GetManagement(ctx context.Context, instanceID, instanceIdentity, groupID string) (*GroupManagementRecord, error) {
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" || instanceIdentity == "" || groupID == "" {
+		return nil, errors.New("group management identity is required")
+	}
+	aliases, err := r.resolveActorAliases(ctx, instanceID, instanceIdentity)
+	if err != nil {
+		return nil, err
+	}
+	var group projection_model.Group
+	if err := r.db.WithContext(ctx).Where("instance_id = ? AND group_id = ?", instanceID, groupID).First(&group).Error; err != nil {
+		return nil, err
+	}
+	records, err := r.managementRecords(ctx, instanceID, aliases, []projection_model.Group{group}, true)
+	if err != nil {
+		return nil, err
+	}
+	return &records[0], nil
+}
+
+func (r *groupRepository) resolveActorAliases(ctx context.Context, instanceID, instanceIdentity string) ([]string, error) {
+	aliases := []string{instanceIdentity}
+	seen := map[string]struct{}{instanceIdentity: {}}
+	add := func(values ...string) {
+		for _, value := range values {
+			if value == "" || len(aliases) >= 32 {
+				continue
+			}
+			if _, exists := seen[value]; exists {
+				continue
+			}
+			seen[value] = struct{}{}
+			aliases = append(aliases, value)
+		}
+	}
+	type participantAliases struct {
+		ParticipantID  string  `gorm:"column:participant_id"`
+		PhoneNumberJID *string `gorm:"column:phone_number_jid"`
+		LID            *string `gorm:"column:lid"`
+	}
+	for iteration := 0; iteration < 2; iteration++ {
+		var rows []participantAliases
+		if err := r.db.WithContext(ctx).Table("projected_group_participants").
+			Select("DISTINCT participant_id, phone_number_jid, lid").
+			Where("instance_id = ? AND tombstoned_at IS NULL", instanceID).
+			Where("participant_id IN ? OR phone_number_jid IN ? OR lid IN ?", aliases, aliases, aliases).
+			Limit(32).Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+		before := len(aliases)
+		for _, row := range rows {
+			add(row.ParticipantID)
+			if row.PhoneNumberJID != nil {
+				add(*row.PhoneNumberJID)
+			}
+			if row.LID != nil {
+				add(*row.LID)
+			}
+		}
+		if len(aliases) == before {
+			break
+		}
+	}
+	var contactIDs []string
+	if err := r.db.WithContext(ctx).Table("projected_contact_identities").Distinct("contact_id").
+		Where("instance_id = ? AND identity_kind IN ? AND identity_value IN ? AND tombstoned_at IS NULL", instanceID,
+			[]projection_model.ContactIdentityKind{projection_model.ContactIdentityKindJID, projection_model.ContactIdentityKindPhoneJID, projection_model.ContactIdentityKindLID}, aliases).
+		Limit(8).Pluck("contact_id", &contactIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(contactIDs) > 0 {
+		var projected []string
+		if err := r.db.WithContext(ctx).Table("projected_contact_identities").Select("identity_value").
+			Where("instance_id = ? AND contact_id IN ? AND tombstoned_at IS NULL", instanceID, contactIDs).
+			Order("identity_value ASC").Limit(32).Pluck("identity_value", &projected).Error; err != nil {
+			return nil, err
+		}
+		add(projected...)
+	}
+	return aliases, nil
+}
+
+func applyManagementGroupFilters(query *gorm.DB, filter GroupManagementFilter, aliases []string) *gorm.DB {
+	actorExists := `EXISTS (SELECT 1 FROM projected_group_participants actor
+		WHERE actor.instance_id = projected_groups.instance_id AND actor.group_id = projected_groups.group_id
+		AND actor.tombstoned_at IS NULL AND (actor.participant_id IN ? OR actor.phone_number_jid IN ? OR actor.lid IN ?))`
+	ownerMatches := `(COALESCE(owner_jid IN ?, FALSE) OR COALESCE(owner_phone_jid IN ?, FALSE))`
+	switch filter.Type {
+	case "community":
+		query = query.Where("is_parent = TRUE")
+	case "subgroup":
+		query = query.Where("is_parent IS DISTINCT FROM TRUE AND parent_group_id IS NOT NULL")
+	case "group":
+		query = query.Where("is_parent = FALSE AND parent_group_id IS NULL")
+	case "unknown":
+		query = query.Where("is_parent IS NULL AND parent_group_id IS NULL")
+	}
+	switch filter.State {
+	case "active":
+		query = query.Where("tombstoned_at IS NULL AND suspended = FALSE")
+	case "suspended":
+		query = query.Where("tombstoned_at IS NULL AND suspended = TRUE")
+	case "dissolved":
+		query = query.Where("tombstoned_at IS NOT NULL AND tombstone_cause = ?", projection_model.GroupTombstoneDissolved)
+	case "unavailable":
+		query = query.Where("tombstoned_at IS NOT NULL AND tombstone_cause IS DISTINCT FROM ?", projection_model.GroupTombstoneDissolved)
+	case "unknown":
+		query = query.Where("tombstoned_at IS NULL AND suspended IS NULL")
+	}
+	switch filter.SendMode {
+	case "all_members":
+		query = query.Where("announce = FALSE")
+	case "admins_only":
+		query = query.Where("announce = TRUE")
+	case "unknown":
+		query = query.Where("announce IS NULL")
+	}
+	switch filter.MembershipState {
+	case "joined":
+		query = query.Where("tombstoned_at IS NULL AND (actor_membership_state = ? OR "+ownerMatches+" OR "+actorExists+")", projection_model.GroupActorMembershipJoined, aliases, aliases, aliases, aliases, aliases)
+	case "left":
+		query = query.Where("actor_membership_state = ?", projection_model.GroupActorMembershipLeft)
+	case "removed":
+		query = query.Where("actor_membership_state = ?", projection_model.GroupActorMembershipRemoved)
+	case "unknown":
+		query = query.Where("(actor_membership_state IS NULL OR actor_membership_state = ?) AND (tombstoned_at IS NOT NULL OR (NOT "+ownerMatches+" AND NOT "+actorExists+"))", projection_model.GroupActorMembershipUnknown, aliases, aliases, aliases, aliases, aliases)
+	}
+	notExplicitlyGone := "COALESCE(actor_membership_state NOT IN ?, TRUE)"
+	goneStates := []projection_model.MembershipState{projection_model.GroupActorMembershipLeft, projection_model.GroupActorMembershipRemoved}
+	switch filter.MyRole {
+	case "owner":
+		query = query.Where("tombstoned_at IS NULL AND "+ownerMatches+" AND "+notExplicitlyGone, aliases, aliases, goneStates)
+	case "superadmin":
+		query = query.Where("tombstoned_at IS NULL AND "+notExplicitlyGone+" AND NOT "+ownerMatches+" AND EXISTS (SELECT 1 FROM projected_group_participants actor_role WHERE actor_role.instance_id = projected_groups.instance_id AND actor_role.group_id = projected_groups.group_id AND actor_role.tombstoned_at IS NULL AND actor_role.role = ? AND (actor_role.participant_id IN ? OR actor_role.phone_number_jid IN ? OR actor_role.lid IN ?))", goneStates, aliases, aliases, projection_model.ParticipantRoleSuperAdmin, aliases, aliases, aliases)
+	case "admin", "member":
+		role := projection_model.ParticipantRole(filter.MyRole)
+		query = query.Where("tombstoned_at IS NULL AND "+notExplicitlyGone+" AND NOT "+ownerMatches+" AND EXISTS (SELECT 1 FROM projected_group_participants actor_role WHERE actor_role.instance_id = projected_groups.instance_id AND actor_role.group_id = projected_groups.group_id AND actor_role.tombstoned_at IS NULL AND actor_role.role = ? AND (actor_role.participant_id IN ? OR actor_role.phone_number_jid IN ? OR actor_role.lid IN ?))", goneStates, aliases, aliases, role, aliases, aliases, aliases)
+	case "not_member":
+		query = query.Where("actor_membership_state IN ?", []projection_model.MembershipState{projection_model.GroupActorMembershipLeft, projection_model.GroupActorMembershipRemoved})
+	case "unknown":
+		query = query.Where(notExplicitlyGone+" AND (tombstoned_at IS NOT NULL OR (NOT "+ownerMatches+" AND NOT "+actorExists+"))", goneStates, aliases, aliases, aliases, aliases, aliases)
+	}
+	return query
+}
+
+func (r *groupRepository) managementRecords(ctx context.Context, instanceID string, aliases []string, groups []projection_model.Group, includeDetail bool) ([]GroupManagementRecord, error) {
+	if len(groups) == 0 {
+		return []GroupManagementRecord{}, nil
+	}
+	groupIDs := make([]string, len(groups))
+	for index := range groups {
+		groupIDs[index] = groups[index].GroupID
+	}
+	var actors []projection_model.GroupParticipant
+	if err := r.db.WithContext(ctx).Where("instance_id = ? AND group_id IN ? AND tombstoned_at IS NULL", instanceID, groupIDs).
+		Where("participant_id IN ? OR phone_number_jid IN ? OR lid IN ?", aliases, aliases, aliases).
+		Order("group_id ASC, role DESC, participant_id ASC").Find(&actors).Error; err != nil {
+		return nil, err
+	}
+	actorByGroup := make(map[string]*projection_model.GroupParticipant, len(actors))
+	for index := range actors {
+		participant := actors[index]
+		current := actorByGroup[participant.GroupID]
+		if current == nil || managementRoleRank(participant.Role) > managementRoleRank(current.Role) {
+			copy := participant
+			actorByGroup[participant.GroupID] = &copy
+		}
+	}
+	records := make([]GroupManagementRecord, len(groups))
+	for index := range groups {
+		records[index] = GroupManagementRecord{Group: groups[index], ActorParticipant: actorByGroup[groups[index].GroupID], ActorIsOwner: groupOwnerMatchesAliases(groups[index], aliases)}
+	}
+	if !includeDetail {
+		return records, nil
+	}
+	type countRow struct {
+		GroupID string `gorm:"column:group_id"`
+		Count   int64  `gorm:"column:count"`
+	}
+	var counts []countRow
+	if err := r.db.WithContext(ctx).Table("projected_group_participants").Select("group_id, COUNT(*) AS count").
+		Where("instance_id = ? AND group_id IN ? AND tombstoned_at IS NULL AND role IN ?", instanceID, groupIDs,
+			[]projection_model.ParticipantRole{projection_model.ParticipantRoleAdmin, projection_model.ParticipantRoleSuperAdmin}).
+		Group("group_id").Scan(&counts).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range counts {
+		for index := range records {
+			if records[index].Group.GroupID == row.GroupID {
+				count := row.Count
+				records[index].AdminCount = &count
+				break
+			}
+		}
+	}
+	for index := range records {
+		if records[index].AdminCount == nil {
+			count := int64(0)
+			records[index].AdminCount = &count
+		}
+	}
+	type ownerRow struct {
+		GroupID  string `gorm:"column:group_id"`
+		PublicID string `gorm:"column:public_id"`
+	}
+	var owners []ownerRow
+	if err := r.db.WithContext(ctx).Table("projected_group_participants AS participants").
+		Select("participants.group_id, participants.public_id").
+		Joins("JOIN projected_groups AS groups ON groups.instance_id = participants.instance_id AND groups.group_id = participants.group_id").
+		Where("participants.instance_id = ? AND participants.group_id IN ? AND participants.tombstoned_at IS NULL", instanceID, groupIDs).
+		Where(`participants.participant_id IN (groups.owner_jid, groups.owner_phone_jid)
+			OR participants.phone_number_jid IN (groups.owner_jid, groups.owner_phone_jid)
+			OR participants.lid IN (groups.owner_jid, groups.owner_phone_jid)`).Scan(&owners).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range owners {
+		for index := range records {
+			if records[index].Group.GroupID == row.GroupID && records[index].OwnerPublicID == nil {
+				ownerID := row.PublicID
+				records[index].OwnerPublicID = &ownerID
+				break
+			}
+		}
+	}
+	return records, nil
+}
+
+func groupOwnerMatchesAliases(group projection_model.Group, aliases []string) bool {
+	for _, alias := range aliases {
+		if alias != "" && ((group.OwnerJID != nil && *group.OwnerJID == alias) || (group.OwnerPhoneJID != nil && *group.OwnerPhoneJID == alias)) {
+			return true
+		}
+	}
+	return false
+}
+
+func managementRoleRank(role projection_model.ParticipantRole) int {
+	switch role {
+	case projection_model.ParticipantRoleSuperAdmin:
+		return 3
+	case projection_model.ParticipantRoleAdmin:
+		return 2
+	case projection_model.ParticipantRoleMember:
+		return 1
+	default:
+		return 0
+	}
+}
+
 func escapeGroupSearchPattern(value string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
 }
@@ -656,6 +967,7 @@ func snapshotGroupFields(group *projection_model.Group) []snapshotGroupField {
 		{name: "invite_link", columns: map[string]any{"invite_link": group.InviteLink, "invite_link_updated_at": group.InviteLinkUpdatedAt}},
 		{name: "provider_created_at", columns: map[string]any{"provider_created_at": group.ProviderCreatedAt}},
 		{name: "creator_country_code", columns: map[string]any{"creator_country_code": group.CreatorCountryCode}},
+		{name: "actor_membership", columns: map[string]any{"actor_membership_state": group.MembershipState, "actor_membership_changed_at": group.MembershipChangedAt}},
 	}
 }
 
