@@ -28,6 +28,7 @@ import (
 
 type Routes struct {
 	authMiddleware          auth_middleware.Middleware
+	metricsHandler          http.Handler
 	jidValidationMiddleware *auth_middleware.JIDValidationMiddleware
 	instanceHandler         instance_handler.InstanceHandler
 	userHandler             user_handler.UserHandler
@@ -70,6 +71,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	})
 
 	eng.GET("/server/ok", r.serverHandler.ServerOk)
+	r.assignMetricsRoute(eng)
 	eng.GET("/server/capabilities", r.authMiddleware.AuthAdminOrInstance, r.serverHandler.Capabilities)
 	eng.GET("/server/projection-health", r.authMiddleware.AuthAdminOrInstance, r.serverHandler.ProjectionHealth)
 	eng.GET("/server/overview", r.authMiddleware.AuthAdminOrInstance, r.serverHandler.Overview)
@@ -310,8 +312,16 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 
 }
 
+func (r *Routes) assignMetricsRoute(eng *gin.Engine) {
+	if r.metricsHandler == nil {
+		return
+	}
+	eng.GET("/metrics", r.authMiddleware.AuthAdmin, gin.WrapH(r.metricsHandler))
+}
+
 func NewRouter(
 	authMiddleware auth_middleware.Middleware,
+	metricsHandler http.Handler,
 	instanceHandler instance_handler.InstanceHandler,
 	userHandler user_handler.UserHandler,
 	sendHandler send_handler.SendHandler,
@@ -331,6 +341,7 @@ func NewRouter(
 ) *Routes {
 	return &Routes{
 		authMiddleware:          authMiddleware,
+		metricsHandler:          metricsHandler,
 		jidValidationMiddleware: auth_middleware.NewJIDValidationMiddleware(),
 		instanceHandler:         instanceHandler,
 		userHandler:             userHandler,
