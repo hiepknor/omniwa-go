@@ -55,6 +55,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.CAMPAIGN_MEDIA_UNBOUND_TTL, "")
 	t.Setenv(config_env.WA_GROUP_LISTS_ENABLED, "")
 	t.Setenv(config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED, "")
+	t.Setenv(config_env.WA_GROUP_MANAGEMENT_CONTRACT_ENABLED, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "")
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT, "")
@@ -108,6 +109,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	}
 	if config.GroupListEligibilityEnabled {
 		t.Fatal("expected Group List eligibility to be disabled by default")
+	}
+	if config.GroupManagementEnabled {
+		t.Fatal("expected Group Management contract to be disabled by default")
 	}
 	if config.CampaignDirectCreateEnabled {
 		t.Fatal("expected direct campaign creation to be disabled by default")

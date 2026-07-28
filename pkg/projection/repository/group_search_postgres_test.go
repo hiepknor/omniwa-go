@@ -9,6 +9,7 @@ import (
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/evolution-foundation/evolution-go/pkg/migrations"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -73,5 +74,14 @@ func TestGroupSearchPostgresIsInstanceScopedLiteralAndCursorStable(t *testing.T)
 	other, err := repository.Search(context.Background(), instances[1].Id, "alpha", 10, nil)
 	if err != nil || len(other.Items) != 1 || other.Items[0].Group.GroupID != "500@g.us" {
 		t.Fatalf("instance-scoped search = %#v, %v", other, err)
+	}
+	publicID := first.Items[0].Participants[0].PublicID
+	if uuid.Validate(publicID) != nil {
+		t.Fatalf("generated participant public ID = %q", publicID)
+	}
+	apply(instances[0].Id, "100@g.us", "Alpha Team Updated", 106)
+	_, participants, err := repository.Get(context.Background(), instances[0].Id, "100@g.us")
+	if err != nil || len(participants) != 1 || participants[0].PublicID != publicID {
+		t.Fatalf("participant public ID changed across snapshot: before=%q after=%+v err=%v", publicID, participants, err)
 	}
 }

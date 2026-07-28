@@ -419,3 +419,30 @@ func TestInboundMediaLinkMigrationIsAdditiveAndClearsTerminalDescriptors(t *test
 		}
 	}
 }
+
+func TestGroupManagementFoundationMigrationIsAdditiveScopedAndSecretFree(t *testing.T) {
+	migration := registeredMigration(t, 30)
+	if migration.Name != "create_group_management_foundation" {
+		t.Fatalf("migration name = %q", migration.Name)
+	}
+	for _, required := range []string{
+		"ADD COLUMN public_id UUID NOT NULL DEFAULT gen_random_uuid()", "projected_group_participants_public_id_idx",
+		"actor_membership_state", "picture_id", "CREATE TABLE group_management_commands",
+		"group_management_commands_instance_identity_unique", "idempotency_key_hash", "request_fingerprint",
+		"safe_outcome JSONB", "execution_started_at", "group_management_commands_lifecycle_check",
+		"group_management_commands_recovery_idx", "CREATE TABLE group_management_audit_events",
+		"group_management_audit_command_fk", "group_management_audit_history_idx",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("group management foundation migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"idempotency_key VARCHAR", "provider_payload", "invite_link", "participant_jid", "image_data", "object_key"} {
+		if strings.Contains(strings.ToLower(migration.SQL), forbidden) {
+			t.Fatalf("group management foundation stores forbidden material %q", forbidden)
+		}
+	}
+	if strings.Contains(migration.SQL, "UPDATE projection_states") {
+		t.Fatal("foundation migration must not advertise a serving projection schema")
+	}
+}
