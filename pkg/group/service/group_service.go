@@ -26,8 +26,10 @@ type GroupService interface {
 	ListGroups(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, error)
 	ListGroupsRead(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	SearchGroupsRead(ctx context.Context, instance *instance_model.Instance, term string, limit int, cursor string) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
+	SearchManagementGroups(ctx context.Context, instance *instance_model.Instance, filters GroupManagementFilters, limit int, cursor string) ([]GroupSummary, *projection_service.ProjectionReadMeta, error)
 	GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error)
 	GetGroupInfoRead(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
+	GetManagementGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*GroupDetail, *projection_service.ProjectionReadMeta, error)
 	GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error)
 	SetGroupPhoto(data *SetGroupPhotoStruct, instance *instance_model.Instance) (string, error)
 	SetGroupName(data *SetGroupNameStruct, instance *instance_model.Instance) error
@@ -48,6 +50,7 @@ type groupService struct {
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
 	groupReader      *projection_service.GroupReader
+	managementReader *ManagementReader
 	groupWriter      *projection_service.GroupWriter
 	mediaFetcher     netguard.Fetcher
 }
@@ -187,6 +190,13 @@ func (g *groupService) SearchGroupsRead(ctx context.Context, instance *instance_
 	return g.groupReader.Search(ctx, instance.Id, term, limit, cursor)
 }
 
+func (g *groupService) SearchManagementGroups(ctx context.Context, instance *instance_model.Instance, filters GroupManagementFilters, limit int, cursor string) ([]GroupSummary, *projection_service.ProjectionReadMeta, error) {
+	if g.managementReader == nil {
+		return nil, nil, errors.New("group management reader is required")
+	}
+	return g.managementReader.Search(ctx, instance, filters, limit, cursor)
+}
+
 func (g *groupService) GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error) {
 	info, _, err := g.GetGroupInfoRead(ctx, data, instance)
 	return info, err
@@ -202,6 +212,13 @@ func (g *groupService) GetGroupInfoRead(ctx context.Context, data *GetGroupInfoS
 		return nil, nil, errors.New("group projection reader is required")
 	}
 	return g.groupReader.Get(ctx, instance.Id, recipient.String())
+}
+
+func (g *groupService) GetManagementGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*GroupDetail, *projection_service.ProjectionReadMeta, error) {
+	if data == nil || g.managementReader == nil {
+		return nil, nil, errors.New("group management reader and request are required")
+	}
+	return g.managementReader.Get(ctx, instance, data.GroupJID)
 }
 
 func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {
@@ -749,6 +766,7 @@ func NewGroupService(
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
 	groupReader *projection_service.GroupReader,
+	managementReader *ManagementReader,
 	groupWriter *projection_service.GroupWriter,
 	mediaFetcher netguard.Fetcher,
 	loggerWrapper *logger_wrapper.LoggerManager,
@@ -758,6 +776,7 @@ func NewGroupService(
 		whatsmeowService: whatsmeowService,
 		queryGuard:       queryGuard,
 		groupReader:      groupReader,
+		managementReader: managementReader,
 		groupWriter:      groupWriter,
 		mediaFetcher:     mediaFetcher,
 		loggerWrapper:    loggerWrapper,

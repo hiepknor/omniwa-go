@@ -1,7 +1,9 @@
 package group_handler
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -12,6 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+const maxGroupInfoBodyBytes int64 = 16 << 10
 
 type GroupHandler interface {
 	ListGroups(ctx *gin.Context)
@@ -31,14 +35,19 @@ type GroupHandler interface {
 
 // Search groups
 // @Summary Search projected groups
-// @Description Prefix-search groups from the persisted instance projection without querying WhatsApp
+// @Description Search normalized group summaries from the persisted instance projection without participants or live WhatsApp queries. The normalized contract is active when group_management_permissions is advertised.
 // @Tags Group
 // @Produce json
 // @Param q query string false "Case-insensitive group JID or name prefix" maxlength(128)
+// @Param type query string false "Group type" Enums(group,community,subgroup,unknown)
+// @Param myRole query string false "Current instance role" Enums(owner,superadmin,admin,member,not_member,unknown)
+// @Param sendMode query string false "Who may send" Enums(all_members,admins_only,unknown)
+// @Param state query string false "Projected group state" Enums(active,suspended,dissolved,unavailable,unknown)
+// @Param membershipState query string false "Current instance membership" Enums(joined,left,removed,unknown)
 // @Param limit query int false "Page size (1-200)" minimum(1) maximum(200) default(50)
-// @Param cursor query string false "Opaque cursor bound to the instance and normalized query"
-// @Success 200 {object} apidocs.SuccessResponse{data=[]types.GroupInfo} "success"
-// @Failure 400 {object} apidocs.ErrorResponse "Invalid search or cursor"
+// @Param cursor query string false "Opaque cursor bound to the instance and all filters"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]group_service.GroupSummary} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "invalid_filter, invalid_pagination, or invalid_cursor"
 // @Failure 503 {object} apidocs.ErrorResponse "Groups projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
@@ -53,10 +62,23 @@ func (g *groupHandler) SearchGroups(ctx *gin.Context) {
 	if value := ctx.Query("limit"); value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil || parsed < 1 || parsed > 200 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 200", "code": "invalid_pagination"})
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_pagination", "limit must be between 1 and 200")
 			return
 		}
 		limit = parsed
+	}
+	if g.managementContract {
+		filters := group_service.GroupManagementFilters{
+			Query: ctx.Query("q"), Type: ctx.Query("type"), MyRole: ctx.Query("myRole"), SendMode: ctx.Query("sendMode"),
+			State: ctx.Query("state"), MembershipState: ctx.Query("membershipState"),
+		}
+		items, meta, err := g.groupService.SearchManagementGroups(ctx.Request.Context(), instance, filters, limit, ctx.Query("cursor"))
+		if err != nil {
+			writeGroupProjectionReadError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
+		return
 	}
 	items, meta, err := g.groupService.SearchGroupsRead(ctx.Request.Context(), instance, ctx.Query("q"), limit, ctx.Query("cursor"))
 	if err != nil {
@@ -67,16 +89,25 @@ func (g *groupHandler) SearchGroups(ctx *gin.Context) {
 }
 
 type groupHandler struct {
-	groupService group_service.GroupService
+	groupService       group_service.GroupService
+	managementContract bool
+}
+
+type Option func(*groupHandler)
+
+func WithManagementContract(enabled bool) Option {
+	return func(handler *groupHandler) { handler.managementContract = enabled }
 }
 
 // List groups
 // @Summary List groups
-// @Description List groups
+// @Description List normalized group summaries from the persisted instance projection. This is the unfiltered form of /group/search when group_management_permissions is advertised.
 // @Tags Group
-// @Accept json
 // @Produce json
-// @Success 200 {object} apidocs.SuccessResponse{data=[]types.GroupInfo} "success"
+// @Param limit query int false "Page size (1-200)" minimum(1) maximum(200) default(50)
+// @Param cursor query string false "Opaque cursor bound to the instance"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]group_service.GroupSummary} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "invalid_pagination or invalid_cursor"
 // @Failure 503 {object} apidocs.ErrorResponse "Groups projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
@@ -90,6 +121,24 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 		return
 	}
 
+	if g.managementContract {
+		limit := 50
+		if value := ctx.Query("limit"); value != "" {
+			parsed, err := strconv.Atoi(value)
+			if err != nil || parsed < 1 || parsed > 200 {
+				httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_pagination", "limit must be between 1 and 200")
+				return
+			}
+			limit = parsed
+		}
+		resp, meta, err := g.groupService.SearchManagementGroups(ctx.Request.Context(), instance, group_service.GroupManagementFilters{}, limit, ctx.Query("cursor"))
+		if err != nil {
+			writeGroupProjectionReadError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": resp, "meta": meta})
+		return
+	}
 	resp, meta, err := g.groupService.ListGroupsRead(ctx.Request.Context(), instance)
 	if err != nil {
 		writeGroupProjectionReadError(ctx, err)
@@ -105,13 +154,13 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 
 // Get group info
 // @Summary Get group info
-// @Description Get group info
+// @Description Get normalized projected group facts and advisory tri-state action decisions without members or live WhatsApp queries. Mutations must revalidate permissions.
 // @Tags Group
 // @Accept json
 // @Produce json
 // @Param message body group_service.GetGroupInfoStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse{data=types.GroupInfo} "success"
-// @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.GroupDetail} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "invalid_filter"
 // @Failure 404 {object} apidocs.ErrorResponse "Projected group not found"
 // @Failure 503 {object} apidocs.ErrorResponse "Groups projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
@@ -127,17 +176,49 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 	}
 
 	var data *group_service.GetGroupInfoStruct
-	err := ctx.ShouldBindBodyWithJSON(&data)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	if g.managementContract {
+		request := &group_service.GetGroupInfoStruct{}
+		ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxGroupInfoBodyBytes)
+		decoder := json.NewDecoder(ctx.Request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(request); err != nil {
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_filter", "invalid group info request")
+			return
+		}
+		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_filter", "invalid group info request")
+			return
+		}
+		data = request
+	} else {
+		if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	if data.GroupJID == "" {
+		if g.managementContract {
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_filter", "groupJid is required")
+			return
+		}
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJID is required"})
 		return
 	}
 
+	if g.managementContract {
+		resp, meta, err := g.groupService.GetManagementGroupInfo(ctx.Request.Context(), data, instance)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				httpapi.WriteError(ctx, http.StatusNotFound, "group_not_found", "group projection record not found")
+				return
+			}
+			writeGroupProjectionReadError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": resp, "meta": meta})
+		return
+	}
 	resp, meta, err := g.groupService.GetGroupInfoRead(ctx.Request.Context(), data, instance)
 	if err != nil {
 		writeGroupProjectionReadError(ctx, err)
@@ -201,6 +282,10 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 
 func writeGroupProjectionReadError(ctx *gin.Context, err error) {
 	switch {
+	case errors.Is(err, group_service.ErrInvalidManagementCursor):
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_cursor", "invalid group directory cursor")
+	case errors.Is(err, group_service.ErrInvalidManagementFilter):
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_filter", "invalid group directory filter")
 	case errors.Is(err, projection_service.ErrInvalidGroupCursor):
 		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_cursor", "invalid group search cursor")
 	case errors.Is(err, projection_service.ErrInvalidGroupSearch):
@@ -621,8 +706,13 @@ func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 
 func NewGroupHandler(
 	groupService group_service.GroupService,
+	options ...Option,
 ) GroupHandler {
-	return &groupHandler{
+	handler := &groupHandler{
 		groupService: groupService,
 	}
+	for _, option := range options {
+		option(handler)
+	}
+	return handler
 }

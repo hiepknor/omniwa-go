@@ -65,15 +65,17 @@ atomic logical field, preventing a late event from mixing values from
 different versions.
 
 `GET /group/list` and `POST /group/info` use a projection reader once an
-instance has completed reconciliation with schema version 3 or newer. Before
+instance has completed reconciliation with the current Groups schema version
+(version 4 after the normalized management-read stage). Before
 that point they return `projection_not_ready` and never issue a request-path
 provider query, so deployment and reconnection cannot produce a false empty
 result or amplify upstream load. A ready, stale, or currently
 resyncing projection with prior reconciled data is served without probing
 WhatsApp and includes additive `source`, `syncStatus`, and `lastSyncedAt`
 metadata. The `groups_projection` capability is published only for a ready
-schema-3 projection. List reads load groups and participants in two bounded
-database queries rather than one query per group.
+current-schema projection. Legacy list reads load groups and participants in
+two bounded database queries rather than one query per group; the gated
+normalized directory introduced at schema 4 never expands participant lists.
 
 The additive `GET /group/search` endpoint provides case-insensitive prefix
 search over normalized group JIDs and names. It uses bounded keyset pagination

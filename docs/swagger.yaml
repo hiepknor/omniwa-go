@@ -854,6 +854,31 @@ definitions:
       communityName:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision:
+    properties:
+      checkedAt:
+        type: string
+      reason:
+        enum:
+        - admin_required
+        - owner_required
+        - not_a_member
+        - group_suspended
+        - group_unavailable
+        - protected_member
+        - self_action_not_allowed
+        - permission_unknown
+        - projection_not_ready
+        - provider_disconnected
+        - unsupported
+        type: string
+      state:
+        enum:
+        - allowed
+        - denied
+        - unknown
+        type: string
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_group_service.AddParticipantStruct:
     properties:
       action:
@@ -886,6 +911,178 @@ definitions:
       reset:
         type: boolean
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.GroupActions:
+    properties:
+      addMembers:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      demoteMembers:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      editDescription:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      editName:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      editSettings:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      leaveGroup:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      promoteMembers:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      readInviteLink:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      removeMembers:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      resetInviteLink:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      sendMessage:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+      setPhoto:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.GroupDetail:
+    properties:
+      actions:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupActions'
+      adminCount:
+        type: integer
+      announce:
+        type: boolean
+      createdAt:
+        type: string
+      description:
+        type: string
+      descriptionPreview:
+        type: string
+      ephemeralEnabled:
+        type: boolean
+      ephemeralTimerSeconds:
+        type: integer
+      groupJid:
+        type: string
+      isDefaultSubgroup:
+        type: boolean
+      joinApproval:
+        type: boolean
+      locked:
+        type: boolean
+      memberAddMode:
+        enum:
+        - all_members
+        - admins_only
+        - unknown
+        type: string
+      memberCount:
+        type: integer
+      membershipState:
+        enum:
+        - joined
+        - left
+        - removed
+        - unknown
+        type: string
+      myRole:
+        enum:
+        - owner
+        - superadmin
+        - admin
+        - member
+        - not_member
+        - unknown
+        type: string
+      name:
+        type: string
+      owner:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.SafeMemberReference'
+      parentGroupJid:
+        type: string
+      photo:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupPhotoMetadata'
+      sendMode:
+        enum:
+        - all_members
+        - admins_only
+        - unknown
+        type: string
+      state:
+        enum:
+        - active
+        - suspended
+        - dissolved
+        - unavailable
+        - unknown
+        type: string
+      type:
+        enum:
+        - group
+        - community
+        - subgroup
+        - unknown
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.GroupPhotoMetadata:
+    properties:
+      available:
+        type: boolean
+      updatedAt:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.GroupSummary:
+    properties:
+      createdAt:
+        type: string
+      descriptionPreview:
+        type: string
+      groupJid:
+        type: string
+      isDefaultSubgroup:
+        type: boolean
+      memberCount:
+        type: integer
+      membershipState:
+        enum:
+        - joined
+        - left
+        - removed
+        - unknown
+        type: string
+      myRole:
+        enum:
+        - owner
+        - superadmin
+        - admin
+        - member
+        - not_member
+        - unknown
+        type: string
+      name:
+        type: string
+      parentGroupJid:
+        type: string
+      sendMode:
+        enum:
+        - all_members
+        - admins_only
+        - unknown
+        type: string
+      state:
+        enum:
+        - active
+        - suspended
+        - dissolved
+        - unavailable
+        - unknown
+        type: string
+      type:
+        enum:
+        - group
+        - community
+        - subgroup
+        - unknown
+        type: string
+      updatedAt:
+        type: string
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_group_service.JoinGroupStruct:
     properties:
       code:
@@ -895,6 +1092,11 @@ definitions:
     properties:
       groupJid:
         $ref: '#/definitions/types.JID'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.SafeMemberReference:
+    properties:
+      memberId:
+        type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_group_service.SetGroupDescriptionStruct:
     properties:
@@ -10476,7 +10678,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Get group info
+      description: Get normalized projected group facts and advisory tri-state action
+        decisions without members or live WhatsApp queries. Mutations must revalidate
+        permissions.
       parameters:
       - description: Group data
         in: body
@@ -10494,10 +10698,10 @@ paths:
             - $ref: '#/definitions/apidocs.SuccessResponse'
             - properties:
                 data:
-                  $ref: '#/definitions/types.GroupInfo'
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupDetail'
               type: object
         "400":
-          description: Error on validation
+          description: invalid_filter
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "404":
@@ -10632,9 +10836,21 @@ paths:
       - Group
   /group/list:
     get:
-      consumes:
-      - application/json
-      description: List groups
+      description: List normalized group summaries from the persisted instance projection.
+        This is the unfiltered form of /group/search when group_management_permissions
+        is advertised.
+      parameters:
+      - default: 50
+        description: Page size (1-200)
+        in: query
+        maximum: 200
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Opaque cursor bound to the instance
+        in: query
+        name: cursor
+        type: string
       produces:
       - application/json
       responses:
@@ -10646,9 +10862,13 @@ paths:
             - properties:
                 data:
                   items:
-                    $ref: '#/definitions/types.GroupInfo'
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupSummary'
                   type: array
               type: object
+        "400":
+          description: invalid_pagination or invalid_cursor
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
@@ -10797,13 +11017,61 @@ paths:
       - Group
   /group/search:
     get:
-      description: Prefix-search groups from the persisted instance projection without
-        querying WhatsApp
+      description: Search normalized group summaries from the persisted instance projection
+        without participants or live WhatsApp queries. The normalized contract is
+        active when group_management_permissions is advertised.
       parameters:
       - description: Case-insensitive group JID or name prefix
         in: query
         maxLength: 128
         name: q
+        type: string
+      - description: Group type
+        enum:
+        - group
+        - community
+        - subgroup
+        - unknown
+        in: query
+        name: type
+        type: string
+      - description: Current instance role
+        enum:
+        - owner
+        - superadmin
+        - admin
+        - member
+        - not_member
+        - unknown
+        in: query
+        name: myRole
+        type: string
+      - description: Who may send
+        enum:
+        - all_members
+        - admins_only
+        - unknown
+        in: query
+        name: sendMode
+        type: string
+      - description: Projected group state
+        enum:
+        - active
+        - suspended
+        - dissolved
+        - unavailable
+        - unknown
+        in: query
+        name: state
+        type: string
+      - description: Current instance membership
+        enum:
+        - joined
+        - left
+        - removed
+        - unknown
+        in: query
+        name: membershipState
         type: string
       - default: 50
         description: Page size (1-200)
@@ -10812,7 +11080,7 @@ paths:
         minimum: 1
         name: limit
         type: integer
-      - description: Opaque cursor bound to the instance and normalized query
+      - description: Opaque cursor bound to the instance and all filters
         in: query
         name: cursor
         type: string
@@ -10827,11 +11095,11 @@ paths:
             - properties:
                 data:
                   items:
-                    $ref: '#/definitions/types.GroupInfo'
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupSummary'
                   type: array
               type: object
         "400":
-          description: Invalid search or cursor
+          description: invalid_filter, invalid_pagination, or invalid_cursor
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "500":

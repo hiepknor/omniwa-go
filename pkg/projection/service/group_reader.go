@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const GroupsProjectionSchemaVersion int64 = 3
+const GroupsProjectionSchemaVersion int64 = 4
 
 var (
 	ErrGroupsProjectionNotReady = errors.New("groups projection is not ready")

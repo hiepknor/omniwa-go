@@ -2278,7 +2278,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get group info",
+                "description": "Get normalized projected group facts and advisory tri-state action decisions without members or live WhatsApp queries. Mutations must revalidate permissions.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2312,7 +2312,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/types.GroupInfo"
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupDetail"
                                         }
                                     }
                                 }
@@ -2320,7 +2320,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Error on validation",
+                        "description": "invalid_filter",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -2536,10 +2536,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "List groups",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "List normalized group summaries from the persisted instance projection. This is the unfiltered form of /group/search when group_management_permissions is advertised.",
                 "produces": [
                     "application/json"
                 ],
@@ -2547,6 +2544,23 @@ const docTemplate = `{
                     "Group"
                 ],
                 "summary": "List groups",
+                "parameters": [
+                    {
+                        "maximum": 200,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque cursor bound to the instance",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "success",
@@ -2561,12 +2575,18 @@ const docTemplate = `{
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/types.GroupInfo"
+                                                "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupSummary"
                                             }
                                         }
                                     }
                                 }
                             ]
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_pagination or invalid_cursor",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
                     "500": {
@@ -2811,7 +2831,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Prefix-search groups from the persisted instance projection without querying WhatsApp",
+                "description": "Search normalized group summaries from the persisted instance projection without participants or live WhatsApp queries. The normalized contract is active when group_management_permissions is advertised.",
                 "produces": [
                     "application/json"
                 ],
@@ -2828,6 +2848,68 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "group",
+                            "community",
+                            "subgroup",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "Group type",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "owner",
+                            "superadmin",
+                            "admin",
+                            "member",
+                            "not_member",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "Current instance role",
+                        "name": "myRole",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "all_members",
+                            "admins_only",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "Who may send",
+                        "name": "sendMode",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "active",
+                            "suspended",
+                            "dissolved",
+                            "unavailable",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "Projected group state",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "joined",
+                            "left",
+                            "removed",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "Current instance membership",
+                        "name": "membershipState",
+                        "in": "query"
+                    },
+                    {
                         "maximum": 200,
                         "minimum": 1,
                         "type": "integer",
@@ -2838,7 +2920,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Opaque cursor bound to the instance and normalized query",
+                        "description": "Opaque cursor bound to the instance and all filters",
                         "name": "cursor",
                         "in": "query"
                     }
@@ -2857,7 +2939,7 @@ const docTemplate = `{
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/types.GroupInfo"
+                                                "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupSummary"
                                             }
                                         }
                                     }
@@ -2866,7 +2948,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid search or cursor",
+                        "description": "invalid_filter, invalid_pagination, or invalid_cursor",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -9315,6 +9397,38 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision": {
+            "type": "object",
+            "properties": {
+                "checkedAt": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "admin_required",
+                        "owner_required",
+                        "not_a_member",
+                        "group_suspended",
+                        "group_unavailable",
+                        "protected_member",
+                        "self_action_not_allowed",
+                        "permission_unknown",
+                        "projection_not_ready",
+                        "provider_disconnected",
+                        "unsupported"
+                    ]
+                },
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "allowed",
+                        "denied",
+                        "unknown"
+                    ]
+                }
+            }
+        },
         "github_com_evolution-foundation_evolution-go_pkg_group_service.AddParticipantStruct": {
             "type": "object",
             "properties": {
@@ -9365,6 +9479,248 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.GroupActions": {
+            "type": "object",
+            "properties": {
+                "addMembers": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "demoteMembers": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "editDescription": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "editName": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "editSettings": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "leaveGroup": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "promoteMembers": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "readInviteLink": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "removeMembers": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "resetInviteLink": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "sendMessage": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "setPhoto": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.GroupDetail": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupActions"
+                },
+                "adminCount": {
+                    "type": "integer"
+                },
+                "announce": {
+                    "type": "boolean"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "descriptionPreview": {
+                    "type": "string"
+                },
+                "ephemeralEnabled": {
+                    "type": "boolean"
+                },
+                "ephemeralTimerSeconds": {
+                    "type": "integer"
+                },
+                "groupJid": {
+                    "type": "string"
+                },
+                "isDefaultSubgroup": {
+                    "type": "boolean"
+                },
+                "joinApproval": {
+                    "type": "boolean"
+                },
+                "locked": {
+                    "type": "boolean"
+                },
+                "memberAddMode": {
+                    "type": "string",
+                    "enum": [
+                        "all_members",
+                        "admins_only",
+                        "unknown"
+                    ]
+                },
+                "memberCount": {
+                    "type": "integer"
+                },
+                "membershipState": {
+                    "type": "string",
+                    "enum": [
+                        "joined",
+                        "left",
+                        "removed",
+                        "unknown"
+                    ]
+                },
+                "myRole": {
+                    "type": "string",
+                    "enum": [
+                        "owner",
+                        "superadmin",
+                        "admin",
+                        "member",
+                        "not_member",
+                        "unknown"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.SafeMemberReference"
+                },
+                "parentGroupJid": {
+                    "type": "string"
+                },
+                "photo": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupPhotoMetadata"
+                },
+                "sendMode": {
+                    "type": "string",
+                    "enum": [
+                        "all_members",
+                        "admins_only",
+                        "unknown"
+                    ]
+                },
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "suspended",
+                        "dissolved",
+                        "unavailable",
+                        "unknown"
+                    ]
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "group",
+                        "community",
+                        "subgroup",
+                        "unknown"
+                    ]
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.GroupPhotoMetadata": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.GroupSummary": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "descriptionPreview": {
+                    "type": "string"
+                },
+                "groupJid": {
+                    "type": "string"
+                },
+                "isDefaultSubgroup": {
+                    "type": "boolean"
+                },
+                "memberCount": {
+                    "type": "integer"
+                },
+                "membershipState": {
+                    "type": "string",
+                    "enum": [
+                        "joined",
+                        "left",
+                        "removed",
+                        "unknown"
+                    ]
+                },
+                "myRole": {
+                    "type": "string",
+                    "enum": [
+                        "owner",
+                        "superadmin",
+                        "admin",
+                        "member",
+                        "not_member",
+                        "unknown"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parentGroupJid": {
+                    "type": "string"
+                },
+                "sendMode": {
+                    "type": "string",
+                    "enum": [
+                        "all_members",
+                        "admins_only",
+                        "unknown"
+                    ]
+                },
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "suspended",
+                        "dissolved",
+                        "unavailable",
+                        "unknown"
+                    ]
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "group",
+                        "community",
+                        "subgroup",
+                        "unknown"
+                    ]
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_evolution-foundation_evolution-go_pkg_group_service.JoinGroupStruct": {
             "type": "object",
             "properties": {
@@ -9378,6 +9734,14 @@ const docTemplate = `{
             "properties": {
                 "groupJid": {
                     "$ref": "#/definitions/types.JID"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.SafeMemberReference": {
+            "type": "object",
+            "properties": {
+                "memberId": {
+                    "type": "string"
                 }
             }
         },

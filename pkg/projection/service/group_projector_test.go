@@ -108,7 +108,8 @@ func TestGroupProjectorAppliesJoinedSnapshotAndRecordsState(t *testing.T) {
 		groups.group.TopicID == nil || *groups.group.TopicID != "topic-1" || groups.group.TopicSetAt == nil || !groups.group.TopicSetAt.Equal(topicSetAt) ||
 		groups.group.TopicDeleted == nil || !*groups.group.TopicDeleted || groups.group.AnnounceVersion == nil || *groups.group.AnnounceVersion != "announce-v2" ||
 		groups.group.Incognito == nil || !*groups.group.Incognito || groups.group.CreatorCountryCode == nil || *groups.group.CreatorCountryCode != "84" ||
-		groups.group.ParticipantCount == nil || *groups.group.ParticipantCount != 3 || groups.group.DefaultApprovalMode == nil || *groups.group.DefaultApprovalMode != "request_required" {
+		groups.group.ParticipantCount == nil || *groups.group.ParticipantCount != 3 || groups.group.DefaultApprovalMode == nil || *groups.group.DefaultApprovalMode != "request_required" ||
+		groups.group.MembershipState == nil || *groups.group.MembershipState != projection_model.GroupActorMembershipJoined {
 		t.Fatalf("projected group lost read-model metadata: %#v", groups.group)
 	}
 	if len(groups.participants) != 2 || groups.participants[0].Role != projection_model.ParticipantRoleAdmin || groups.participants[1].Role != projection_model.ParticipantRoleSuperAdmin {
