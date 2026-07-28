@@ -765,7 +765,7 @@ func TestPostgresMigrationIsIdempotentAndStateSurvivesReconnect(t *testing.T) {
 		return map[types.JID]types.ContactInfo{
 			types.NewJID("snapshot", types.DefaultUserServer): {Found: true, FullName: "Snapshot contact", PushName: "Snapshot"},
 		}, nil
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	contactBatch, err = eventService.ProcessBatchFor(

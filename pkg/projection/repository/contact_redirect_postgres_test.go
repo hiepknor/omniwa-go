@@ -112,6 +112,9 @@ func TestContactMergeKeepsPermanentFlattenedRedirectsAndChatReferences(t *testin
 		if getErr != nil || resolved.ContactID != current.ContactID {
 			t.Fatalf("flattened redirect %s = %#v, %v", absorbedID, resolved, getErr)
 		}
+		if resolved.PhoneJID == nil || *resolved.PhoneJID != "15551230001@s.whatsapp.net" || resolved.LID == nil || *resolved.LID != "900000000001@lid" || resolved.PreferredJID != "15551230001@s.whatsapp.net" {
+			t.Fatalf("canonical addressing aliases = %#v", resolved)
+		}
 		if _, getErr = repository.Get(context.Background(), instances[1].Id, absorbedID); !errors.Is(getErr, gorm.ErrRecordNotFound) {
 			t.Fatalf("cross-instance redirect error = %v", getErr)
 		}
@@ -132,6 +135,16 @@ func TestContactMergeKeepsPermanentFlattenedRedirectsAndChatReferences(t *testin
 	chat, err := chatRepository.GetChat(context.Background(), instances[0].Id, "direct-chat")
 	if err != nil || chat.ContactID == nil || *chat.ContactID != current.ContactID {
 		t.Fatalf("chat contact reference = %#v, %v", chat, err)
+	}
+	validationRepository := NewContactIdentityBackfillRepository(db)
+	if validation, validateErr := validationRepository.Validate(context.Background(), instances[0].Id); validateErr != nil || !validation.Valid() {
+		t.Fatalf("canonical identity validation = %#v, %v", validation, validateErr)
+	}
+	if err = db.Model(&projection_model.Chat{}).Where("instance_id = ? AND chat_id = ?", instances[0].Id, "direct-chat").Update("contact_id", phone.ContactID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if validation, validateErr := validationRepository.Validate(context.Background(), instances[0].Id); !errors.Is(validateErr, ErrContactIdentityValidation) || validation.ChatsReferencingAbsorbed != 1 {
+		t.Fatalf("invalid canonical identity graph = %#v, %v", validation, validateErr)
 	}
 	var activeContacts int64
 	if err = db.Model(&projection_model.Contact{}).Where("instance_id = ? AND tombstoned_at IS NULL", instances[0].Id).Count(&activeContacts).Error; err != nil {

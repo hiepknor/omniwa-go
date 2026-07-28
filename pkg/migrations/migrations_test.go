@@ -514,3 +514,20 @@ func TestCanonicalContactRedirectMigrationIsScopedAndAdditive(t *testing.T) {
 		}
 	}
 }
+
+func TestContactIdentityBackfillCheckpointMigrationIsBoundedAndScoped(t *testing.T) {
+	migration := registeredMigration(t, 35)
+	if migration.Name != "add_contact_identity_backfill_checkpoints" {
+		t.Fatalf("contact identity backfill migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"projected_contact_identity_backfills", "instance_id UUID PRIMARY KEY", "cursor_contact_id UUID NULL",
+		"lease_owner UUID NULL", "lease_expires_at TIMESTAMPTZ NULL", "status IN ('pending', 'running', 'failed', 'complete')",
+		"FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE",
+		"projected_contact_identity_backfills_work_idx", "WHERE status <> 'complete'",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("contact identity backfill migration missing %q", required)
+		}
+	}
+}

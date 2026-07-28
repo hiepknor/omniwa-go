@@ -124,6 +124,10 @@ type Config struct {
 	LogMaxAge     int
 	LogDirectory  string
 	LogCompress   bool
+
+	ContactIdentityReconciliationEnabled bool
+	ContactIdentityBackfillBatch         int
+	ContactIdentityBackfillMaxBatches    int
 }
 
 type RemoteMediaConfig struct {
@@ -324,6 +328,15 @@ func Load() *Config {
 	instanceTokenBackfillMaxBatches, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES), "10"))
 	if err != nil || instanceTokenBackfillMaxBatches > 1000 {
 		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES)
+	}
+	contactIdentityReconciliationEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED)), "true")
+	contactIdentityBackfillBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH), "100"))
+	if err != nil || contactIdentityBackfillBatch > 1000 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.CONTACT_IDENTITY_BACKFILL_BATCH)
+	}
+	contactIdentityBackfillMaxBatches, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES), "10"))
+	if err != nil || contactIdentityBackfillMaxBatches > 1000 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES)
 	}
 
 	clientName := os.Getenv(config_env.CLIENT_NAME)
@@ -850,6 +863,10 @@ func Load() *Config {
 		CampaignMediaMaxBytes:         campaignMediaMaxBytes,
 		CampaignMediaMaxPixels:        campaignMediaMaxPixels,
 		CampaignMediaUnboundTTL:       campaignMediaUnboundTTL,
+
+		ContactIdentityReconciliationEnabled: contactIdentityReconciliationEnabled,
+		ContactIdentityBackfillBatch:         contactIdentityBackfillBatch,
+		ContactIdentityBackfillMaxBatches:    contactIdentityBackfillMaxBatches,
 	}
 
 	minioEnabled := os.Getenv(config_env.MINIO_ENABLED) == "true"

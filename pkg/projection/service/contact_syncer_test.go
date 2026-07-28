@@ -68,7 +68,7 @@ func TestContactSyncerSnapshotsLocalStoreAndQueuesReadinessBarrier(t *testing.T)
 			types.NewJID("15550001", types.DefaultUserServer): {Found: true, FirstName: "Ada", FullName: "Ada Lovelace", PushName: "Ada", BusinessName: "Analytical Engines"},
 			types.NewJID("group", types.GroupServer):          {Found: true, FullName: "Not a contact"},
 		}, nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,19 +85,42 @@ func TestContactSyncerSnapshotsLocalStoreAndQueuesReadinessBarrier(t *testing.T)
 	}
 }
 
+func TestContactSyncerEnrichesSnapshotFromLocalLIDMapping(t *testing.T) {
+	writes := &captureContactSnapshots{}
+	syncer := NewContactSyncer(writes, &contactSyncStateStub{}, &captureContactSyncEvents{})
+	syncer.now = func() time.Time { return time.Unix(750, 0) }
+	phone := types.NewJID("15550009", types.DefaultUserServer)
+	lid := types.NewJID("9000009", types.HiddenUserServer)
+	err := syncer.Sync(context.Background(), "instance-a", func(context.Context) (map[types.JID]types.ContactInfo, error) {
+		return map[types.JID]types.ContactInfo{phone: {Found: true, FullName: "Mapped"}}, nil
+	}, &contactLIDResolverFake{phone: phone, lid: lid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(writes.patches) != 3 {
+		t.Fatalf("snapshot patches = %#v", writes.patches)
+	}
+	for _, patch := range writes.patches {
+		if patch.PhoneJID == nil || *patch.PhoneJID != phone.String() || patch.LID == nil || *patch.LID != lid.String() ||
+			patch.PreferredJID != phone.String() || len(patch.Identities) != 4 {
+			t.Fatalf("mapped snapshot patch = %#v", patch)
+		}
+	}
+}
+
 func TestContactSyncerSkipsReadyProjectionAndMarksInitialFailure(t *testing.T) {
 	readyState := &contactSyncStateStub{state: &projection_model.State{SyncStatus: projection_model.SyncStatusReady, SchemaVersion: ContactsProjectionSchemaVersion}}
 	fetched := false
 	if err := NewContactSyncer(&captureContactSnapshots{}, readyState, &captureContactSyncEvents{}).Sync(context.Background(), "instance-a", func(context.Context) (map[types.JID]types.ContactInfo, error) {
 		fetched = true
 		return nil, nil
-	}); err != nil || fetched {
+	}, nil); err != nil || fetched {
 		t.Fatalf("ready sync = fetched %v, error %v", fetched, err)
 	}
 	failedState := &contactSyncStateStub{}
 	err := NewContactSyncer(&captureContactSnapshots{}, failedState, &captureContactSyncEvents{}).Sync(context.Background(), "instance-a", func(context.Context) (map[types.JID]types.ContactInfo, error) {
 		return nil, errors.New("store unavailable")
-	})
+	}, nil)
 	if err == nil || failedState.status != projection_model.SyncStatusFailed {
 		t.Fatalf("failed sync = status %s, error %v", failedState.status, err)
 	}
@@ -109,7 +132,7 @@ func TestContactSyncCompletionWaitsForPendingMutations(t *testing.T) {
 	syncer.now = func() time.Time { return time.Unix(800, 0) }
 	if err := syncer.Sync(context.Background(), "instance-a", func(context.Context) (map[types.JID]types.ContactInfo, error) {
 		return map[types.JID]types.ContactInfo{}, nil
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	state := &captureProjectionState{}

@@ -18,6 +18,7 @@ import (
 type ContactAspect string
 
 const (
+	ContactAspectIdentity     ContactAspect = "identity"
 	ContactAspectDetails      ContactAspect = "contact"
 	ContactAspectPushName     ContactAspect = "push_name"
 	ContactAspectBusinessName ContactAspect = "business_name"
@@ -26,7 +27,7 @@ const (
 )
 
 var contactAspects = []ContactAspect{
-	ContactAspectDetails, ContactAspectPushName, ContactAspectBusinessName, ContactAspectPicture, ContactAspectAbout,
+	ContactAspectIdentity, ContactAspectDetails, ContactAspectPushName, ContactAspectBusinessName, ContactAspectPicture, ContactAspectAbout,
 }
 
 type ContactIdentityRef struct {
@@ -159,7 +160,11 @@ func (r *contactRepository) Apply(ctx context.Context, patch ContactPatch) (*pro
 		if err != nil {
 			return err
 		}
-		applied = applied || created || aliasesChanged
+		addressesChanged, err := reconcileCanonicalAddresses(tx, &stored)
+		if err != nil {
+			return err
+		}
+		applied = applied || created || aliasesChanged || addressesChanged
 		return nil
 	})
 	if err != nil {
@@ -468,6 +473,54 @@ func upsertContactAliases(tx *gorm.DB, contact *projection_model.Contact, identi
 		changed = changed || result.RowsAffected > 0
 	}
 	return changed, nil
+}
+
+func reconcileCanonicalAddresses(tx *gorm.DB, contact *projection_model.Contact) (bool, error) {
+	var identities []projection_model.ContactIdentity
+	if err := tx.Where("instance_id = ? AND contact_id = ? AND tombstoned_at IS NULL", contact.InstanceID, contact.ContactID).
+		Where("identity_kind IN ?", []projection_model.ContactIdentityKind{
+			projection_model.ContactIdentityKindPhoneJID, projection_model.ContactIdentityKindLID,
+		}).Order("identity_kind ASC, identity_value ASC").Find(&identities).Error; err != nil {
+		return false, err
+	}
+	var phoneJID, lid *string
+	for _, identity := range identities {
+		value := identity.Value
+		switch identity.Kind {
+		case projection_model.ContactIdentityKindPhoneJID:
+			if phoneJID == nil {
+				phoneJID = &value
+			}
+		case projection_model.ContactIdentityKindLID:
+			if lid == nil {
+				lid = &value
+			}
+		}
+	}
+	preferred := contact.PreferredJID
+	if phoneJID != nil {
+		preferred = *phoneJID
+	} else if lid != nil {
+		preferred = *lid
+	}
+	changed := !equalOptionalString(contact.PhoneJID, phoneJID) || !equalOptionalString(contact.LID, lid) || contact.PreferredJID != preferred
+	if !changed {
+		return false, nil
+	}
+	contact.PhoneJID, contact.LID, contact.PreferredJID = phoneJID, lid, preferred
+	if err := tx.Model(&projection_model.Contact{}).
+		Where("instance_id = ? AND contact_id = ?", contact.InstanceID, contact.ContactID).
+		Updates(map[string]any{"phone_jid": phoneJID, "lid": lid, "preferred_jid": preferred}).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func equalOptionalString(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func applyContactAspect(contact *projection_model.Contact, patch ContactPatch) {

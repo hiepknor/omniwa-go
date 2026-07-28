@@ -115,6 +115,7 @@ type whatsmeowService struct {
 	groupReconciler    *projection_service.GroupReconciler
 	labelSyncer        *projection_service.LabelSyncer
 	contactSyncer      *projection_service.ContactSyncer
+	identityReconciler *projection_service.ContactIdentityReconciler
 	historySyncer      *projection_service.HistorySyncer
 	durableEvents      *projection_service.DurableEventService
 	appCtx             context.Context
@@ -165,6 +166,7 @@ type MyClient struct {
 	groupReconciler    *projection_service.GroupReconciler
 	labelSyncer        *projection_service.LabelSyncer
 	contactSyncer      *projection_service.ContactSyncer
+	identityReconciler *projection_service.ContactIdentityReconciler
 	historySyncer      *projection_service.HistorySyncer
 	appCtx             context.Context
 	reconcileMu        sync.Mutex
@@ -291,6 +293,21 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 	go func() {
 		ctx, cancel := context.WithTimeout(parent, contactProjectionSyncTimeout)
 		defer cancel()
+		var resolver projection_service.ContactLIDResolver
+		if mycli.identityReconciler != nil && mycli.WAClient.Store.LIDs != nil {
+			resolver = mycli.WAClient.Store.LIDs
+			result, reconcileErr := mycli.identityReconciler.RunBounded(
+				ctx, mycli.userID, resolver, mycli.config.ContactIdentityBackfillBatch, mycli.config.ContactIdentityBackfillMaxBatches,
+			)
+			if reconcileErr != nil {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=backfill instance_id=%s resource=contact_identity result=failed error_code=local_mapping_failed", mycli.userID)
+			} else {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo(
+					"component=projection action=backfill instance_id=%s resource=contact_identity result=success batches=%d scanned=%d mapped=%d merged=%d unchanged=%d complete=%t lease_held=%t",
+					mycli.userID, result.Batches, result.Scanned, result.Mapped, result.Merged, result.Unchanged, result.Complete, result.LeaseHeld,
+				)
+			}
+		}
 		var preflight map[types.JID]types.ContactInfo
 		if !fullSyncConfirmed {
 			if mycli.WAClient.Store.Contacts == nil {
@@ -313,7 +330,7 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 				return nil, fmt.Errorf("whatsmeow contact store is unavailable")
 			}
 			return mycli.WAClient.Store.Contacts.GetAllContacts(fetchCtx)
-		})
+		}, resolver)
 		if err != nil {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=reconcile instance_id=%s resource=contacts result=failed error_code=snapshot_failed", mycli.userID)
 			return
@@ -389,6 +406,16 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) (assetID string) {
 	}
 	if !relevant {
 		return
+	}
+	if mycli.identityReconciler != nil && mycli.WAClient != nil && mycli.WAClient.Store != nil && mycli.WAClient.Store.LIDs != nil {
+		mappingCtx, mappingCancel := context.WithTimeout(context.Background(), projectionIngestTimeout)
+		enriched, mappingErr := projection_service.EnrichContactEventWithLIDMapping(mappingCtx, event, mycli.WAClient.Store.LIDs)
+		mappingCancel()
+		if mappingErr != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=projection action=resolve_identity instance_id=%s result=deferred error_code=local_mapping_unavailable", mycli.userID)
+		} else {
+			event = enriched
+		}
 	}
 	if assetID != "" {
 		attachedEvent, attachErr := projection_service.AttachInboundMediaAsset(event, assetID)
@@ -842,6 +869,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		groupReconciler:    w.groupReconciler,
 		labelSyncer:        w.labelSyncer,
 		contactSyncer:      w.contactSyncer,
+		identityReconciler: w.identityReconciler,
 		historySyncer:      w.historySyncer,
 		appCtx:             w.appCtx,
 	}
@@ -3205,6 +3233,7 @@ func NewWhatsmeowService(
 	groupReconciler *projection_service.GroupReconciler,
 	labelSyncer *projection_service.LabelSyncer,
 	contactSyncer *projection_service.ContactSyncer,
+	contactIdentityReconciler *projection_service.ContactIdentityReconciler,
 	historySyncer *projection_service.HistorySyncer,
 	durableEvents *projection_service.DurableEventService,
 	appCtx context.Context,
@@ -3237,6 +3266,7 @@ func NewWhatsmeowService(
 		groupReconciler:    groupReconciler,
 		labelSyncer:        labelSyncer,
 		contactSyncer:      contactSyncer,
+		identityReconciler: contactIdentityReconciler,
 		historySyncer:      historySyncer,
 		durableEvents:      durableEvents,
 		appCtx:             appCtx,

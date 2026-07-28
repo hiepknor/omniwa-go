@@ -75,3 +75,36 @@ type ContactRedirect struct {
 }
 
 func (ContactRedirect) TableName() string { return "projected_contact_redirects" }
+
+type ContactIdentityBackfillStatus string
+
+const (
+	ContactIdentityBackfillPending  ContactIdentityBackfillStatus = "pending"
+	ContactIdentityBackfillRunning  ContactIdentityBackfillStatus = "running"
+	ContactIdentityBackfillFailed   ContactIdentityBackfillStatus = "failed"
+	ContactIdentityBackfillComplete ContactIdentityBackfillStatus = "complete"
+)
+
+// ContactIdentityBackfill is the durable, leased checkpoint for the bounded
+// local LID-map reconciliation of one instance.
+type ContactIdentityBackfill struct {
+	InstanceID      string                        `gorm:"column:instance_id;type:uuid;primaryKey"`
+	Version         int                           `gorm:"column:version;not null"`
+	Status          ContactIdentityBackfillStatus `gorm:"column:status;size:16;not null"`
+	CursorContactID *string                       `gorm:"column:cursor_contact_id;type:uuid"`
+	LeaseOwner      *string                       `gorm:"column:lease_owner;type:uuid"`
+	LeaseExpiresAt  *time.Time                    `gorm:"column:lease_expires_at"`
+	ScannedCount    int64                         `gorm:"column:scanned_count;not null"`
+	MappedCount     int64                         `gorm:"column:mapped_count;not null"`
+	MergedCount     int64                         `gorm:"column:merged_count;not null"`
+	UnchangedCount  int64                         `gorm:"column:unchanged_count;not null"`
+	FailureCount    int64                         `gorm:"column:failure_count;not null"`
+	LastErrorCode   *string                       `gorm:"column:last_error_code;size:64"`
+	CompletedAt     *time.Time                    `gorm:"column:completed_at"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+func (ContactIdentityBackfill) TableName() string {
+	return "projected_contact_identity_backfills"
+}

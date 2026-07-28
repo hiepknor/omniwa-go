@@ -76,6 +76,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "")
+	t.Setenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED, "")
+	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH, "")
+	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES, "")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
@@ -146,6 +149,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if len(config.InstanceTokenHMACKey) != 0 || config.InstanceTokenHMACKeyVersion != 0 || config.InstanceTokenBackfillBatch != 100 || config.InstanceTokenBackfillMaxBatches != 10 {
 		t.Fatalf("instance token digest defaults are invalid")
 	}
+	if config.ContactIdentityReconciliationEnabled || config.ContactIdentityBackfillBatch != 100 || config.ContactIdentityBackfillMaxBatches != 10 {
+		t.Fatalf("contact identity reconciliation defaults are invalid")
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -213,6 +219,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "7")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "25")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "4")
+	t.Setenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED, "true")
+	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH, "25")
+	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES, "4")
 
 	config := Load()
 	if config.RemoteMedia.Policy != "allowlist" || config.RemoteMedia.Timeout != 3*time.Second || config.RemoteMedia.MaxBytes != 4096 || len(config.RemoteMedia.AllowedHosts) != 2 {
@@ -273,6 +282,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if len(config.InstanceTokenHMACKey) != 32 || config.InstanceTokenHMACKeyVersion != 7 || config.InstanceTokenBackfillBatch != 25 || config.InstanceTokenBackfillMaxBatches != 4 {
 		t.Fatalf("instance token digest overrides are invalid")
+	}
+	if !config.ContactIdentityReconciliationEnabled || config.ContactIdentityBackfillBatch != 25 || config.ContactIdentityBackfillMaxBatches != 4 {
+		t.Fatalf("contact identity reconciliation overrides are invalid")
 	}
 }
 

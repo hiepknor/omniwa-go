@@ -1421,6 +1421,44 @@ ALTER TABLE projected_groups
 CREATE INDEX projected_contact_redirects_canonical_idx
 ON projected_contact_redirects (instance_id, canonical_contact_id);`,
 	},
+	{
+		Version: 35,
+		Name:    "add_contact_identity_backfill_checkpoints",
+		SQL: `CREATE TABLE projected_contact_identity_backfills (
+    instance_id UUID PRIMARY KEY,
+    version SMALLINT NOT NULL DEFAULT 1,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    cursor_contact_id UUID NULL,
+    lease_owner UUID NULL,
+    lease_expires_at TIMESTAMPTZ NULL,
+    scanned_count BIGINT NOT NULL DEFAULT 0,
+    mapped_count BIGINT NOT NULL DEFAULT 0,
+    merged_count BIGINT NOT NULL DEFAULT 0,
+    unchanged_count BIGINT NOT NULL DEFAULT 0,
+    failure_count BIGINT NOT NULL DEFAULT 0,
+    last_error_code VARCHAR(64) NULL,
+    completed_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT projected_contact_identity_backfills_instance_fk
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT projected_contact_identity_backfills_status_check
+        CHECK (status IN ('pending', 'running', 'failed', 'complete')),
+    CONSTRAINT projected_contact_identity_backfills_version_check CHECK (version > 0),
+    CONSTRAINT projected_contact_identity_backfills_counts_check CHECK (
+        scanned_count >= 0 AND mapped_count >= 0 AND merged_count >= 0
+        AND unchanged_count >= 0 AND failure_count >= 0
+    ),
+    CONSTRAINT projected_contact_identity_backfills_lease_check CHECK (
+        (lease_owner IS NULL AND lease_expires_at IS NULL)
+        OR (lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL)
+    )
+);
+
+CREATE INDEX projected_contact_identity_backfills_work_idx
+ON projected_contact_identity_backfills (status, lease_expires_at, instance_id)
+WHERE status <> 'complete';`,
+	},
 }
 
 func Run(db *gorm.DB) error {
