@@ -7102,6 +7102,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
+                "description": "Authenticates either the global admin key or an instance token and returns an explicit credentialScope. instanceId is present only for an instance credential.\nCredential scope is independent of capabilities and projection readiness. A missing or invalid credential returns 401; projection infrastructure failures may return 500.",
                 "produces": [
                     "application/json"
                 ],
@@ -8586,6 +8587,9 @@ const docTemplate = `{
         },
         "apidocs.CapabilitiesData": {
             "type": "object",
+            "required": [
+                "credentialScope"
+            ],
             "properties": {
                 "capabilities": {
                     "type": "array",
@@ -8604,6 +8608,19 @@ const docTemplate = `{
                         "instance_credential_health",
                         "instance_token_rotation"
                     ]
+                },
+                "credentialScope": {
+                    "type": "string",
+                    "enum": [
+                        "admin",
+                        "instance"
+                    ],
+                    "example": "instance"
+                },
+                "instanceId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "0bca2c34-ef2a-463c-98fd-e2afb6978457"
                 },
                 "revision": {
                     "type": "string",

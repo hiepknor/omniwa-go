@@ -78,12 +78,24 @@ definitions:
         items:
           type: string
         type: array
+      credentialScope:
+        enum:
+        - admin
+        - instance
+        example: instance
+        type: string
+      instanceId:
+        example: 0bca2c34-ef2a-463c-98fd-e2afb6978457
+        format: uuid
+        type: string
       revision:
         example: 0123456789abcdef0123456789abcdef01234567
         type: string
       version:
         example: 1.2.3
         type: string
+    required:
+    - credentialScope
     type: object
   apidocs.CapabilitiesResponse:
     properties:
@@ -14010,6 +14022,9 @@ paths:
       - Send Message
   /server/capabilities:
     get:
+      description: |-
+        Authenticates either the global admin key or an instance token and returns an explicit credentialScope. instanceId is present only for an instance credential.
+        Credential scope is independent of capabilities and projection readiness. A missing or invalid credential returns 401; projection infrastructure failures may return 500.
       produces:
       - application/json
       responses:

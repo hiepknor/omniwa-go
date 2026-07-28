@@ -25,7 +25,13 @@ import (
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
+	"gorm.io/gorm"
 )
+
+// ErrInvalidInstanceCredential identifies an instance token that does not map
+// to an instance. Authentication boundaries use it to distinguish an invalid
+// bearer credential from a credential lookup infrastructure failure.
+var ErrInvalidInstanceCredential = errors.New("invalid instance credential")
 
 type InstanceService interface {
 	Create(data *CreateStruct) (*instance_model.Instance, error)
@@ -749,7 +755,15 @@ func (i instances) ForceReconnect(instanceId string, number string) error {
 }
 
 func (i instances) GetInstanceByToken(token string) (*instance_model.Instance, error) {
-	return i.instanceRepository.GetInstanceByToken(token)
+	instance, err := i.instanceRepository.GetInstanceByToken(token)
+	return instance, classifyInstanceCredentialError(err)
+}
+
+func classifyInstanceCredentialError(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrInvalidInstanceCredential
+	}
+	return err
 }
 
 func (i instances) GetLogs(instanceId string, startDate, endDate time.Time, level string, limit int) ([]logger_wrapper.LogEntry, error) {
