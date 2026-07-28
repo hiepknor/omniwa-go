@@ -30,6 +30,7 @@ type GroupService interface {
 	GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error)
 	GetGroupInfoRead(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	GetManagementGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*GroupDetail, *projection_service.ProjectionReadMeta, error)
+	ListManagementGroupMembers(ctx context.Context, instance *instance_model.Instance, groupJID string, filters GroupMemberFilters, limit int, cursor string) ([]GroupMember, *projection_service.ProjectionReadMeta, error)
 	GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error)
 	SetGroupPhoto(data *SetGroupPhotoStruct, instance *instance_model.Instance) (string, error)
 	SetGroupName(data *SetGroupNameStruct, instance *instance_model.Instance) error
@@ -219,6 +220,13 @@ func (g *groupService) GetManagementGroupInfo(ctx context.Context, data *GetGrou
 		return nil, nil, errors.New("group management reader and request are required")
 	}
 	return g.managementReader.Get(ctx, instance, data.GroupJID)
+}
+
+func (g *groupService) ListManagementGroupMembers(ctx context.Context, instance *instance_model.Instance, groupJID string, filters GroupMemberFilters, limit int, cursor string) ([]GroupMember, *projection_service.ProjectionReadMeta, error) {
+	if g.managementReader == nil {
+		return nil, nil, errors.New("group management reader is required")
+	}
+	return g.managementReader.Members(ctx, instance, groupJID, filters, limit, cursor)
 }
 
 func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {

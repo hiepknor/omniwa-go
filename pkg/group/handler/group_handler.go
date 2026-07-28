@@ -20,6 +20,7 @@ const maxGroupInfoBodyBytes int64 = 16 << 10
 type GroupHandler interface {
 	ListGroups(ctx *gin.Context)
 	SearchGroups(ctx *gin.Context)
+	ListGroupMembers(ctx *gin.Context)
 	GetGroupInfo(ctx *gin.Context)
 	GetGroupInviteLink(ctx *gin.Context)
 	SetGroupPhoto(ctx *gin.Context)
@@ -31,6 +32,59 @@ type GroupHandler interface {
 	JoinGroupLink(ctx *gin.Context)
 	LeaveGroup(ctx *gin.Context)
 	UpdateGroupSettings(ctx *gin.Context)
+}
+
+// ListGroupMembers returns a bounded projected member page.
+// @Summary List projected group members
+// @Description Search current projected members without provider aliases or live WhatsApp queries. Target actions are advisory tri-state decisions and mutations revalidate them.
+// @Tags Group
+// @Produce json
+// @Param groupJid path string true "Canonical WhatsApp Group JID"
+// @Param q query string false "Case-insensitive display-name prefix" maxlength(128)
+// @Param role query string false "Public member role" Enums(owner,superadmin,admin,member)
+// @Param limit query int false "Page size (1-200)" minimum(1) maximum(200) default(50)
+// @Param cursor query string false "Opaque cursor bound to instance, group, and filters"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]group_service.GroupMember} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "invalid_filter, invalid_pagination, or invalid_cursor"
+// @Failure 404 {object} apidocs.ErrorResponse "group_not_found"
+// @Failure 409 {object} apidocs.ErrorResponse "group_unavailable"
+// @Failure 503 {object} apidocs.ErrorResponse "projection_not_ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /group/{groupJid}/members [get]
+func (g *groupHandler) ListGroupMembers(ctx *gin.Context) {
+	if !g.managementContract {
+		httpapi.WriteError(ctx, http.StatusNotFound, "not_found", "group member projection is not enabled")
+		return
+	}
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		httpapi.WriteInternal(ctx, nil)
+		return
+	}
+	limit := 50
+	if value := ctx.Query("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 200 {
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_pagination", "limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+	items, meta, err := g.groupService.ListManagementGroupMembers(ctx.Request.Context(), instance, ctx.Param("groupJid"), group_service.GroupMemberFilters{Query: ctx.Query("q"), Role: ctx.Query("role")}, limit, ctx.Query("cursor"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			httpapi.WriteError(ctx, http.StatusNotFound, "group_not_found", "group projection record not found")
+			return
+		}
+		if errors.Is(err, group_service.ErrManagementGroupUnavailable) {
+			httpapi.WriteError(ctx, http.StatusConflict, "group_unavailable", "group member projection is unavailable")
+			return
+		}
+		writeGroupProjectionReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
 }
 
 // Search groups

@@ -3016,6 +3016,119 @@
                 }
             }
         },
+        "/group/{groupJid}/members": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Search current projected members without provider aliases or live WhatsApp queries. Target actions are advisory tri-state decisions and mutations revalidate them.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Group"
+                ],
+                "summary": "List projected group members",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical WhatsApp Group JID",
+                        "name": "groupJid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "maxLength": 128,
+                        "type": "string",
+                        "description": "Case-insensitive display-name prefix",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "owner",
+                            "superadmin",
+                            "admin",
+                            "member"
+                        ],
+                        "type": "string",
+                        "description": "Public member role",
+                        "name": "role",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 200,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque cursor bound to instance, group, and filters",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupMember"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_filter, invalid_pagination, or invalid_cursor",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "group_not_found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "group_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "projection_not_ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/instance/all": {
             "get": {
                 "security": [
@@ -9410,6 +9523,8 @@
                         "group_unavailable",
                         "protected_member",
                         "self_action_not_allowed",
+                        "already_admin",
+                        "not_an_admin",
                         "permission_unknown",
                         "projection_not_ready",
                         "provider_disconnected",
@@ -9628,6 +9743,53 @@
                 },
                 "updatedAt": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.GroupMember": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupMemberActions"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "memberId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "membershipState": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "pending",
+                        "removed",
+                        "unknown"
+                    ]
+                },
+                "role": {
+                    "type": "string",
+                    "enum": [
+                        "owner",
+                        "superadmin",
+                        "admin",
+                        "member"
+                    ]
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.GroupMemberActions": {
+            "type": "object",
+            "properties": {
+                "demote": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "promote": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
+                },
+                "remove": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision"
                 }
             }
         },

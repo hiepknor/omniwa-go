@@ -26,6 +26,7 @@ type GroupRepository interface {
 	GetInviteLink(ctx context.Context, instanceID, groupID string) (*string, error)
 	SearchManagement(ctx context.Context, instanceID, instanceIdentity string, filter GroupManagementFilter, limit int, cursor *GroupCursor) (*GroupManagementPage, error)
 	GetManagement(ctx context.Context, instanceID, instanceIdentity, groupID string) (*GroupManagementRecord, error)
+	ListManagementMembers(ctx context.Context, instanceID, instanceIdentity, groupID string, filter GroupMemberFilter, limit int, cursor *GroupMemberCursor) (*GroupManagementRecord, *GroupMemberPage, error)
 }
 
 type GroupRecord struct {
@@ -55,6 +56,27 @@ type GroupManagementRecord struct {
 type GroupManagementPage struct {
 	Items      []GroupManagementRecord
 	NextCursor *GroupCursor
+}
+
+type GroupMemberFilter struct {
+	Term string
+	Role string
+}
+
+type GroupMemberCursor struct {
+	SortKey  string
+	PublicID string
+}
+
+type GroupMemberRecord struct {
+	Participant projection_model.GroupParticipant
+	Role        string
+	IsActor     bool
+}
+
+type GroupMemberPage struct {
+	Items      []GroupMemberRecord
+	NextCursor *GroupMemberCursor
 }
 
 type GroupPage struct {
@@ -663,6 +685,107 @@ func (r *groupRepository) GetManagement(ctx context.Context, instanceID, instanc
 		return nil, err
 	}
 	return &records[0], nil
+}
+
+const groupMemberSortSQL = "LOWER(COALESCE(participants.display_name, ''))"
+
+func (r *groupRepository) ListManagementMembers(ctx context.Context, instanceID, instanceIdentity, groupID string, filter GroupMemberFilter, limit int, cursor *GroupMemberCursor) (*GroupManagementRecord, *GroupMemberPage, error) {
+	filter.Term = strings.ToLower(strings.TrimSpace(filter.Term))
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" || instanceIdentity == "" || groupID == "" ||
+		utf8.RuneCountInString(filter.Term) > 128 || limit < 1 || limit > 200 ||
+		(cursor != nil && (len(cursor.SortKey) > 512 || cursor.PublicID == "" || len(cursor.PublicID) > 36)) {
+		return nil, nil, errors.New("valid group member search parameters are required")
+	}
+	aliases, err := r.resolveActorAliases(ctx, instanceID, instanceIdentity)
+	if err != nil {
+		return nil, nil, err
+	}
+	var group projection_model.Group
+	if err := r.db.WithContext(ctx).Where("instance_id = ? AND group_id = ?", instanceID, groupID).First(&group).Error; err != nil {
+		return nil, nil, err
+	}
+	groupRecords, err := r.managementRecords(ctx, instanceID, aliases, []projection_model.Group{group}, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	ownerExpression := `COALESCE(
+		participants.participant_id IN (groups.owner_jid, groups.owner_phone_jid)
+		OR participants.phone_number_jid IN (groups.owner_jid, groups.owner_phone_jid)
+		OR participants.lid IN (groups.owner_jid, groups.owner_phone_jid), FALSE)`
+	query := r.db.WithContext(ctx).Table("projected_group_participants AS participants").
+		Select("participants.*, "+groupMemberSortSQL+" AS sort_key").
+		Joins("JOIN projected_groups AS groups ON groups.instance_id = participants.instance_id AND groups.group_id = participants.group_id").
+		Where("participants.instance_id = ? AND participants.group_id = ? AND participants.tombstoned_at IS NULL", instanceID, groupID)
+	if filter.Term != "" {
+		query = query.Where("LOWER(COALESCE(participants.display_name, '')) LIKE ?", escapeGroupSearchPattern(filter.Term)+"%")
+	}
+	switch filter.Role {
+	case "owner":
+		query = query.Where(ownerExpression)
+	case "superadmin":
+		query = query.Where("participants.role = ? AND NOT "+ownerExpression, projection_model.ParticipantRoleSuperAdmin)
+	case "admin":
+		query = query.Where("participants.role = ? AND NOT "+ownerExpression, projection_model.ParticipantRoleAdmin)
+	case "member":
+		query = query.Where("participants.role = ? AND NOT "+ownerExpression, projection_model.ParticipantRoleMember)
+	}
+	if cursor != nil {
+		query = query.Where("("+groupMemberSortSQL+" > ? OR ("+groupMemberSortSQL+" = ? AND participants.public_id > ?))", cursor.SortKey, cursor.SortKey, cursor.PublicID)
+	}
+	type memberSearchRow struct {
+		projection_model.GroupParticipant
+		SortKey string `gorm:"column:sort_key"`
+	}
+	var rows []memberSearchRow
+	if err := query.Order(groupMemberSortSQL + " ASC, participants.public_id ASC").Limit(limit + 1).Scan(&rows).Error; err != nil {
+		return nil, nil, err
+	}
+	hasNext := len(rows) > limit
+	if hasNext {
+		rows = rows[:limit]
+	}
+	page := &GroupMemberPage{Items: make([]GroupMemberRecord, len(rows))}
+	for index := range rows {
+		role := string(rows[index].Role)
+		if memberMatchesOwner(rows[index].GroupParticipant, group) {
+			role = "owner"
+		} else if role == string(projection_model.ParticipantRoleSuperAdmin) {
+			role = "superadmin"
+		}
+		page.Items[index] = GroupMemberRecord{
+			Participant: rows[index].GroupParticipant, Role: role, IsActor: memberMatchesAliases(rows[index].GroupParticipant, aliases),
+		}
+	}
+	if hasNext {
+		last := rows[len(rows)-1]
+		page.NextCursor = &GroupMemberCursor{SortKey: last.SortKey, PublicID: last.PublicID}
+	}
+	return &groupRecords[0], page, nil
+}
+
+func memberMatchesOwner(participant projection_model.GroupParticipant, group projection_model.Group) bool {
+	values := []string{participant.ParticipantID}
+	if participant.PhoneNumberJID != nil {
+		values = append(values, *participant.PhoneNumberJID)
+	}
+	if participant.LID != nil {
+		values = append(values, *participant.LID)
+	}
+	for _, value := range values {
+		if value != "" && ((group.OwnerJID != nil && *group.OwnerJID == value) || (group.OwnerPhoneJID != nil && *group.OwnerPhoneJID == value)) {
+			return true
+		}
+	}
+	return false
+}
+
+func memberMatchesAliases(participant projection_model.GroupParticipant, aliases []string) bool {
+	for _, alias := range aliases {
+		if alias != "" && (participant.ParticipantID == alias || (participant.PhoneNumberJID != nil && *participant.PhoneNumberJID == alias) || (participant.LID != nil && *participant.LID == alias)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *groupRepository) resolveActorAliases(ctx context.Context, instanceID, instanceIdentity string) ([]string, error) {
