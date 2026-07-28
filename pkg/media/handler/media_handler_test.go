@@ -30,6 +30,9 @@ func (f *assetServiceFake) Upload(_ context.Context, input media_service.AssetUp
 func (f *assetServiceFake) Get(context.Context, string, string) (*media_model.Asset, error) {
 	return f.asset, nil
 }
+func (f *assetServiceFake) GetMetadata(context.Context, string, string) (*media_model.Asset, error) {
+	return f.asset, nil
+}
 func (f *assetServiceFake) Delete(_ context.Context, _, assetID string) error {
 	f.delete = assetID
 	return nil

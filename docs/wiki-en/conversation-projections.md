@@ -64,3 +64,26 @@ The `canonical_contact_identity` capability appears only when Contacts and
 Chats are ready at their current schema versions and the instance's local LID
 reconciliation checkpoint is complete. Clients must not infer canonical
 identity support from `contacts_projection` alone.
+
+## Projected message field contract
+
+Every message returned by `GET /chat/{chatId}/messages` and
+`GET /message/{messageId}` has these required fields: `messageId`, `chatId`,
+`direction`, `messageType`, `providerTimestamp`, and `provenance`. The live,
+history-sync, and synthetic historical ingestion paths all validate or provide
+these values before a row can enter the projection.
+
+Sender, recipient, participant, normalized content, media metadata, receipt
+timestamps, `historySyncId`, `mediaAssetId`, and `retentionExpiresAt` remain
+optional because message type, direction, provider availability, or historical
+source can legitimately omit them. For display ordering, clients use
+`providerTimestamp`, then `sentAt`, then `deliveredAt`; if none is reported by
+an older unsupported record, display an unreported timestamp rather than
+inventing one. Current-schema responses always include `providerTimestamp`.
+
+`mediaAssetId` is an opaque reference to shared private media, not proof that
+bytes are ready. The projected message remains authoritative when media is
+downloading, processing, failed, expired, or deleted. Fetch asset metadata to
+learn the lifecycle state and authenticated content only when it is ready.
+Binary bytes, provider descriptors, object keys, and private storage URLs are
+never part of the message projection.

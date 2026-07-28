@@ -34,6 +34,7 @@ type InstancePurgePlan struct {
 type Repository interface {
 	Create(context.Context, CreateAssetInput) (*media_model.Asset, bool, error)
 	Get(context.Context, string, string) (*media_model.Asset, error)
+	GetMetadata(context.Context, string, string) (*media_model.Asset, error)
 	ListVariants(context.Context, string, string) ([]media_model.AssetVariant, error)
 	AddVariant(context.Context, media_model.AssetVariant) error
 	MarkReady(context.Context, string, string) (*media_model.Asset, error)
@@ -136,11 +137,26 @@ func (r *repository) Create(ctx context.Context, input CreateAssetInput) (*media
 }
 
 func (r *repository) Get(ctx context.Context, instanceID, assetID string) (*media_model.Asset, error) {
+	return r.get(ctx, instanceID, assetID, false)
+}
+
+// GetMetadata includes soft-deleted rows so the public metadata contract can
+// report the terminal deleted state. The lookup remains instance-scoped and
+// therefore does not disclose whether another instance owns the same UUID.
+func (r *repository) GetMetadata(ctx context.Context, instanceID, assetID string) (*media_model.Asset, error) {
+	return r.get(ctx, instanceID, assetID, true)
+}
+
+func (r *repository) get(ctx context.Context, instanceID, assetID string, includeDeleted bool) (*media_model.Asset, error) {
 	if err := validateIdentity(r, ctx, instanceID, assetID); err != nil {
 		return nil, err
 	}
 	var asset media_model.Asset
-	err := r.db.WithContext(ctx).Where("instance_id = ? AND id = ? AND deleted_at IS NULL", instanceID, assetID).First(&asset).Error
+	query := r.db.WithContext(ctx).Where("instance_id = ? AND id = ?", instanceID, assetID)
+	if !includeDeleted {
+		query = query.Where("deleted_at IS NULL")
+	}
+	err := query.First(&asset).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrAssetNotFound
 	}

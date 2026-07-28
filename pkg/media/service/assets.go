@@ -26,6 +26,10 @@ var (
 	ErrUnsupportedMediaAsset  = errors.New("unsupported media asset type")
 	ErrInvalidMediaDimensions = errors.New("invalid media asset dimensions")
 	ErrMediaAssetStorage      = errors.New("media asset storage is unavailable")
+	ErrMediaAssetFailed       = errors.New("media asset processing failed")
+	ErrMediaAssetExpired      = errors.New("media asset expired")
+	ErrMediaAssetDeleted      = errors.New("media asset deleted")
+	ErrMediaAssetInstance     = errors.New("media asset belongs to another instance")
 )
 
 type AssetSettings struct {
@@ -117,6 +121,20 @@ func (s *AssetService) Get(ctx context.Context, instanceID, assetID string) (*me
 		return nil, ErrInvalidMediaAsset
 	}
 	return s.repository.Get(ctx, instanceID, assetID)
+}
+
+func (s *AssetService) GetMetadata(ctx context.Context, instanceID, assetID string) (*media_model.Asset, error) {
+	if err := s.validate(ctx); err != nil || uuid.Validate(instanceID) != nil || uuid.Validate(assetID) != nil {
+		return nil, ErrInvalidMediaAsset
+	}
+	asset, err := s.repository.GetMetadata(ctx, instanceID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	if asset.InstanceID != instanceID {
+		return nil, ErrMediaAssetInstance
+	}
+	return asset, nil
 }
 
 func (s *AssetService) Delete(ctx context.Context, instanceID, assetID string) error {

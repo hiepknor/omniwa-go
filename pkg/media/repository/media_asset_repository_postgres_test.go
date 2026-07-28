@@ -181,4 +181,11 @@ func TestPostgresMediaAssetLifecycleIsInstanceScopedAndCleanupFenced(t *testing.
 	if _, err := repository.Get(ctx, instance.Id, assetID); !errors.Is(err, ErrAssetNotFound) {
 		t.Fatalf("deleted asset read error = %v", err)
 	}
+	metadata, err := repository.GetMetadata(ctx, instance.Id, assetID)
+	if err != nil || metadata.Status != media_model.AssetStatusDeleted || metadata.Canonical != nil {
+		t.Fatalf("deleted asset metadata = %+v, err=%v", metadata, err)
+	}
+	if _, err := repository.GetMetadata(ctx, other.Id, assetID); !errors.Is(err, ErrAssetNotFound) {
+		t.Fatalf("cross-instance deleted metadata error = %v", err)
+	}
 }

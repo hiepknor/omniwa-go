@@ -370,6 +370,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if config.InboundImageContentEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("messages", projection_service.CapabilityInboundImageContent))
 	}
+	if config.ChatImageContentEnabled && config.InboundImageContentEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("messages", projection_service.CapabilityConversationMediaAssets))
+	}
 	if config.ContactIdentityReconciliationEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
 			projection_service.CapabilityCanonicalContactIdentity,

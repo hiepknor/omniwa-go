@@ -64,6 +64,12 @@ Upload one JPEG or PNG from a device. The server detects the bytes, enforces
 the configured byte and decoded-pixel limits, strips source metadata by
 re-encoding, and stores only the normalized canonical object.
 
+The deployment limit is `MEDIA_ASSET_MAX_BYTES`; its concrete default is
+8,388,608 bytes (8 MiB), and configuration is bounded by a 67,108,864-byte
+(64 MiB) safety ceiling. Frontends must use the deployed limit. Fake MIME
+declarations, unsupported formats, corrupt JPEG/PNG data, decoded-pixel
+overflow, and byte overflow are rejected before an asset becomes ready.
+
 ```http
 POST /media-assets
 apikey: <instance-token>
@@ -74,7 +80,10 @@ file=<binary image>
 ```
 
 The response contains safe metadata under `data`, including the opaque asset
-ID, status, canonical MIME type, dimensions, size, and SHA-256. It never
+ID, `origin`, `status`, `failureCode`, `expiresAt`, and, when available,
+canonical MIME type, dimensions, size, and SHA-256. Status is `pending`,
+`uploading`, `downloading`, `processing`, `ready`, `failed`, `deleting`, or
+`deleted`. It never
 contains an object key, bucket, filename, provider descriptor, URL, or bytes.
 `GET /media-assets/{mediaId}` reads metadata and
 `DELETE /media-assets/{mediaId}` removes an unreferenced asset. All operations
@@ -94,10 +103,10 @@ Send the uploaded image through the existing `POST /send/media` route:
 }
 ```
 
-`mediaAssetId` cannot be combined with `url`, and this stage accepts only
-normalized JPEG or PNG images. Captions are limited to 1,024 Unicode code
-points. Existing JSON URL/base64 and multipart `/send/media` requests are not
-changed.
+`mediaAssetId` cannot be combined with `url`/base64 or a multipart file, and
+this stage accepts only normalized JPEG or PNG images. Captions are limited to
+1,024 Unicode code points. Existing JSON URL/base64 and multipart
+`/send/media` requests are not changed.
 
 Before contacting WhatsApp, the server fences the asset with a message
 reference, rereads the private object, and verifies its size and SHA-256. It
@@ -106,21 +115,46 @@ send admission releases the reference. If acknowledgement is lost, the API
 returns `unknown_send_outcome`; clients must not retry automatically because
 the original image may already have been sent.
 
+Successful `mediaAssetId` sends add `data.messageId` and `data.timestamp` to
+the historical response. They acknowledge one accepted provider attempt, not
+WhatsApp delivery. Delivery comes only from projected receipts. The service
+does not retry the send. Admission limits return HTTP 429 with
+`outbound_rate_limited`, integer `retryAfter`, and the same `Retry-After`
+header.
+
 Message references use `WA_MSG_RETENTION`. After a reference and the unbound
 asset TTL have both expired, the cleanup worker claims the asset with a lease,
 deletes its private variants, and marks it deleted. Explicit deletion returns
 `media_asset_conflict` while any active reference exists.
 
 Important errors are `invalid_media_asset`, `media_asset_too_large`,
-`unsupported_media_asset_type`, `invalid_media_asset_dimensions`,
-`media_asset_not_found`, `media_asset_not_ready`,
-`media_asset_integrity_failed`, `media_asset_storage_unavailable`, and
-`unknown_send_outcome`.
+`unsupported_media_asset_type` (the existing equivalent of
+`media_asset_invalid_type`), `invalid_media_asset_dimensions`,
+`media_asset_not_found`, `media_asset_not_ready`, `media_asset_failed`,
+`media_asset_expired`, `media_asset_deleted`,
+`media_asset_instance_mismatch`, `media_asset_integrity_failed`,
+`media_asset_storage_unavailable`, `outbound_rate_limited`, and
+`unknown_send_outcome`. Content and send use HTTP 409 for not-ready/failed,
+410 for expired/deleted, 422 for integrity failure, 503 for storage failure,
+and 429 for outbound admission limits.
+
+Cross-instance metadata and content lookups deliberately return
+`media_asset_not_found` so asset UUIDs cannot become a tenant-existence oracle.
+`media_asset_instance_mismatch` is reserved for an ownership invariant
+violation detected after an asset is already inside an authenticated operation;
+clients must treat both codes as hard ownership failures.
 
 When enabled and the messages projection is serving, the server advertises
 `chat_image_content`. Disable `WA_CHAT_IMAGE_CONTENT_ENABLED` to roll back this
 stage. The upload routes and `mediaAssetId` sender are removed, while legacy
 media sends and stored shared assets remain unchanged.
+
+Conversation clients gate the complete upload/send/inbound-read flow on
+`conversation_media_assets`, never `group_photo_assets`. This unified
+capability appears only when both chat and inbound image flags are enabled and
+the current Messages projection is ready. The older `chat_image_content` and
+`chat_inbound_image_content` capabilities remain compatibility signals for
+clients implementing only one side.
 
 ## Group photos from device uploads
 
@@ -205,9 +239,26 @@ Range: bytes=0-1048575
 ```
 
 The endpoint is instance-scoped, supports at most one byte range, sets private
-immutable cache headers, and never redirects to a bucket or presigned URL. A
-cross-instance request is returned as not found. The messages capability is
-`chat_inbound_image_content`.
+immutable cache headers, verifies the complete canonical object's size and
+SHA-256 before returning bytes, and never redirects to a bucket or presigned
+URL. A cross-instance request is returned as not found. The messages
+capability is `chat_inbound_image_content`.
+
+Download or processing failure marks the asset failed but never deletes the
+projected message or its safe media metadata. Expiry/deletion likewise leaves
+`mediaAssetId` visible on any retained projected message; the content endpoint
+reports the lifecycle error. New clients must not call live
+`POST /message/downloadmedia` when a projected image already has
+`mediaAssetId`.
+
+Inbound assets and message references use `WA_MSG_RETENTION`, measured from the
+provider message timestamp. Device uploads begin with
+`MEDIA_ASSET_UNBOUND_TTL` (24 hours by default); a successful send adds a
+message-retention reference. Explicit delete and cleanup refuse live or
+permanent references. Cleanup expires eligible time-bounded references under
+the same database fence, refuses active download jobs and campaign shadows,
+deletes private variants, then soft-deletes metadata to the visible `deleted`
+state. This prevents removal of referenced assets and keeps retries safe.
 
 Disable `WA_INBOUND_IMAGE_CONTENT_ENABLED` to stop new capture, the download
 worker, and content streaming. Existing projected metadata and private objects

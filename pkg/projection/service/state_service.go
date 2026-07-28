@@ -22,6 +22,7 @@ const (
 	CapabilityCampaignImageContent       = "campaign_image_content"
 	CapabilityChatImageContent           = "chat_image_content"
 	CapabilityInboundImageContent        = "chat_inbound_image_content"
+	CapabilityConversationMediaAssets    = "conversation_media_assets"
 	CapabilityGroupManagementPermissions = "group_management_permissions"
 	CapabilityGroupMembersProjection     = "group_members_projection"
 	CapabilityGroupManagementCommands    = "group_management_commands"

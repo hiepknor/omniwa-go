@@ -56,13 +56,13 @@ type ProjectedChat struct {
 // ProjectedMessage is the stable public message representation. It contains
 // normalized summaries and media metadata, never provider-native payloads.
 type ProjectedMessage struct {
-	MessageID          string                             `json:"messageId"`
-	ChatID             string                             `json:"chatId"`
+	MessageID          string                             `json:"messageId" binding:"required"`
+	ChatID             string                             `json:"chatId" binding:"required"`
 	SenderJID          *string                            `json:"senderJid,omitempty"`
 	RecipientJID       *string                            `json:"recipientJid,omitempty"`
 	ParticipantJID     *string                            `json:"participantJid,omitempty"`
-	Direction          projection_model.MessageDirection  `json:"direction"`
-	MessageType        string                             `json:"messageType"`
+	Direction          projection_model.MessageDirection  `json:"direction" binding:"required"`
+	MessageType        string                             `json:"messageType" binding:"required"`
 	ContentText        *string                            `json:"contentText,omitempty"`
 	Caption            *string                            `json:"caption,omitempty"`
 	ContentSummary     *string                            `json:"contentSummary,omitempty"`
@@ -76,12 +76,12 @@ type ProjectedMessage struct {
 	MediaHeight        *uint32                            `json:"mediaHeight,omitempty"`
 	MediaAssetID       *string                            `json:"mediaAssetId,omitempty"`
 	Status             *string                            `json:"status,omitempty"`
-	ProviderTimestamp  time.Time                          `json:"providerTimestamp"`
+	ProviderTimestamp  time.Time                          `json:"providerTimestamp" binding:"required"`
 	SentAt             *time.Time                         `json:"sentAt,omitempty"`
 	DeliveredAt        *time.Time                         `json:"deliveredAt,omitempty"`
 	ReadAt             *time.Time                         `json:"readAt,omitempty"`
 	PlayedAt           *time.Time                         `json:"playedAt,omitempty"`
-	Provenance         projection_model.MessageProvenance `json:"provenance"`
+	Provenance         projection_model.MessageProvenance `json:"provenance" binding:"required"`
 	HistorySyncID      *string                            `json:"historySyncId,omitempty"`
 	RetentionExpiresAt *time.Time                         `json:"retentionExpiresAt,omitempty"`
 }

@@ -251,6 +251,10 @@ type PairResponse struct {
 type SendMessageData struct {
 	ID        string `json:"ID" example:"3EB0C767D26A8D4E2A1B"`
 	Timestamp string `json:"Timestamp" example:"2026-07-21T10:30:00Z"`
+	// Present for the mediaAssetId branch. This is provider acknowledgement,
+	// not a WhatsApp delivery receipt.
+	MessageID      string `json:"messageId,omitempty" example:"3EB0C767D26A8D4E2A1B"`
+	AcknowledgedAt string `json:"timestamp,omitempty" example:"2026-07-21T10:30:00Z"`
 }
 
 // SendMessageResponse is returned by the POST /send/* endpoints.
