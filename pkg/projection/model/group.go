@@ -8,13 +8,18 @@ import (
 type ParticipantRole string
 
 type GroupTombstoneCause string
+type MembershipState string
 
 const (
-	ParticipantRoleMember     ParticipantRole     = "member"
-	ParticipantRoleAdmin      ParticipantRole     = "admin"
-	ParticipantRoleSuperAdmin ParticipantRole     = "super_admin"
-	GroupTombstoneAccessLost  GroupTombstoneCause = "group_access_lost"
-	GroupTombstoneDissolved   GroupTombstoneCause = "group_dissolved"
+	ParticipantRoleMember       ParticipantRole     = "member"
+	ParticipantRoleAdmin        ParticipantRole     = "admin"
+	ParticipantRoleSuperAdmin   ParticipantRole     = "super_admin"
+	GroupTombstoneAccessLost    GroupTombstoneCause = "group_access_lost"
+	GroupTombstoneDissolved     GroupTombstoneCause = "group_dissolved"
+	GroupActorMembershipUnknown MembershipState     = "unknown"
+	GroupActorMembershipJoined  MembershipState     = "joined"
+	GroupActorMembershipLeft    MembershipState     = "left"
+	GroupActorMembershipRemoved MembershipState     = "removed"
 )
 
 type Group struct {
@@ -58,6 +63,11 @@ type Group struct {
 	LastSyncedAt         time.Time            `json:"lastSyncedAt" gorm:"column:last_synced_at;not null"`
 	TombstonedAt         *time.Time           `json:"tombstonedAt,omitempty" gorm:"column:tombstoned_at"`
 	TombstoneCause       *GroupTombstoneCause `json:"-" gorm:"column:tombstone_cause;size:32"`
+	MembershipState      *MembershipState     `json:"actorMembershipState,omitempty" gorm:"column:actor_membership_state;size:32"`
+	MembershipChangedAt  *time.Time           `json:"actorMembershipChangedAt,omitempty" gorm:"column:actor_membership_changed_at"`
+	PictureID            *string              `json:"pictureId,omitempty" gorm:"column:picture_id;size:255"`
+	PictureRemoved       *bool                `json:"pictureRemoved,omitempty" gorm:"column:picture_removed"`
+	PictureUpdatedAt     *time.Time           `json:"pictureUpdatedAt,omitempty" gorm:"column:picture_updated_at"`
 	CreatedAt            time.Time            `json:"createdAt"`
 	UpdatedAt            time.Time            `json:"updatedAt"`
 }
@@ -68,6 +78,7 @@ type GroupParticipant struct {
 	InstanceID       string          `json:"instanceId" gorm:"column:instance_id;type:uuid;primaryKey"`
 	GroupID          string          `json:"groupId" gorm:"column:group_id;size:255;primaryKey"`
 	ParticipantID    string          `json:"participantId" gorm:"column:participant_id;size:255;primaryKey"`
+	PublicID         string          `json:"publicId" gorm:"column:public_id;type:uuid;not null;default:gen_random_uuid()"`
 	PhoneNumberJID   *string         `json:"phoneNumberJid,omitempty" gorm:"column:phone_number_jid;size:255"`
 	LID              *string         `json:"lid,omitempty" gorm:"column:lid;size:255"`
 	DisplayName      *string         `json:"displayName,omitempty" gorm:"column:display_name"`

@@ -1272,6 +1272,95 @@ CREATE INDEX projected_group_participants_lid_identity_idx
 ON projected_group_participants (instance_id, lid, group_id)
 WHERE tombstoned_at IS NULL AND lid IS NOT NULL;`,
 	},
+	{
+		Version: 30,
+		Name:    "create_group_management_foundation",
+		SQL: `ALTER TABLE projected_group_participants
+    ADD COLUMN public_id UUID NOT NULL DEFAULT gen_random_uuid();
+
+CREATE UNIQUE INDEX projected_group_participants_public_id_idx
+ON projected_group_participants (instance_id, group_id, public_id);
+
+ALTER TABLE projected_groups
+    ADD COLUMN actor_membership_state VARCHAR(32) NULL,
+    ADD COLUMN actor_membership_changed_at TIMESTAMPTZ NULL,
+    ADD COLUMN picture_id VARCHAR(255) NULL,
+    ADD COLUMN picture_removed BOOLEAN NULL,
+    ADD COLUMN picture_updated_at TIMESTAMPTZ NULL,
+    ADD CONSTRAINT projected_groups_actor_membership_state_check
+        CHECK (actor_membership_state IS NULL OR actor_membership_state IN ('unknown', 'joined', 'left', 'removed'));
+
+CREATE TABLE group_management_commands (
+    id UUID PRIMARY KEY,
+    instance_id UUID NOT NULL,
+    group_jid VARCHAR(255) NOT NULL,
+    command_type VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    idempotency_key_hash VARCHAR(64) NULL,
+    request_fingerprint VARCHAR(64) NOT NULL,
+    request_id VARCHAR(255) NULL,
+    actor_type VARCHAR(32) NOT NULL,
+    actor_reference_hash VARCHAR(64) NOT NULL,
+    safe_outcome JSONB NOT NULL DEFAULT '{}'::jsonb,
+    execution_started_at TIMESTAMPTZ NULL,
+    completed_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT group_management_commands_instance_fk FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT group_management_commands_instance_identity_unique UNIQUE (id, instance_id),
+    CONSTRAINT group_management_commands_group_jid_check CHECK (group_jid ~ '^[^@]+@g[.]us$'),
+    CONSTRAINT group_management_commands_type_check CHECK (char_length(command_type) BETWEEN 1 AND 64),
+    CONSTRAINT group_management_commands_status_check CHECK (status IN ('requested', 'executing', 'completed', 'partially_completed', 'failed', 'unknown')),
+    CONSTRAINT group_management_commands_idempotency_hash_check CHECK (idempotency_key_hash IS NULL OR idempotency_key_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT group_management_commands_fingerprint_check CHECK (request_fingerprint ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT group_management_commands_actor_type_check CHECK (actor_type IN ('instance', 'system')),
+    CONSTRAINT group_management_commands_actor_hash_check CHECK (actor_reference_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT group_management_commands_outcome_check CHECK (jsonb_typeof(safe_outcome) = 'object'),
+    CONSTRAINT group_management_commands_time_check CHECK (
+        updated_at >= created_at
+        AND
+        (execution_started_at IS NULL OR execution_started_at >= created_at)
+        AND (completed_at IS NULL OR completed_at >= created_at)
+    ),
+    CONSTRAINT group_management_commands_lifecycle_check CHECK (
+        (status = 'requested' AND execution_started_at IS NULL AND completed_at IS NULL)
+        OR (status = 'executing' AND execution_started_at IS NOT NULL AND completed_at IS NULL)
+        OR (status IN ('completed', 'partially_completed', 'failed', 'unknown') AND completed_at IS NOT NULL)
+    )
+);
+
+CREATE UNIQUE INDEX group_management_commands_idempotency_idx
+ON group_management_commands (instance_id, idempotency_key_hash)
+WHERE idempotency_key_hash IS NOT NULL;
+
+CREATE INDEX group_management_commands_group_history_idx
+ON group_management_commands (instance_id, group_jid, created_at DESC, id DESC);
+
+CREATE INDEX group_management_commands_recovery_idx
+ON group_management_commands (updated_at ASC, id ASC)
+WHERE status = 'executing';
+
+CREATE TABLE group_management_audit_events (
+    id UUID PRIMARY KEY,
+    command_id UUID NOT NULL,
+    instance_id UUID NOT NULL,
+    group_jid VARCHAR(255) NOT NULL,
+    event_type VARCHAR(32) NOT NULL,
+    actor_type VARCHAR(32) NOT NULL,
+    actor_reference_hash VARCHAR(64) NOT NULL,
+    summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT group_management_audit_command_fk FOREIGN KEY (command_id, instance_id) REFERENCES group_management_commands(id, instance_id) ON DELETE CASCADE,
+    CONSTRAINT group_management_audit_group_jid_check CHECK (group_jid ~ '^[^@]+@g[.]us$'),
+    CONSTRAINT group_management_audit_event_type_check CHECK (event_type IN ('requested', 'executing', 'completed', 'partially_completed', 'failed', 'unknown')),
+    CONSTRAINT group_management_audit_actor_type_check CHECK (actor_type IN ('instance', 'system')),
+    CONSTRAINT group_management_audit_actor_hash_check CHECK (actor_reference_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT group_management_audit_summary_check CHECK (jsonb_typeof(summary) = 'object')
+);
+
+CREATE INDEX group_management_audit_history_idx
+ON group_management_audit_events (instance_id, group_jid, occurred_at DESC, id DESC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {
