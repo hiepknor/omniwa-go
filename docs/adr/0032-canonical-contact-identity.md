@@ -2,9 +2,11 @@
 
 ## Status
 
-Accepted as an additive foundation. Public canonical-contact fields, local LID
-reconciliation, backfill, and capability advertisement are separate rollout
-stages.
+Accepted. Permanent redirects are implemented by migration 34. Local LID
+reconciliation and its leased, restartable checkpoint are implemented by
+migration 35 behind `WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED`. Public
+canonical-contact fields and capability advertisement remain a later rollout
+stage.
 
 ## Context
 
@@ -42,8 +44,14 @@ reused and remains a compatibility identifier for bookmarks and stored client
 references.
 
 The schema migration is expand-only and does not change the public HTTP
-contract or advertise a capability. A later bounded reconciliation stage may
-read the local whatsmeow LID store, but projection reads never call WhatsApp.
+contract or advertise a capability. The bounded reconciliation stage reads only
+the local whatsmeow LID store; projection reads never call WhatsApp. It scans
+canonical contacts in UUID order, persists a per-instance cursor, and uses a
+time-bounded lease so another process can resume after a crash. Live contact
+events and full local contact snapshots use the same resolver while the feature
+gate is enabled. Missing mappings leave partial contacts unchanged; mapping
+store failures release or expire the lease and are retried on a later bounded
+run.
 
 ## Alternatives
 
@@ -70,3 +78,9 @@ deployment are not reversed automatically; aliases and chats already point to
 the deterministic survivor, while the retained redirect records preserve the
 only safe recovery path. Dropping redirects is explicitly outside rollback and
 requires a separately approved destructive migration.
+
+The LID reconciliation stage is rolled back by setting
+`WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED=false` and restarting. Migration 35
+and its checkpoints remain in place. Disabling the worker stops new mapping
+merges but does not attempt to split contacts already joined by an authoritative
+mapping; permanent redirects make that state backward compatible.

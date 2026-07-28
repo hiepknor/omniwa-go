@@ -42,7 +42,7 @@ func NewContactSyncer(contacts contactProjectionWriter, state contactSyncState, 
 	return &ContactSyncer{contacts: contacts, state: state, events: events, now: time.Now}
 }
 
-func (s *ContactSyncer) Sync(ctx context.Context, instanceID string, fetch ContactSnapshotFetcher) error {
+func (s *ContactSyncer) Sync(ctx context.Context, instanceID string, fetch ContactSnapshotFetcher, resolver ContactLIDResolver) error {
 	if s == nil || s.contacts == nil || s.state == nil || s.events == nil || s.now == nil || instanceID == "" || fetch == nil {
 		return errors.New("contact sync dependencies and instance identity are required")
 	}
@@ -89,7 +89,7 @@ func (s *ContactSyncer) Sync(ctx context.Context, instanceID string, fetch Conta
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].jid.String() < entries[j].jid.String() })
 	for _, entry := range entries {
-		if err := s.applySnapshotContact(ctx, instanceID, snapshotID, snapshotAt, entry.jid, entry.info); err != nil {
+		if err := s.applySnapshotContact(ctx, instanceID, snapshotID, snapshotAt, entry.jid, entry.info, resolver); err != nil {
 			return s.fail(instanceID, state, err)
 		}
 	}
@@ -109,8 +109,28 @@ func (s *ContactSyncer) Sync(ctx context.Context, instanceID string, fetch Conta
 	return nil
 }
 
-func (s *ContactSyncer) applySnapshotContact(ctx context.Context, instanceID, snapshotID string, snapshotAt time.Time, jid types.JID, info types.ContactInfo) error {
+func (s *ContactSyncer) applySnapshotContact(ctx context.Context, instanceID, snapshotID string, snapshotAt time.Time, jid types.JID, info types.ContactInfo, resolver ContactLIDResolver) error {
 	payload := newContactPayload(jid)
+	if resolver != nil {
+		resolved, mapped, err := resolveContactLIDAliases(ctx, resolver, payload.PreferredJID, payload.PhoneJID, payload.LID)
+		if err != nil {
+			return err
+		}
+		if mapped {
+			for _, identity := range resolved {
+				payload.Identities = append(payload.Identities, contactEventIdentity{Kind: identity.Kind, Value: identity.Value})
+				switch identity.Kind {
+				case projection_model.ContactIdentityKindPhoneJID:
+					value := identity.Value
+					payload.PhoneJID, payload.PreferredJID = &value, value
+				case projection_model.ContactIdentityKindLID:
+					value := identity.Value
+					payload.LID = &value
+				}
+			}
+			payload.Identities = deduplicateContactEventIdentities(payload.Identities)
+		}
+	}
 	identities := make([]projection_repository.ContactIdentityRef, 0, len(payload.Identities))
 	for _, identity := range payload.Identities {
 		identities = append(identities, projection_repository.ContactIdentityRef{Kind: identity.Kind, Value: identity.Value})

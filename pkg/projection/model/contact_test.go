@@ -12,6 +12,9 @@ func TestContactProjectionTableNamesAndIdentityKinds(t *testing.T) {
 	if (ContactRedirect{}).TableName() != "projected_contact_redirects" {
 		t.Fatalf("contact redirect table = %q", (ContactRedirect{}).TableName())
 	}
+	if (ContactIdentityBackfill{}).TableName() != "projected_contact_identity_backfills" {
+		t.Fatalf("contact identity backfill table = %q", (ContactIdentityBackfill{}).TableName())
+	}
 	kinds := []ContactIdentityKind{ContactIdentityKindJID, ContactIdentityKindPhoneJID, ContactIdentityKindLID, ContactIdentityKindUsername}
 	seen := make(map[ContactIdentityKind]struct{}, len(kinds))
 	for _, kind := range kinds {

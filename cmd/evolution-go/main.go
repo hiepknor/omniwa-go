@@ -415,6 +415,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	overviewService := projection_service.NewOverviewService(projection_repository.NewOverviewRepository(db))
 	healthService := projection_service.NewServerHealthService(projection_repository.NewHealthRepository(db), projectionStateService, queryGuard)
 	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
+	var contactIdentityReconciler *projection_service.ContactIdentityReconciler
+	if config.ContactIdentityReconciliationEnabled {
+		contactIdentityReconciler = projection_service.NewContactIdentityReconciler(
+			projection_repository.NewContactIdentityBackfillRepository(db), contactProjectionRepository,
+		)
+	}
 	contactReader := projection_service.NewContactReader(contactProjectionRepository, projectionStateService)
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
 	labelReader := projection_service.NewLabelReader(labelProjectionRepository, projectionStateService)
@@ -539,6 +545,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		groupReconciler,
 		labelSyncer,
 		contactSyncer,
+		contactIdentityReconciler,
 		historySyncer,
 		durableEventService,
 		appCtx,

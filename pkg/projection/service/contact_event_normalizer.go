@@ -108,11 +108,15 @@ func NormalizeContactEvent(instanceID string, rawEvent any) (*projection_model.E
 	if err != nil {
 		return nil, true, err
 	}
-	sum := sha256.Sum256([]byte(eventType + "\x00" + payload.PreferredJID + "\x00" + occurredAt.Format(time.RFC3339Nano) + "\x00" + string(encoded)))
 	return &projection_model.Event{
-		InstanceID: instanceID, Resource: contactResource, EventKey: hex.EncodeToString(sum[:]),
+		InstanceID: instanceID, Resource: contactResource, EventKey: contactEventKey(eventType, payload.PreferredJID, occurredAt, encoded),
 		EntityKey: payload.PreferredJID, EventType: eventType, OccurredAt: occurredAt, Payload: encoded,
 	}, true, nil
+}
+
+func contactEventKey(eventType, preferredJID string, occurredAt time.Time, encoded []byte) string {
+	sum := sha256.Sum256([]byte(eventType + "\x00" + preferredJID + "\x00" + occurredAt.Format(time.RFC3339Nano) + "\x00" + string(encoded)))
+	return hex.EncodeToString(sum[:])
 }
 
 func newContactPayload(jid types.JID) contactEventPayload {
