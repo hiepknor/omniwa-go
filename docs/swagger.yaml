@@ -854,6 +854,22 @@ definitions:
       communityName:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_model.ManagementCommandStatus:
+    enum:
+    - requested
+    - executing
+    - completed
+    - partially_completed
+    - failed
+    - unknown
+    type: string
+    x-enum-varnames:
+    - ManagementCommandRequested
+    - ManagementCommandExecuting
+    - ManagementCommandCompleted
+    - ManagementCommandPartiallyCompleted
+    - ManagementCommandFailed
+    - ManagementCommandUnknown
   github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision:
     properties:
       checkedAt:
@@ -881,16 +897,55 @@ definitions:
         - unknown
         type: string
     type: object
-  github_com_evolution-foundation_evolution-go_pkg_group_service.AddParticipantStruct:
+  github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement:
     properties:
-      action:
-        $ref: '#/definitions/whatsmeow.ParticipantChange'
+      command:
+        type: string
+      commandId:
+        format: uuid
+        type: string
       groupJid:
-        $ref: '#/definitions/types.JID'
-      participants:
+        type: string
+      projectionRefreshExpected:
+        type: boolean
+      status:
+        enum:
+        - accepted
+        - completed
+        - partially_completed
+        - unknown
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.CreateGroupCommandResult:
+    properties:
+      acknowledgementStatus:
+        enum:
+        - completed
+        - partially_completed
+        - failed
+        - unknown
+        type: string
+      commandId:
+        format: uuid
+        type: string
+      failedCount:
+        type: integer
+      groupJid:
+        type: string
+      name:
+        type: string
+      participantOutcomes:
         items:
-          type: string
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantOutcome'
         type: array
+      projectionRefreshExpected:
+        type: boolean
+      requestedCount:
+        type: integer
+      succeededCount:
+        type: integer
+      unknownCount:
+        type: integer
     type: object
   github_com_evolution-foundation_evolution-go_pkg_group_service.CreateGroupStruct:
     properties:
@@ -1118,15 +1173,145 @@ definitions:
       updatedAt:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.JoinGroupCommandResult:
+    properties:
+      commandId:
+        format: uuid
+        type: string
+      groupJid:
+        type: string
+      projectionRefreshExpected:
+        type: boolean
+      reason:
+        type: string
+      status:
+        enum:
+        - joined
+        - already_member
+        - approval_required
+        - rejected
+        - unknown
+        type: string
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_group_service.JoinGroupStruct:
     properties:
       code:
         type: string
     type: object
-  github_com_evolution-foundation_evolution-go_pkg_group_service.LeaveGroupStruct:
+  github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementAuditEvent:
+    properties:
+      actorType:
+        enum:
+        - instance
+        - system
+        type: string
+      commandStatus:
+        allOf:
+        - $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_model.ManagementCommandStatus'
+        enum:
+        - completed
+        - partially_completed
+        - failed
+        - unknown
+      eventType:
+        type: string
+      id:
+        format: uuid
+        type: string
+      occurredAt:
+        type: string
+      summary:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementAuditSummary'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementAuditSummary:
+    properties:
+      failureCount:
+        type: integer
+      participantCount:
+        type: integer
+      reason:
+        type: string
+      setting:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementLeaveGroupRequest:
     properties:
       groupJid:
-        $ref: '#/definitions/types.JID'
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementParticipantRequest:
+    properties:
+      action:
+        enum:
+        - add
+        - remove
+        - promote
+        - demote
+        type: string
+      groupJid:
+        type: string
+      participants:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantCommandResult:
+    properties:
+      action:
+        enum:
+        - add
+        - remove
+        - promote
+        - demote
+        type: string
+      commandId:
+        format: uuid
+        type: string
+      failedCount:
+        type: integer
+      groupJid:
+        type: string
+      outcomes:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantOutcome'
+        type: array
+      projectionRefreshExpected:
+        type: boolean
+      requestedCount:
+        type: integer
+      status:
+        enum:
+        - completed
+        - partially_completed
+        - failed
+        - unknown
+        type: string
+      succeededCount:
+        type: integer
+      unknownCount:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantOutcome:
+    properties:
+      code:
+        enum:
+        - already_member
+        - not_member
+        - admin_required
+        - invalid_participant
+        - provider_rejected
+        - unknown_outcome
+        type: string
+      message:
+        type: string
+      participant:
+        type: string
+      status:
+        enum:
+        - succeeded
+        - failed
+        - unknown
+        type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_group_service.SafeMemberReference:
     properties:
@@ -9285,18 +9470,6 @@ definitions:
       verifiedName:
         type: string
     type: object
-  whatsmeow.ParticipantChange:
-    enum:
-    - add
-    - remove
-    - promote
-    - demote
-    type: string
-    x-enum-varnames:
-    - ParticipantChangeAdd
-    - ParticipantChangeRemove
-    - ParticipantChangePromote
-    - ParticipantChangeDemote
 info:
   contact:
     name: OmniWA GO
@@ -10640,6 +10813,58 @@ paths:
       summary: Evaluate Group List eligibility
       tags:
       - Group Lists
+  /group/{groupJid}/audit:
+    get:
+      description: List terminal management command outcomes without provider payloads,
+        aliases, invite links, media, or credentials.
+      parameters:
+      - description: Canonical WhatsApp Group JID
+        in: path
+        name: groupJid
+        required: true
+        type: string
+      - default: 50
+        description: Page size (1-200)
+        in: query
+        maximum: 200
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Opaque cursor bound to instance and group
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementAuditEvent'
+                  type: array
+              type: object
+        "400":
+          description: invalid_cursor or invalid_pagination
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: not_found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get group management audit history
+      tags:
+      - Group
   /group/{groupJid}/members:
     get:
       description: Search current projected members without provider aliases or live
@@ -10719,7 +10944,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create group
+      description: Create a group with bounded typed participant outcomes. The command
+        is journaled before provider admission when group management commands are
+        enabled.
       parameters:
       - description: Group data
         in: body
@@ -10731,11 +10958,20 @@ paths:
       - application/json
       responses:
         "200":
-          description: success
+          description: accepted
           schema:
-            $ref: '#/definitions/apidocs.SuccessResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CreateGroupCommandResult'
+              type: object
         "400":
           description: Error on validation
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: idempotency_conflict
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
@@ -10756,7 +10992,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Set group description
+      description: Set or clear group description with command-time permission revalidation
+        and a journaled acknowledgement.
       parameters:
       - description: Group data
         in: body
@@ -10768,15 +11005,36 @@ paths:
       - application/json
       responses:
         "200":
-          description: success
+          description: accepted
           schema:
-            $ref: '#/definitions/apidocs.SuccessResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement'
+              type: object
         "400":
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "403":
+          description: group_permission_denied
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: group_state_changed or idempotency_conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Mutation rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: projection_not_ready or provider_disconnected
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:
@@ -10884,7 +11142,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Join group link
+      description: Join with an invite code and return a typed public-safe outcome
+        without claiming membership when post-command confirmation is unavailable.
       parameters:
       - description: Group data
         in: body
@@ -10896,15 +11155,32 @@ paths:
       - application/json
       responses:
         "200":
-          description: success
+          description: accepted
           schema:
-            $ref: '#/definitions/apidocs.SuccessResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.JoinGroupCommandResult'
+              type: object
         "400":
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: idempotency_conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Mutation rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: provider_disconnected
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:
@@ -10916,27 +11192,49 @@ paths:
     post:
       consumes:
       - application/json
-      description: Leave group
+      description: Leave a group after command-time membership revalidation; unknown
+        provider outcomes are not retried.
       parameters:
       - description: Group data
         in: body
         name: message
         required: true
         schema:
-          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.LeaveGroupStruct'
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementLeaveGroupRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: success
+          description: accepted
           schema:
-            $ref: '#/definitions/apidocs.SuccessResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement'
+              type: object
         "400":
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "403":
+          description: group_permission_denied
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: group_state_changed or idempotency_conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Mutation rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: projection_not_ready or provider_disconnected
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:
@@ -11028,7 +11326,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Set group name
+      description: Set group name with command-time permission revalidation and a
+        journaled acknowledgement when group management commands are enabled.
       parameters:
       - description: Group data
         in: body
@@ -11040,15 +11339,36 @@ paths:
       - application/json
       responses:
         "200":
-          description: success
+          description: accepted
           schema:
-            $ref: '#/definitions/apidocs.SuccessResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement'
+              type: object
         "400":
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "403":
+          description: group_permission_denied
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: group_state_changed or idempotency_conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Mutation rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: projection_not_ready or provider_disconnected
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:
@@ -11060,27 +11380,50 @@ paths:
     post:
       consumes:
       - application/json
-      description: Update participant
+      description: Execute a bounded participant command. Add accepts canonical user
+        JIDs; remove/promote/demote accept opaque memberId values when group management
+        commands are enabled.
       parameters:
-      - description: Group data
+      - description: Group participant command
         in: body
         name: message
         required: true
         schema:
-          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.AddParticipantStruct'
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementParticipantRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: success
+          description: accepted
           schema:
-            $ref: '#/definitions/apidocs.SuccessResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantCommandResult'
+              type: object
         "400":
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "403":
+          description: group_permission_denied
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: group_state_changed or idempotency_conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Mutation rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: projection_not_ready or provider_disconnected
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:
@@ -11242,15 +11585,36 @@ paths:
       - application/json
       responses:
         "200":
-          description: success
+          description: accepted
           schema:
-            $ref: '#/definitions/apidocs.SuccessResponse'
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement'
+              type: object
         "400":
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "403":
+          description: group_permission_denied
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: group_state_changed or idempotency_conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Mutation rate limited; see Retry-After header
+          schema:
+            $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: projection_not_ready or provider_disconnected
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:

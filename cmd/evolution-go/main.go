@@ -40,6 +40,7 @@ import (
 	webhook_producer "github.com/evolution-foundation/evolution-go/pkg/events/webhook"
 	websocket_producer "github.com/evolution-foundation/evolution-go/pkg/events/websocket"
 	group_handler "github.com/evolution-foundation/evolution-go/pkg/group/handler"
+	group_repository "github.com/evolution-foundation/evolution-go/pkg/group/repository"
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
 	group_list_handler "github.com/evolution-foundation/evolution-go/pkg/groupList/handler"
 	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
@@ -342,6 +343,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if config.GroupManagementEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupManagementPermissions))
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupMembersProjection))
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupManagementCommands))
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupManagementAudit))
 	}
 	if config.GroupListEligibilityEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithStaticCapability(projection_service.CapabilityGroupListEligibility))
@@ -774,7 +777,19 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		Timeout:  config.MediaDownloadTimeout,
 	}, loggerWrapper)
 	chatService := chat_service.NewChatService(runtimeRegistry, whatsmeowService, loggerWrapper)
-	groupService := group_service.NewGroupService(runtimeRegistry, whatsmeowService, queryGuard, groupReader, groupManagementReader, groupWriter, remoteMediaFetcher, loggerWrapper)
+	groupManagementCommandRepository := group_repository.NewManagementCommandRepository(db)
+	groupService := group_service.NewGroupService(runtimeRegistry, whatsmeowService, queryGuard, outboundGuard, groupReader, groupManagementReader, groupWriter, groupManagementCommandRepository, remoteMediaFetcher, loggerWrapper)
+	if config.GroupManagementEnabled {
+		groupManagementRecovery := group_service.NewManagementRecoveryWorker(groupManagementCommandRepository, 5*time.Minute, time.Minute, 100,
+			func(recovered int64, err error) {
+				if err != nil {
+					logger.LogError("component=group_management action=recover_commands result=failed error_code=recovery_failed")
+				} else if recovered > 0 {
+					logger.LogInfo("component=group_management action=recover_commands result=recovered count=%d", recovered)
+				}
+			})
+		startBackground(backgroundWorkers, "group_management.recovery", groupManagementRecovery.Run)
+	}
 	callService := call_service.NewCallService(runtimeRegistry, whatsmeowService, loggerWrapper)
 	communityService := community_service.NewCommunityService(runtimeRegistry, whatsmeowService, loggerWrapper)
 	labelService := label_service.NewLabelService(runtimeRegistry, whatsmeowService, labelRepository, labelReader, labelWriter, loggerWrapper)

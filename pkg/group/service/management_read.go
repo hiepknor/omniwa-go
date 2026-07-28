@@ -122,6 +122,7 @@ type managementReadRepository interface {
 	SearchManagement(context.Context, string, string, projection_repository.GroupManagementFilter, int, *projection_repository.GroupCursor) (*projection_repository.GroupManagementPage, error)
 	GetManagement(context.Context, string, string, string) (*projection_repository.GroupManagementRecord, error)
 	ListManagementMembers(context.Context, string, string, string, projection_repository.GroupMemberFilter, int, *projection_repository.GroupMemberCursor) (*projection_repository.GroupManagementRecord, *projection_repository.GroupMemberPage, error)
+	GetManagementMember(context.Context, string, string, string, string) (*projection_repository.GroupManagementRecord, *projection_repository.GroupMemberRecord, error)
 }
 
 type managementReadState interface {

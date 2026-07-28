@@ -245,17 +245,29 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.GET("/list", r.groupHandler.ListGroups)
 			routes.GET("/search", r.groupHandler.SearchGroups)
 			routes.GET("/:groupJid/members", r.groupHandler.ListGroupMembers)
-			routes.POST("/info", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.GetGroupInfo)
-			routes.POST("/invitelink", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.GetGroupInviteLink)
+			routes.GET("/:groupJid/audit", r.groupHandler.GroupAudit)
 			routes.POST("/photo", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.SetGroupPhoto)
-			routes.POST("/name", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.SetGroupName)
-			routes.POST("/description", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.SetGroupDescription)
-			routes.POST("/create", r.jidValidationMiddleware.ValidateMultipleNumbers("participants"), r.groupHandler.CreateGroup)
-			routes.POST("/participant", r.jidValidationMiddleware.ValidateJIDFields("number", "participants"), r.groupHandler.UpdateParticipant)
+			if r.groupHandler.ManagementContractEnabled() {
+				routes.POST("/info", r.groupHandler.GetGroupInfo)
+				routes.POST("/invitelink", r.groupHandler.GetGroupInviteLink)
+				routes.POST("/name", r.groupHandler.SetGroupName)
+				routes.POST("/description", r.groupHandler.SetGroupDescription)
+				routes.POST("/create", r.groupHandler.CreateGroup)
+				routes.POST("/participant", r.groupHandler.UpdateParticipant)
+				routes.POST("/leave", r.groupHandler.LeaveGroup)
+				routes.POST("/settings", r.groupHandler.UpdateGroupSettings)
+			} else {
+				routes.POST("/info", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.GetGroupInfo)
+				routes.POST("/invitelink", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.GetGroupInviteLink)
+				routes.POST("/name", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.SetGroupName)
+				routes.POST("/description", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.SetGroupDescription)
+				routes.POST("/create", r.jidValidationMiddleware.ValidateMultipleNumbers("participants"), r.groupHandler.CreateGroup)
+				routes.POST("/participant", r.jidValidationMiddleware.ValidateJIDFields("number", "participants"), r.groupHandler.UpdateParticipant)
+				routes.POST("/leave", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.LeaveGroup)
+				routes.POST("/settings", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.UpdateGroupSettings)
+			}
 			routes.GET("/myall", r.groupHandler.GetMyGroups) // TODO: not working
 			routes.POST("/join", r.groupHandler.JoinGroupLink)
-			routes.POST("/leave", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.LeaveGroup)
-			routes.POST("/settings", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.UpdateGroupSettings)
 		}
 	}
 	routes = eng.Group("/call")
