@@ -78,6 +78,9 @@ type managementCommandProviderStub struct {
 	createErr          error
 	joinResult         managementJoinProviderResult
 	joinErr            error
+	photoCalls         int
+	photoID            string
+	photoErr           error
 }
 
 func (s *managementCommandProviderStub) PrepareManagementCommand(context.Context, string) error {
@@ -93,6 +96,10 @@ func (*managementCommandProviderStub) SetManagementDescription(context.Context, 
 }
 func (*managementCommandProviderStub) SetManagementSetting(context.Context, string, types.JID, string) error {
 	return nil
+}
+func (s *managementCommandProviderStub) SetManagementPhoto(context.Context, string, types.JID, []byte) (string, error) {
+	s.photoCalls++
+	return s.photoID, s.photoErr
 }
 func (*managementCommandProviderStub) LeaveManagementGroup(context.Context, string, types.JID) error {
 	return nil
@@ -241,5 +248,56 @@ func TestJoinGroupCommandMapsTypedProviderOutcomes(t *testing.T) {
 				t.Fatalf("result=%#v error=%v commandStatus=%s", result, err, repository.completedAs)
 			}
 		})
+	}
+}
+
+type managementPhotoAssetsStub struct {
+	prepared     *PreparedGroupPhoto
+	prepareErr   error
+	prepareCalls int
+	commitCalls  int
+	commitErr    error
+}
+
+func (s *managementPhotoAssetsStub) Prepare(context.Context, string, string, string, string) (*PreparedGroupPhoto, error) {
+	s.prepareCalls++
+	return s.prepared, s.prepareErr
+}
+
+func (s *managementPhotoAssetsStub) Commit(context.Context, string, string, string, string, string) error {
+	s.commitCalls++
+	return s.commitErr
+}
+
+func TestGroupPhotoCommandUsesPreparedAssetOnceAndCommitsProjection(t *testing.T) {
+	repository := &managementCommandRepositoryStub{created: true}
+	provider := &managementCommandProviderStub{photoID: "provider-picture-id"}
+	assets := &managementPhotoAssetsStub{prepared: &PreparedGroupPhoto{MediaAssetID: uuid.NewString(), Bytes: []byte("normalized-jpeg")}}
+	manager := NewManagementCommandManager(repository, managementCommandReader(projection_model.ParticipantRoleAdmin, false), provider, assets)
+	result, err := manager.SetPhoto(context.Background(), &instance_model.Instance{Id: uuid.NewString(), Jid: "actor@s.whatsapp.net"}, &SetGroupPhotoAssetRequest{GroupJID: "123@g.us", MediaAssetID: assets.prepared.MediaAssetID}, ManagementCommandMetadata{ActorReference: "secret-instance-token"})
+	if err != nil || result.Status != "completed" || provider.photoCalls != 1 || assets.prepareCalls != 1 || assets.commitCalls != 1 || repository.completedAs != group_model.ManagementCommandCompleted {
+		t.Fatalf("result=%#v error=%v provider=%#v assets=%#v repository=%#v", result, err, provider, assets, repository)
+	}
+}
+
+func TestGroupPhotoCommandRejectsInvalidAssetBeforeProviderAdmission(t *testing.T) {
+	repository := &managementCommandRepositoryStub{created: true}
+	provider := &managementCommandProviderStub{}
+	assets := &managementPhotoAssetsStub{prepareErr: ErrGroupPhotoAssetInvalidType}
+	manager := NewManagementCommandManager(repository, managementCommandReader(projection_model.ParticipantRoleAdmin, false), provider, assets)
+	_, err := manager.SetPhoto(context.Background(), &instance_model.Instance{Id: uuid.NewString(), Jid: "actor@s.whatsapp.net"}, &SetGroupPhotoAssetRequest{GroupJID: "123@g.us", MediaAssetID: uuid.NewString()}, ManagementCommandMetadata{ActorReference: "secret-instance-token"})
+	if !errors.Is(err, ErrGroupPhotoAssetInvalidType) || provider.prepareCalls != 0 || provider.photoCalls != 0 || repository.executeCalls != 0 || repository.completedAs != group_model.ManagementCommandFailed {
+		t.Fatalf("error=%v provider=%#v repository=%#v", err, provider, repository)
+	}
+}
+
+func TestGroupPhotoCommandNeverRetriesUnknownProviderOutcome(t *testing.T) {
+	repository := &managementCommandRepositoryStub{created: true}
+	provider := &managementCommandProviderStub{photoErr: errors.New("transport closed after admission")}
+	assets := &managementPhotoAssetsStub{prepared: &PreparedGroupPhoto{MediaAssetID: uuid.NewString(), Bytes: []byte("normalized-jpeg")}}
+	manager := NewManagementCommandManager(repository, managementCommandReader(projection_model.ParticipantRoleAdmin, false), provider, assets)
+	result, err := manager.SetPhoto(context.Background(), &instance_model.Instance{Id: uuid.NewString(), Jid: "actor@s.whatsapp.net"}, &SetGroupPhotoAssetRequest{GroupJID: "123@g.us", MediaAssetID: assets.prepared.MediaAssetID}, ManagementCommandMetadata{ActorReference: "secret-instance-token"})
+	if err != nil || result.Status != "unknown" || provider.photoCalls != 1 || assets.commitCalls != 0 || repository.completedAs != group_model.ManagementCommandUnknown {
+		t.Fatalf("result=%#v error=%v provider=%#v assets=%#v repository=%#v", result, err, provider, assets, repository)
 	}
 }

@@ -39,6 +39,7 @@ type Repository interface {
 	MarkReady(context.Context, string, string) (*media_model.Asset, error)
 	MarkFailed(context.Context, string, string, string) error
 	AddReference(context.Context, media_model.AssetReference) error
+	ReplaceOwnerReference(context.Context, media_model.AssetReference) error
 	RemoveReference(context.Context, string, string, media_model.ReferenceOwnerType, string) error
 	HasCampaignShadow(context.Context, string, string) (bool, error)
 	PlanInstancePurge(context.Context, string) (*InstancePurgePlan, error)
@@ -295,6 +296,32 @@ func (r *repository) AddReference(ctx context.Context, reference media_model.Ass
 	})
 }
 
+// ReplaceOwnerReference retains exactly one asset for an owner. It validates
+// and locks the new ready asset before removing the previous reference, so a
+// concurrent cleanup cannot create a dangling owner.
+func (r *repository) ReplaceOwnerReference(ctx context.Context, reference media_model.AssetReference) error {
+	if err := validateReference(r, ctx, &reference); err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var asset media_model.Asset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("instance_id = ? AND id = ? AND status = ? AND deleted_at IS NULL AND cleanup_claim_token IS NULL", reference.InstanceID, reference.MediaAssetID, media_model.AssetStatusReady).
+			First(&asset).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAssetConflict
+			}
+			return err
+		}
+		if err := tx.Where("instance_id = ? AND owner_type = ? AND owner_id = ? AND media_asset_id <> ?", reference.InstanceID, reference.OwnerType, reference.OwnerID, reference.MediaAssetID).
+			Delete(&media_model.AssetReference{}).Error; err != nil {
+			return err
+		}
+		reference.CreatedAt = r.now().UTC()
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&reference).Error
+	})
+}
+
 func (r *repository) RemoveReference(ctx context.Context, instanceID, assetID string, ownerType media_model.ReferenceOwnerType, ownerID string) error {
 	if err := validateIdentity(r, ctx, instanceID, assetID); err != nil {
 		return err
@@ -527,7 +554,8 @@ func validateCleanup(r *repository, ctx context.Context, asset *media_model.Asse
 }
 
 func validOwner(value media_model.ReferenceOwnerType) bool {
-	return value == media_model.ReferenceOwnerCampaign || value == media_model.ReferenceOwnerMessage
+	return value == media_model.ReferenceOwnerCampaign || value == media_model.ReferenceOwnerMessage ||
+		value == media_model.ReferenceOwnerGroupPhoto || value == media_model.ReferenceOwnerGroupPhotoPending
 }
 
 func validSHA(value string) bool {

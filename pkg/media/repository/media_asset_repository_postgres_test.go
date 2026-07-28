@@ -42,10 +42,12 @@ func TestPostgresMediaAssetLifecycleIsInstanceScopedAndCleanupFenced(t *testing.
 		t.Fatal(err)
 	}
 	assetID := uuid.NewString()
+	replacementAssetID := uuid.NewString()
 	t.Cleanup(func() {
-		_ = db.Where("media_asset_id = ?", assetID).Delete(&media_model.AssetReference{}).Error
-		_ = db.Where("media_asset_id = ?", assetID).Delete(&media_model.AssetVariant{}).Error
-		_ = db.Unscoped().Where("id = ?", assetID).Delete(&media_model.Asset{}).Error
+		assetIDs := []string{assetID, replacementAssetID}
+		_ = db.Where("media_asset_id IN ?", assetIDs).Delete(&media_model.AssetReference{}).Error
+		_ = db.Where("media_asset_id IN ?", assetIDs).Delete(&media_model.AssetVariant{}).Error
+		_ = db.Unscoped().Where("id IN ?", assetIDs).Delete(&media_model.Asset{}).Error
 		_ = db.Where("id IN ?", []string{instance.Id, other.Id}).Delete(&instance_model.Instance{}).Error
 	})
 
@@ -85,8 +87,48 @@ func TestPostgresMediaAssetLifecycleIsInstanceScopedAndCleanupFenced(t *testing.
 	if err != nil || ready.Canonical == nil || ready.Canonical.ObjectKey != variant.ObjectKey {
 		t.Fatalf("ready asset = %+v, err=%v", ready, err)
 	}
+	replacementHash := strings.Repeat("2", 64)
+	if _, inserted, err := repository.Create(ctx, CreateAssetInput{
+		ID: replacementAssetID, InstanceID: instance.Id, Origin: media_model.AssetOriginDeviceUpload,
+		Status: media_model.AssetStatusUploading, RequestReferenceHash: &replacementHash, ExpiresAt: &expires,
+	}); err != nil || !inserted {
+		t.Fatalf("create replacement inserted=%t, err=%v", inserted, err)
+	}
+	replacementVariant := variant
+	replacementVariant.MediaAssetID = replacementAssetID
+	replacementVariant.ObjectKey = "media-assets/" + instance.Id + "/" + replacementAssetID + "/canonical"
+	replacementVariant.SHA256 = strings.Repeat("b", 64)
+	if err := repository.AddVariant(ctx, replacementVariant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.MarkReady(ctx, instance.Id, replacementAssetID); err != nil {
+		t.Fatal(err)
+	}
+	groupJID := "120363000001@g.us"
+	if err := repository.AddReference(ctx, media_model.AssetReference{
+		InstanceID: instance.Id, MediaAssetID: assetID, OwnerType: media_model.ReferenceOwnerGroupPhoto, OwnerID: groupJID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.ReplaceOwnerReference(ctx, media_model.AssetReference{
+		InstanceID: instance.Id, MediaAssetID: replacementAssetID, OwnerType: media_model.ReferenceOwnerGroupPhoto, OwnerID: groupJID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var photoReferences []media_model.AssetReference
+	if err := db.Where("instance_id = ? AND owner_type = ? AND owner_id = ?", instance.Id, media_model.ReferenceOwnerGroupPhoto, groupJID).Find(&photoReferences).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(photoReferences) != 1 || photoReferences[0].MediaAssetID != replacementAssetID {
+		t.Fatalf("replaced photo references = %#v", photoReferences)
+	}
+	if err := repository.ReplaceOwnerReference(ctx, media_model.AssetReference{
+		InstanceID: other.Id, MediaAssetID: replacementAssetID, OwnerType: media_model.ReferenceOwnerGroupPhoto, OwnerID: groupJID,
+	}); !errors.Is(err, ErrAssetConflict) {
+		t.Fatalf("cross-instance replacement error = %v", err)
+	}
 	plan, err := repository.PlanInstancePurge(ctx, instance.Id)
-	if err != nil || len(plan.AssetIDs) != 1 || plan.AssetIDs[0] != assetID || len(plan.Variants) != 1 || plan.Variants[0].ObjectKey != variant.ObjectKey {
+	if err != nil || len(plan.AssetIDs) != 2 || len(plan.Variants) != 2 {
 		t.Fatalf("instance purge plan = %+v, err=%v", plan, err)
 	}
 	otherPlan, err := repository.PlanInstancePurge(ctx, other.Id)

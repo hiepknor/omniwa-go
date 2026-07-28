@@ -131,6 +131,19 @@ func (w *GroupWriter) WriteInviteLink(ctx context.Context, instanceID, groupID, 
 	return w.applyPatch(ctx, version)
 }
 
+func (w *GroupWriter) WritePhoto(ctx context.Context, instanceID, groupID, pictureID, mediaAssetID string) error {
+	version, err := w.patch(instanceID, groupID)
+	if err != nil {
+		return err
+	}
+	if pictureID == "" || uuid.Validate(mediaAssetID) != nil {
+		return errors.New("confirmed group picture metadata is required")
+	}
+	version.patch.PictureID = &pictureID
+	version.patch.PictureMediaAssetID = &mediaAssetID
+	return w.applyPatch(ctx, version)
+}
+
 func (w *GroupWriter) Tombstone(ctx context.Context, instanceID, groupID string) error {
 	if err := w.validate(instanceID); err != nil || groupID == "" {
 		if err != nil {

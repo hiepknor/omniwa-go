@@ -8,8 +8,8 @@ photo behavior remain separate rollout stages.
 
 The normalized directory/detail, tri-state permission reads, bounded member
 directory, journaled commands, and public audit reads are now implemented
-behind the same disabled-by-default gate. Shared-media photos remain a later
-stage.
+behind the same disabled-by-default gate. Shared-media photos are implemented
+behind an additional disabled-by-default gate.
 
 ## Context
 
@@ -111,6 +111,18 @@ command type, status, bounded summary, actor type, and timestamp. They never
 expose invite links, participant aliases, raw provider payloads, credentials,
 or idempotency keys.
 
+The photo stage adds migration 33 and the independent
+`WA_GROUP_PHOTO_ASSETS_ENABLED` gate. `POST /group/photo` accepts only an
+instance-owned ready device-upload `mediaAssetId` when the gate is enabled.
+The server rereads the private canonical JPEG/PNG, verifies byte and pixel
+bounds, center-crops it, and emits a bounded 640-by-640 JPEG for one provider
+call. A time-bounded `group_photo_pending` reference fences cleanup between
+validation and provider admission. Confirmed success writes the provider
+picture ID plus opaque asset ID to the Group projection, replaces the previous
+durable `group_photo` owner reference, and removes the pending reservation.
+Unknown outcomes are never retried; their reservation expires after 24 hours.
+Neither image bytes nor storage metadata enter the journal or audit summary.
+
 ## Alternatives considered
 
 A `/v2` route tree was rejected because the product requires one Group route
@@ -130,22 +142,28 @@ not safely idempotent.
   row and do not expose Phone, LID, or provider JID aliases.
 - Later stages must use bounded strict-JSON handlers, normalized errors with
   request IDs, scoped cursors, and command-time permission revalidation.
-- Shared-media Group photos require a later media-reference owner and storage
-  integration; this foundation stores only nullable provider picture metadata.
+- Shared-media Group photos reuse the private asset lifecycle without exposing
+  storage metadata. A provider success followed by a local projection/reference
+  failure is reported as `unknown` and requires operator review; it is never
+  retried automatically.
 
 ## Rollout and rollback
 
-Apply migrations 30, 31, and 32 with
+Apply migrations 30, 31, 32, and 33 with
 `WA_GROUP_MANAGEMENT_CONTRACT_ENABLED=false`. Verify
 participant public IDs are populated and unique, journal constraints are
 present, member-directory indexes are valid, and existing Group projection
 reads and mutations remain unchanged. Because index creation runs in the
 versioned migration transaction, first canary the deploy against production-like
 participant volume and observe migration lock duration before broader rollout.
-Enable normalized reads, members, and commands/audit in that order. Keep Group
-photos on the legacy contract until the separately advertised shared-media
-surface is ready.
+Enable normalized reads, members, and commands/audit in that order. Keep
+`WA_GROUP_PHOTO_ASSETS_ENABLED=false` until the shared private bucket, device
+upload, normalized Group management commands, and Console contract are
+verified. Enable it after the Group management gate and require the separately
+advertised `group_photo_assets` capability before Console sends an asset ID.
 
-Disable the feature gate to roll behavior back. Leave additive columns and
-tables in place; repair schema defects with a forward migration. Do not drop
-journal or audit rows during application rollback.
+Disable the photo gate first to restore the legacy photo handler, then disable
+the management gate if needed. Leave additive columns, references, and tables
+in place; repair schema defects with a forward migration. Keep the shared
+bucket reachable while durable photo references exist, and do not drop journal
+or audit rows during application rollback.

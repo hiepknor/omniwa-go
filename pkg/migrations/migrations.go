@@ -1385,6 +1385,20 @@ ALTER TABLE group_management_commands
 ALTER TABLE group_management_audit_events
     ALTER COLUMN group_jid DROP NOT NULL;`,
 	},
+	{
+		Version: 33,
+		Name:    "add_group_photo_asset_references",
+		SQL: `ALTER TABLE media_asset_references
+    DROP CONSTRAINT media_asset_references_owner_check,
+    ADD CONSTRAINT media_asset_references_owner_check
+        CHECK (owner_type IN ('campaign', 'message', 'group_photo', 'group_photo_pending'));
+
+ALTER TABLE projected_groups
+    ADD COLUMN picture_media_asset_id UUID NULL,
+    ADD CONSTRAINT projected_groups_picture_media_asset_fk
+        FOREIGN KEY (picture_media_asset_id, instance_id)
+        REFERENCES media_assets(id, instance_id) ON DELETE RESTRICT;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

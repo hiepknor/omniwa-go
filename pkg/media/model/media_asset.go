@@ -23,8 +23,10 @@ const (
 	VariantProviderOriginal VariantKind = "provider_original"
 	VariantCanonical        VariantKind = "canonical"
 
-	ReferenceOwnerCampaign ReferenceOwnerType = "campaign"
-	ReferenceOwnerMessage  ReferenceOwnerType = "message"
+	ReferenceOwnerCampaign          ReferenceOwnerType = "campaign"
+	ReferenceOwnerMessage           ReferenceOwnerType = "message"
+	ReferenceOwnerGroupPhoto        ReferenceOwnerType = "group_photo"
+	ReferenceOwnerGroupPhotoPending ReferenceOwnerType = "group_photo_pending"
 )
 
 type Asset struct {

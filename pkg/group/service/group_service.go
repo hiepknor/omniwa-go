@@ -42,6 +42,7 @@ type GroupService interface {
 	ExecuteUpdateParticipant(context.Context, *ManagementParticipantRequest, *instance_model.Instance, ManagementCommandMetadata) (*ParticipantCommandResult, error)
 	ExecuteCreateGroup(context.Context, *CreateGroupStruct, *instance_model.Instance, ManagementCommandMetadata) (*CreateGroupCommandResult, error)
 	ExecuteJoinGroup(context.Context, *JoinGroupStruct, *instance_model.Instance, ManagementCommandMetadata) (*JoinGroupCommandResult, error)
+	ExecuteSetGroupPhoto(context.Context, *SetGroupPhotoAssetRequest, *instance_model.Instance, ManagementCommandMetadata) (*CommandAcknowledgement, error)
 	GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error)
 	SetGroupPhoto(data *SetGroupPhotoStruct, instance *instance_model.Instance) (string, error)
 	SetGroupName(data *SetGroupNameStruct, instance *instance_model.Instance) error
@@ -94,6 +95,11 @@ type GetGroupInviteLinkStruct struct {
 type SetGroupPhotoStruct struct {
 	GroupJID string `json:"groupJid"`
 	Image    string `json:"image"`
+}
+
+type SetGroupPhotoAssetRequest struct {
+	GroupJID     string `json:"groupJid"`
+	MediaAssetID string `json:"mediaAssetId" format:"uuid"`
 }
 
 type SetGroupNameStruct struct {
@@ -287,6 +293,10 @@ func (g *groupService) ExecuteCreateGroup(ctx context.Context, data *CreateGroup
 
 func (g *groupService) ExecuteJoinGroup(ctx context.Context, data *JoinGroupStruct, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*JoinGroupCommandResult, error) {
 	return g.commandManager.JoinGroup(ctx, instance, data, metadata)
+}
+
+func (g *groupService) ExecuteSetGroupPhoto(ctx context.Context, data *SetGroupPhotoAssetRequest, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*CommandAcknowledgement, error) {
+	return g.commandManager.SetPhoto(ctx, instance, data, metadata)
 }
 
 func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {
@@ -819,6 +829,18 @@ func (g *groupService) ResetManagementInviteLink(ctx context.Context, instanceID
 	return nil
 }
 
+func (g *groupService) SetManagementPhoto(ctx context.Context, instanceID string, groupJID types.JID, photo []byte) (string, error) {
+	client, err := g.managementClient(instanceID)
+	if err != nil {
+		return "", err
+	}
+	pictureID, err := client.SetGroupPhoto(ctx, groupJID, photo)
+	if err != nil {
+		return "", g.observeManagementError(instanceID, err)
+	}
+	return pictureID, nil
+}
+
 func (g *groupService) UpdateManagementParticipants(ctx context.Context, instanceID string, groupJID types.JID, participants []types.JID, action string) ([]types.GroupParticipant, error) {
 	client, err := g.managementClient(instanceID)
 	if err != nil {
@@ -1013,6 +1035,7 @@ func NewGroupService(
 	managementReader *ManagementReader,
 	groupWriter *projection_service.GroupWriter,
 	managementCommands group_repository.ManagementCommandRepository,
+	groupPhotoAssets *GroupPhotoAssetService,
 	mediaFetcher netguard.Fetcher,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) GroupService {
@@ -1028,6 +1051,6 @@ func NewGroupService(
 		mediaFetcher:     mediaFetcher,
 		loggerWrapper:    loggerWrapper,
 	}
-	service.commandManager = NewManagementCommandManager(managementCommands, managementReader, service)
+	service.commandManager = NewManagementCommandManager(managementCommands, managementReader, service, groupPhotoAssets)
 	return service
 }

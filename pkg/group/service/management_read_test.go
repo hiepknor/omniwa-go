@@ -118,9 +118,10 @@ func TestManagementCursorIsBoundToInstanceAndFilters(t *testing.T) {
 
 func TestManagementDetailUsesTriStateDecisions(t *testing.T) {
 	announce := false
+	mediaAssetID := uuid.NewString()
 	now := time.Unix(300, 0).UTC()
 	repository := &managementReadRepositoryStub{record: &projection_repository.GroupManagementRecord{Group: projection_model.Group{
-		GroupID: "120363000001@g.us", Announce: &announce, UpdatedAt: now,
+		GroupID: "120363000001@g.us", Announce: &announce, PictureMediaAssetID: &mediaAssetID, UpdatedAt: now,
 	}}}
 	reader := NewManagementReader(repository, managementReadStateStub{state: readyManagementState()})
 	reader.now = func() time.Time { return now }
@@ -133,6 +134,9 @@ func TestManagementDetailUsesTriStateDecisions(t *testing.T) {
 	}
 	if detail.Actions.SendMessage.State != "unknown" || detail.Actions.SendMessage.Reason == nil || *detail.Actions.SendMessage.Reason != "permission_unknown" || detail.Actions.EditName.State != "unknown" {
 		t.Fatalf("actions = %#v", detail.Actions)
+	}
+	if detail.Photo == nil || detail.Photo.MediaAssetID == nil || *detail.Photo.MediaAssetID != mediaAssetID {
+		t.Fatalf("photo = %#v", detail.Photo)
 	}
 }
 

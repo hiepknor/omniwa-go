@@ -263,9 +263,10 @@ func TestGroupManagementCapabilityRequiresReadyCurrentGroupProjection(t *testing
 		WithResourceCapability("groups", CapabilityGroupMembersProjection),
 		WithResourceCapability("groups", CapabilityGroupManagementCommands),
 		WithResourceCapability("groups", CapabilityGroupManagementAudit),
+		WithResourceCapability("groups", CapabilityGroupPhotoAssets),
 	)
 	capabilities, err := service.Capabilities("instance-a")
-	if err != nil || !containsCapability(capabilities, CapabilityGroupManagementPermissions) || !containsCapability(capabilities, CapabilityGroupMembersProjection) || !containsCapability(capabilities, CapabilityGroupManagementCommands) || !containsCapability(capabilities, CapabilityGroupManagementAudit) {
+	if err != nil || !containsCapability(capabilities, CapabilityGroupManagementPermissions) || !containsCapability(capabilities, CapabilityGroupMembersProjection) || !containsCapability(capabilities, CapabilityGroupManagementCommands) || !containsCapability(capabilities, CapabilityGroupManagementAudit) || !containsCapability(capabilities, CapabilityGroupPhotoAssets) {
 		t.Fatalf("ready capabilities = %v, %v", capabilities, err)
 	}
 	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
@@ -273,7 +274,7 @@ func TestGroupManagementCapabilityRequiresReadyCurrentGroupProjection(t *testing
 		SchemaVersion: GroupsProjectionSchemaVersion - 1, LastReconciledAt: &reconciledAt,
 	}
 	capabilities, err = service.Capabilities("instance-a")
-	if err != nil || containsCapability(capabilities, CapabilityGroupManagementPermissions) || containsCapability(capabilities, CapabilityGroupMembersProjection) || containsCapability(capabilities, CapabilityGroupManagementCommands) || containsCapability(capabilities, CapabilityGroupManagementAudit) {
+	if err != nil || containsCapability(capabilities, CapabilityGroupManagementPermissions) || containsCapability(capabilities, CapabilityGroupMembersProjection) || containsCapability(capabilities, CapabilityGroupManagementCommands) || containsCapability(capabilities, CapabilityGroupManagementAudit) || containsCapability(capabilities, CapabilityGroupPhotoAssets) {
 		t.Fatalf("schema-old capabilities = %v, %v", capabilities, err)
 	}
 }

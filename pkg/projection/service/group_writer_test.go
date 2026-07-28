@@ -90,14 +90,18 @@ func TestGroupWriterWritesMutationPatchesAndTombstone(t *testing.T) {
 	if err := writer.WriteInviteLink(ctx, "instance-a", "group@g.us", "https://chat.whatsapp.com/new"); err != nil {
 		t.Fatal(err)
 	}
+	if err := writer.WritePhoto(ctx, "instance-a", "group@g.us", "provider-picture-id", "f6ad67ec-23dc-4130-a898-233cc67df2a2"); err != nil {
+		t.Fatal(err)
+	}
 	if err := writer.Tombstone(ctx, "instance-a", "group@g.us"); err != nil {
 		t.Fatal(err)
 	}
-	if len(repository.patches) != 5 || repository.patches[0].Name == nil || *repository.patches[0].Name != "Renamed" ||
+	if len(repository.patches) != 6 || repository.patches[0].Name == nil || *repository.patches[0].Name != "Renamed" ||
 		repository.patches[1].TopicDeleted == nil || !*repository.patches[1].TopicDeleted ||
 		repository.patches[2].MemberAddMode == nil || *repository.patches[2].MemberAddMode != "all_member_add" ||
 		len(repository.patches[3].ParticipantChanges) != 1 || repository.patches[3].ParticipantChanges[0].Role != projection_model.ParticipantRoleAdmin ||
-		repository.patches[4].InviteLink == nil || repository.tombstoneID != "group@g.us" || repository.tombstoneCause != projection_model.GroupTombstoneAccessLost || state.recorded != 6 {
+		repository.patches[4].InviteLink == nil || repository.patches[5].PictureID == nil || repository.patches[5].PictureMediaAssetID == nil ||
+		repository.tombstoneID != "group@g.us" || repository.tombstoneCause != projection_model.GroupTombstoneAccessLost || state.recorded != 7 {
 		t.Fatalf("write-through patches = %#v tombstone=%q state=%#v", repository.patches, repository.tombstoneID, state)
 	}
 	if err := writer.MarkStale("instance-a"); err != nil || state.stale != 1 {

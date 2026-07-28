@@ -160,6 +160,8 @@ type GroupPatch struct {
 	ParentGroupID        *string
 	IsDefaultSubgroup    *bool
 	InviteLink           *string
+	PictureID            *string
+	PictureMediaAssetID  *string
 	ParticipantChanges   []GroupParticipantPatch
 }
 
@@ -404,6 +406,14 @@ func (r *groupRepository) ApplyPatch(ctx context.Context, patch GroupPatch) (boo
 			applyField("invite_link", "invite_link", *patch.InviteLink)
 			if _, ok := updates["invite_link"]; ok {
 				updates["invite_link_updated_at"] = now
+			}
+		}
+		if patch.PictureID != nil && patch.PictureMediaAssetID != nil {
+			applyField("picture", "picture_id", *patch.PictureID)
+			if _, ok := updates["picture_id"]; ok {
+				updates["picture_media_asset_id"] = *patch.PictureMediaAssetID
+				updates["picture_removed"] = false
+				updates["picture_updated_at"] = now
 			}
 		}
 		if len(updates) > 0 {
@@ -1184,6 +1194,10 @@ func validateGroupPatch(patch GroupPatch) error {
 	}
 	if patch.EphemeralTimer != nil && *patch.EphemeralTimer < 0 {
 		return errors.New("group patch contains an invalid timer")
+	}
+	if (patch.PictureMediaAssetID != nil && (patch.PictureID == nil || uuid.Validate(*patch.PictureMediaAssetID) != nil)) ||
+		(patch.PictureID != nil && patch.PictureMediaAssetID == nil) {
+		return errors.New("group patch contains invalid picture metadata")
 	}
 	seen := make(map[string]struct{}, len(patch.ParticipantChanges))
 	for _, participant := range patch.ParticipantChanges {

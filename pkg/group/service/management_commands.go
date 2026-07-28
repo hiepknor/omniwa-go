@@ -96,6 +96,7 @@ type managementCommandProvider interface {
 	SetManagementName(context.Context, string, types.JID, string) error
 	SetManagementDescription(context.Context, string, types.JID, string) error
 	SetManagementSetting(context.Context, string, types.JID, string) error
+	SetManagementPhoto(context.Context, string, types.JID, []byte) (string, error)
 	LeaveManagementGroup(context.Context, string, types.JID) error
 	ResetManagementInviteLink(context.Context, string, types.JID) error
 	UpdateManagementParticipants(context.Context, string, types.JID, []types.JID, string) ([]types.GroupParticipant, error)
@@ -104,13 +105,23 @@ type managementCommandProvider interface {
 }
 
 type ManagementCommandManager struct {
-	repository group_repository.ManagementCommandRepository
-	reader     *ManagementReader
-	provider   managementCommandProvider
+	repository  group_repository.ManagementCommandRepository
+	reader      *ManagementReader
+	provider    managementCommandProvider
+	photoAssets managementPhotoAssets
 }
 
-func NewManagementCommandManager(repository group_repository.ManagementCommandRepository, reader *ManagementReader, provider managementCommandProvider) *ManagementCommandManager {
-	return &ManagementCommandManager{repository: repository, reader: reader, provider: provider}
+type managementPhotoAssets interface {
+	Prepare(context.Context, string, string, string, string) (*PreparedGroupPhoto, error)
+	Commit(context.Context, string, string, string, string, string) error
+}
+
+func NewManagementCommandManager(repository group_repository.ManagementCommandRepository, reader *ManagementReader, provider managementCommandProvider, photoAssets ...managementPhotoAssets) *ManagementCommandManager {
+	manager := &ManagementCommandManager{repository: repository, reader: reader, provider: provider}
+	if len(photoAssets) > 0 {
+		manager.photoAssets = photoAssets[0]
+	}
+	return manager
 }
 
 type simpleManagementCommand struct {
@@ -186,6 +197,110 @@ func (m *ManagementCommandManager) ResetInviteLink(ctx context.Context, instance
 			return m.provider.ResetManagementInviteLink(callCtx, instanceID, jid)
 		},
 	})
+}
+
+func (m *ManagementCommandManager) SetPhoto(ctx context.Context, instance *instance_model.Instance, data *SetGroupPhotoAssetRequest, metadata ManagementCommandMetadata) (*CommandAcknowledgement, error) {
+	if data == nil {
+		return nil, group_repository.ErrInvalidManagementCommand
+	}
+	jid, ok := utils.ParseJID(data.GroupJID)
+	if m == nil || m.repository == nil || m.reader == nil || m.provider == nil || m.photoAssets == nil || ctx == nil || instance == nil ||
+		uuid.Validate(instance.Id) != nil || instance.Jid == "" || !ok || jid.Server != types.GroupServer || uuid.Validate(data.MediaAssetID) != nil ||
+		strings.TrimSpace(metadata.ActorReference) == "" || len(metadata.IdempotencyKey) > 255 {
+		return nil, group_repository.ErrInvalidManagementCommand
+	}
+	fingerprint, err := managementFingerprint("photo_updated", jid.String(), data)
+	if err != nil {
+		return nil, err
+	}
+	var idempotencyHash *string
+	if metadata.IdempotencyKey != "" {
+		value := managementHash(metadata.IdempotencyKey)
+		idempotencyHash = &value
+	}
+	var requestID *string
+	if metadata.RequestID != "" {
+		requestID = &metadata.RequestID
+	}
+	command, created, err := m.repository.Create(ctx, group_repository.CreateManagementCommandInput{
+		ID: uuid.NewString(), InstanceID: instance.Id, GroupJID: jid.String(), CommandType: "photo_updated",
+		IdempotencyKeyHash: idempotencyHash, RequestFingerprint: fingerprint, RequestID: requestID,
+		ActorType: "instance", ActorReferenceHash: managementHash(metadata.ActorReference),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !created {
+		return acknowledgementFromStored(command)
+	}
+	detail, _, err := m.reader.Get(ctx, instance, jid.String())
+	if err != nil {
+		m.completeRejected(ctx, command, "projection_not_ready", nil)
+		return nil, err
+	}
+	if detail.Actions.SetPhoto.State != "allowed" {
+		reason := "permission_unknown"
+		if detail.Actions.SetPhoto.Reason != nil {
+			reason = *detail.Actions.SetPhoto.Reason
+		}
+		m.completeRejected(ctx, command, reason, nil)
+		if detail.Actions.SetPhoto.State == "denied" {
+			return nil, ErrManagementPermissionDenied
+		}
+		return nil, ErrManagementPermissionUnknown
+	}
+	prepared, err := m.photoAssets.Prepare(ctx, instance.Id, jid.String(), data.MediaAssetID, command.ID)
+	if err != nil {
+		m.completeRejected(ctx, command, groupPhotoErrorReason(err), nil)
+		return nil, err
+	}
+	if err := m.provider.PrepareManagementCommand(ctx, instance.Id); err != nil {
+		m.completeRejected(ctx, command, "provider_disconnected", nil)
+		if managementRateLimited(err) {
+			return nil, err
+		}
+		return nil, ErrManagementProviderNotReady
+	}
+	if _, err := m.repository.MarkExecuting(ctx, instance.Id, command.ID); err != nil {
+		return nil, err
+	}
+	acknowledgement := CommandAcknowledgement{CommandID: command.ID, Command: "photo_updated", GroupJID: jid.String(), Status: "completed", ProjectionRefreshExpected: true}
+	pictureID, providerErr := m.provider.SetManagementPhoto(ctx, instance.Id, jid, prepared.Bytes)
+	if managementRateLimited(providerErr) {
+		m.completeRejected(ctx, command, "rate_limited", nil)
+		return nil, providerErr
+	}
+	if providerErr != nil || pictureID == "" {
+		acknowledgement.Status = "unknown"
+		_ = m.complete(ctx, command, group_model.ManagementCommandUnknown, acknowledgement, map[string]any{"reason": "unknown_outcome"})
+		return &acknowledgement, nil
+	}
+	if err := m.photoAssets.Commit(ctx, instance.Id, jid.String(), pictureID, prepared.MediaAssetID, command.ID); err != nil {
+		acknowledgement.Status = "unknown"
+		_ = m.complete(ctx, command, group_model.ManagementCommandUnknown, acknowledgement, map[string]any{"reason": "projection_commit_failed"})
+		return &acknowledgement, nil
+	}
+	if err := m.complete(ctx, command, group_model.ManagementCommandCompleted, acknowledgement, nil); err != nil {
+		acknowledgement.Status = "unknown"
+	}
+	return &acknowledgement, nil
+}
+
+func groupPhotoErrorReason(err error) string {
+	switch {
+	case errors.Is(err, ErrGroupPhotoAssetNotFound):
+		return "media_asset_not_found"
+	case errors.Is(err, ErrGroupPhotoAssetInvalidType):
+		return "media_asset_invalid_type"
+	case errors.Is(err, ErrGroupPhotoAssetTooLarge):
+		return "media_asset_too_large"
+	case errors.Is(err, ErrGroupPhotoAssetIntegrity):
+		return "media_asset_integrity_failed"
+	case errors.Is(err, ErrGroupPhotoAssetStorage):
+		return "media_asset_storage_unavailable"
+	default:
+		return "media_asset_not_ready"
+	}
 }
 
 func (m *ManagementCommandManager) UpdateParticipants(ctx context.Context, instance *instance_model.Instance, data *ManagementParticipantRequest, metadata ManagementCommandMetadata) (*ParticipantCommandResult, error) {
@@ -653,6 +768,9 @@ func (m *ManagementCommandManager) complete(ctx context.Context, command *group_
 	outcome, err := json.Marshal(acknowledgement)
 	if err != nil {
 		return err
+	}
+	if audit == nil {
+		audit = map[string]any{}
 	}
 	summary, err := json.Marshal(audit)
 	if err != nil {

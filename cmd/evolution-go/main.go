@@ -279,6 +279,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if config.InboundImageContentEnabled && !config.MediaAssetsEnabled {
 		logger.LogFatal("component=inbound_image_content action=initialize result=failed error=media_assets_required")
 	}
+	if config.GroupPhotoAssetsEnabled && (!config.GroupManagementEnabled || !config.MediaAssetsEnabled) {
+		logger.LogFatal("component=group_photo_assets action=initialize result=failed error=group_management_and_media_assets_required")
+	}
 	if config.InboundImageContentEnabled && (len(config.MediaDescriptorKey) != 32 || config.MediaDescriptorKeyVersion < 1) {
 		logger.LogFatal("component=inbound_image_content action=initialize result=failed error=descriptor_key_required")
 	}
@@ -345,6 +348,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupMembersProjection))
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupManagementCommands))
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupManagementAudit))
+	}
+	if config.GroupPhotoAssetsEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupPhotoAssets))
 	}
 	if config.GroupListEligibilityEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithStaticCapability(projection_service.CapabilityGroupListEligibility))
@@ -623,15 +629,16 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	sendMessageService := send_service.NewSendService(runtimeRegistry, whatsmeowService, config, queryGuard, identityResolver, projection_service.NewMessageWriteThrough(chatMessageProjector), remoteMediaFetcher, audioConverterRequester, loggerWrapper)
 	var mediaAssetHandler media_handler.Handler
 	var outboundImageService *media_service.OutboundImageService
-	if config.ChatImageContentEnabled || config.InboundImageContentEnabled {
+	var assetService *media_service.AssetService
+	if config.ChatImageContentEnabled || config.InboundImageContentEnabled || config.GroupPhotoAssetsEnabled {
 		assetSettings := media_service.AssetSettings{
 			MaxBytes: config.MediaAssetMaxBytes, MaxPixels: config.MediaAssetMaxPixels,
 			UnboundTTL: config.MediaAssetUnboundTTL, DeleteLease: 5 * time.Minute,
 		}
-		assetService := media_service.NewAssetService(mediaAssetRepository, mediaAssetStore, assetSettings)
+		assetService = media_service.NewAssetService(mediaAssetRepository, mediaAssetStore, assetSettings)
 		mediaAssetHandler = media_handler.New(assetService, config.MediaAssetMaxBytes,
-			media_handler.WithDeviceUploads(config.ChatImageContentEnabled),
-			media_handler.WithContent(config.InboundImageContentEnabled),
+			media_handler.WithDeviceUploads(config.ChatImageContentEnabled || config.GroupPhotoAssetsEnabled),
+			media_handler.WithContent(config.InboundImageContentEnabled || config.GroupPhotoAssetsEnabled),
 		)
 		if config.ChatImageContentEnabled {
 			outboundImageService = media_service.NewOutboundImageService(
@@ -778,7 +785,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}, loggerWrapper)
 	chatService := chat_service.NewChatService(runtimeRegistry, whatsmeowService, loggerWrapper)
 	groupManagementCommandRepository := group_repository.NewManagementCommandRepository(db)
-	groupService := group_service.NewGroupService(runtimeRegistry, whatsmeowService, queryGuard, outboundGuard, groupReader, groupManagementReader, groupWriter, groupManagementCommandRepository, remoteMediaFetcher, loggerWrapper)
+	var groupPhotoAssets *group_service.GroupPhotoAssetService
+	if config.GroupPhotoAssetsEnabled {
+		groupPhotoAssets = group_service.NewGroupPhotoAssetService(assetService, mediaAssetRepository, groupWriter, config.MediaAssetMaxBytes, config.MediaAssetMaxPixels)
+	}
+	groupService := group_service.NewGroupService(runtimeRegistry, whatsmeowService, queryGuard, outboundGuard, groupReader, groupManagementReader, groupWriter, groupManagementCommandRepository, groupPhotoAssets, remoteMediaFetcher, loggerWrapper)
 	if config.GroupManagementEnabled {
 		groupManagementRecovery := group_service.NewManagementRecoveryWorker(groupManagementCommandRepository, 5*time.Minute, time.Minute, 100,
 			func(recovered int64, err error) {
@@ -846,7 +857,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		send_handler.NewSendHandler(sendMessageService, sendHandlerOptions...),
 		message_handler.NewMessageHandler(messageService, chatMessageReader),
 		chat_handler.NewChatHandler(chatService, chatMessageReader),
-		group_handler.NewGroupHandler(groupService, group_handler.WithManagementContract(config.GroupManagementEnabled)),
+		group_handler.NewGroupHandler(groupService, group_handler.WithManagementContract(config.GroupManagementEnabled), group_handler.WithPhotoAssets(config.GroupPhotoAssetsEnabled)),
 		groupListHandler,
 		call_handler.NewCallHandler(callService),
 		campaign_handler.NewCampaignHandler(campaign_service.NewManagementService(

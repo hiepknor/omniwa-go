@@ -64,8 +64,9 @@ type SafeMemberReference struct {
 }
 
 type GroupPhotoMetadata struct {
-	Available *bool      `json:"available,omitempty"`
-	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+	Available    *bool      `json:"available,omitempty"`
+	MediaAssetID *string    `json:"mediaAssetId,omitempty" format:"uuid"`
+	UpdatedAt    *time.Time `json:"updatedAt,omitempty"`
 }
 
 type ActionDecision struct {
@@ -423,7 +424,7 @@ func managementDetail(record projection_repository.GroupManagementRecord, checke
 	if record.OwnerPublicID != nil {
 		detail.Owner = &SafeMemberReference{MemberID: *record.OwnerPublicID}
 	}
-	if record.Group.PictureID != nil || record.Group.PictureRemoved != nil || record.Group.PictureUpdatedAt != nil {
+	if record.Group.PictureID != nil || record.Group.PictureMediaAssetID != nil || record.Group.PictureRemoved != nil || record.Group.PictureUpdatedAt != nil {
 		var available *bool
 		if record.Group.PictureRemoved != nil {
 			value := !*record.Group.PictureRemoved
@@ -432,7 +433,7 @@ func managementDetail(record projection_repository.GroupManagementRecord, checke
 			value := true
 			available = &value
 		}
-		detail.Photo = &GroupPhotoMetadata{Available: available, UpdatedAt: utcTime(record.Group.PictureUpdatedAt)}
+		detail.Photo = &GroupPhotoMetadata{Available: available, MediaAssetID: record.Group.PictureMediaAssetID, UpdatedAt: utcTime(record.Group.PictureUpdatedAt)}
 	}
 	detail.Actions = managementActions(summary, checkedAt)
 	return detail

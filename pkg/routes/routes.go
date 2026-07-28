@@ -246,7 +246,11 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.GET("/search", r.groupHandler.SearchGroups)
 			routes.GET("/:groupJid/members", r.groupHandler.ListGroupMembers)
 			routes.GET("/:groupJid/audit", r.groupHandler.GroupAudit)
-			routes.POST("/photo", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.SetGroupPhoto)
+			if r.groupHandler.PhotoAssetsEnabled() {
+				routes.POST("/photo", r.groupHandler.SetGroupPhoto)
+			} else {
+				routes.POST("/photo", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.SetGroupPhoto)
+			}
 			if r.groupHandler.ManagementContractEnabled() {
 				routes.POST("/info", r.groupHandler.GetGroupInfo)
 				routes.POST("/invitelink", r.groupHandler.GetGroupInviteLink)
