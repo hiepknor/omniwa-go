@@ -69,6 +69,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 	newsletter_handler "github.com/evolution-foundation/evolution-go/pkg/newsletter/handler"
 	newsletter_service "github.com/evolution-foundation/evolution-go/pkg/newsletter/service"
+	"github.com/evolution-foundation/evolution-go/pkg/observability"
 	"github.com/evolution-foundation/evolution-go/pkg/outbound"
 	passkey_handler "github.com/evolution-foundation/evolution-go/pkg/passkey/handler"
 	poll_handler "github.com/evolution-foundation/evolution-go/pkg/poll/handler"
@@ -762,6 +763,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	r := gin.Default()
 	r.Use(httpapi.RequestIdentity())
+	metricsRegistry, err := observability.NewRegistry()
+	if err != nil {
+		logger.LogFatal("component=metrics action=initialize result=failed detail=%v", err)
+	}
 
 	// CORS middleware — must be before all business, auth, and body middleware.
 	r.Use(func(c *gin.Context) {
@@ -794,6 +799,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	routes.NewRouter(
 		auth_middleware.NewMiddleware(config, instanceService),
+		metricsRegistry.Handler(),
 		instance_handler.NewInstanceHandler(
 			instanceService, config,
 			instance_handler.WithTokenRotation(tokenRotationService),

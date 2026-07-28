@@ -8,7 +8,7 @@ key.
 
 | Tier | Header value | Grants access to | Source |
 |---|---|---|---|
-| **Global admin key** | value of the `GLOBAL_API_KEY` env var | Instance lifecycle: `POST /instance/create`, `GET /instance/all`, `GET /instance/info/{id}`, `DELETE /instance/delete/{id}`, `POST /instance/proxy/{id}`, `POST /instance/forcereconnect/{id}`, `GET /instance/logs/{id}`, and the WebSocket `/ws`. | Set by the server operator. |
+| **Global admin key** | value of the `GLOBAL_API_KEY` env var | Instance lifecycle: `POST /instance/create`, `GET /instance/all`, `GET /instance/info/{id}`, `DELETE /instance/delete/{id}`, `POST /instance/proxy/{id}`, `POST /instance/forcereconnect/{id}`, `GET /instance/logs/{id}`, Prometheus `GET /metrics`, and the WebSocket `/ws`. | Set by the server operator. |
 | **Instance token** | the `token` returned by `POST /instance/create` | Everything scoped to one WhatsApp account: `/instance/connect`, `/instance/qr`, `/instance/status`, all `/send/*`, `/message/*`, `/chat/*`, `/group/*`, `/user/*`, `/community/*`, `/newsletter/*`, `/label/*`, `/call/*`, `/polls/*`. | Chosen by you in the create request and echoed back. |
 
 The header name is case-insensitive; `apikey` and `ApiKey` both work.
@@ -21,6 +21,10 @@ apikey: <instance-token>          # per-instance routes
 Server implementation: `pkg/middleware/auth_middleware.go` — `AuthAdmin`
 compares the header to `GLOBAL_API_KEY`; `Auth` resolves the header to an
 instance via its token.
+
+The Prometheus endpoint returns the text exposition format rather than JSON and
+is intentionally not part of the Swagger API document. See
+[Prometheus metrics](operations-metrics.md) for its bounded-label contract.
 
 In **Swagger UI**, click **Authorize** and paste the appropriate key; the
 documented endpoints (all `/send/*` and the main `/instance/*` routes) will then

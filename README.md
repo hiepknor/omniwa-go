@@ -135,12 +135,14 @@ OmniWA GO keeps this behavior by default, but makes it opt-out:
   authentication, the create → connect → QR → send flow, response conventions,
   the [information-query 429 contract](docs/wiki-en/information-query-rate-limits.md),
   [outbound message pacing](docs/wiki-en/outbound-message-rate-limits.md),
+  authenticated [Prometheus metrics](docs/wiki-en/operations-metrics.md),
   and the realtime [WebSocket event stream](docs/wiki-en/websocket-events.md)
   (which Swagger cannot describe).
 
-Every endpoint is authenticated with an `apikey` header: admin `/instance`
-routes use the global `GLOBAL_API_KEY`; all other routes use the target
-instance's own token. See [Authentication](docs/wiki-en/authentication.md).
+Every protected endpoint uses an `apikey` header: admin `/instance` routes and
+`GET /metrics` use the global `GLOBAL_API_KEY`; instance-scoped routes use the
+target instance's own token. See
+[Authentication](docs/wiki-en/authentication.md).
 
 OmniWA GO currently supports one application replica per users database and
 enforces that boundary at startup. Use stop-first/Recreate deployments; see the
