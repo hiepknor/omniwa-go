@@ -497,3 +497,20 @@ func TestGroupPhotoAssetReferenceMigrationIsScopedAndAdditive(t *testing.T) {
 		}
 	}
 }
+
+func TestCanonicalContactRedirectMigrationIsScopedAndAdditive(t *testing.T) {
+	migration := registeredMigration(t, 34)
+	if migration.Name != "add_canonical_contact_redirects" {
+		t.Fatalf("contact redirect migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"projected_contact_redirects", "PRIMARY KEY (instance_id, absorbed_contact_id)",
+		"absorbed_contact_id <> canonical_contact_id", "FOREIGN KEY (instance_id, canonical_contact_id)",
+		"REFERENCES projected_contacts(instance_id, contact_id) ON DELETE RESTRICT",
+		"projected_contact_redirects_canonical_idx",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("contact redirect migration missing %q", required)
+		}
+	}
+}

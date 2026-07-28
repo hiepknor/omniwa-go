@@ -122,7 +122,7 @@ func (r *contactRepository) Apply(ctx context.Context, patch ContactPatch) (*pro
 				FieldVersions: json.RawMessage(`{}`), LastSyncedAt: now,
 			}
 		} else {
-			stored, err = mergeContacts(tx, contacts)
+			stored, err = mergeContacts(tx, contacts, now)
 			if err != nil {
 				return err
 			}
@@ -173,7 +173,16 @@ func (r *contactRepository) Get(ctx context.Context, instanceID, contactID strin
 		return nil, errors.New("contact projection identity is required")
 	}
 	var contact projection_model.Contact
-	err := r.db.WithContext(ctx).Where("instance_id = ? AND contact_id = ? AND tombstoned_at IS NULL", instanceID, contactID).First(&contact).Error
+	db := r.db.WithContext(ctx)
+	err := db.Where("instance_id = ? AND contact_id = ? AND tombstoned_at IS NULL", instanceID, contactID).First(&contact).Error
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return &contact, err
+	}
+	var redirect projection_model.ContactRedirect
+	if err = db.Where("instance_id = ? AND absorbed_contact_id = ?", instanceID, contactID).First(&redirect).Error; err != nil {
+		return &contact, err
+	}
+	err = db.Where("instance_id = ? AND contact_id = ? AND tombstoned_at IS NULL", instanceID, redirect.CanonicalContactID).First(&contact).Error
 	return &contact, err
 }
 
@@ -375,8 +384,13 @@ func contactAliasCondition(identities []ContactIdentityRef) (string, []any) {
 	return strings.Join(parts, " OR "), args
 }
 
-func mergeContacts(tx *gorm.DB, contacts []projection_model.Contact) (projection_model.Contact, error) {
-	sort.Slice(contacts, func(i, j int) bool { return contacts[i].ContactID < contacts[j].ContactID })
+func mergeContacts(tx *gorm.DB, contacts []projection_model.Contact, now time.Time) (projection_model.Contact, error) {
+	sort.Slice(contacts, func(i, j int) bool {
+		if contacts[i].CreatedAt.Equal(contacts[j].CreatedAt) {
+			return contacts[i].ContactID < contacts[j].ContactID
+		}
+		return contacts[i].CreatedAt.Before(contacts[j].CreatedAt)
+	})
 	target := contacts[0]
 	targetVersions, err := decodeContactVersions(target.FieldVersions)
 	if err != nil {
@@ -408,6 +422,25 @@ func mergeContacts(tx *gorm.DB, contacts []projection_model.Contact) (projection
 	if len(losingIDs) > 0 {
 		if err := tx.Model(&projection_model.ContactIdentity{}).Where("instance_id = ? AND contact_id IN ?", target.InstanceID, losingIDs).Update("contact_id", target.ContactID).Error; err != nil {
 			return target, err
+		}
+		if err := tx.Table("projected_chats").Where("instance_id = ? AND contact_id IN ?", target.InstanceID, losingIDs).Update("contact_id", target.ContactID).Error; err != nil {
+			return target, err
+		}
+		if err := tx.Model(&projection_model.ContactRedirect{}).
+			Where("instance_id = ? AND canonical_contact_id IN ?", target.InstanceID, losingIDs).
+			Updates(map[string]any{"canonical_contact_id": target.ContactID, "updated_at": now}).Error; err != nil {
+			return target, err
+		}
+		for _, losingID := range losingIDs {
+			redirect := projection_model.ContactRedirect{
+				InstanceID: target.InstanceID, AbsorbedContactID: losingID, CanonicalContactID: target.ContactID,
+			}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "instance_id"}, {Name: "absorbed_contact_id"}},
+				DoUpdates: clause.Assignments(map[string]any{"canonical_contact_id": target.ContactID, "updated_at": now}),
+			}).Create(&redirect).Error; err != nil {
+				return target, err
+			}
 		}
 		if err := tx.Where("instance_id = ? AND contact_id IN ?", target.InstanceID, losingIDs).Delete(&projection_model.Contact{}).Error; err != nil {
 			return target, err

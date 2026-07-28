@@ -62,3 +62,16 @@ type ContactIdentity struct {
 }
 
 func (ContactIdentity) TableName() string { return "projected_contact_identities" }
+
+// ContactRedirect permanently resolves a canonical contact ID that was
+// absorbed after an authoritative alias mapping linked two projected contacts.
+// Redirects are instance-scoped and flattened when later merges occur.
+type ContactRedirect struct {
+	InstanceID         string    `json:"instanceId" gorm:"column:instance_id;type:uuid;primaryKey"`
+	AbsorbedContactID  string    `json:"absorbedContactId" gorm:"column:absorbed_contact_id;type:uuid;primaryKey"`
+	CanonicalContactID string    `json:"canonicalContactId" gorm:"column:canonical_contact_id;type:uuid;not null"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
+}
+
+func (ContactRedirect) TableName() string { return "projected_contact_redirects" }

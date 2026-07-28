@@ -1399,6 +1399,28 @@ ALTER TABLE projected_groups
         FOREIGN KEY (picture_media_asset_id, instance_id)
         REFERENCES media_assets(id, instance_id) ON DELETE RESTRICT;`,
 	},
+	{
+		Version: 34,
+		Name:    "add_canonical_contact_redirects",
+		SQL: `CREATE TABLE projected_contact_redirects (
+    instance_id UUID NOT NULL,
+    absorbed_contact_id UUID NOT NULL,
+    canonical_contact_id UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, absorbed_contact_id),
+    CONSTRAINT projected_contact_redirects_distinct_check
+        CHECK (absorbed_contact_id <> canonical_contact_id),
+    CONSTRAINT projected_contact_redirects_instance_fk
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT projected_contact_redirects_canonical_fk
+        FOREIGN KEY (instance_id, canonical_contact_id)
+        REFERENCES projected_contacts(instance_id, contact_id) ON DELETE RESTRICT
+);
+
+CREATE INDEX projected_contact_redirects_canonical_idx
+ON projected_contact_redirects (instance_id, canonical_contact_id);`,
+	},
 }
 
 func Run(db *gorm.DB) error {
