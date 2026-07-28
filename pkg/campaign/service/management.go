@@ -12,6 +12,9 @@ import (
 
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
+	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
+	group_list_service "github.com/evolution-foundation/evolution-go/pkg/groupList/service"
+	"github.com/evolution-foundation/evolution-go/pkg/observability"
 	"github.com/google/uuid"
 )
 
@@ -29,6 +32,7 @@ type ManagementService struct {
 	directCreateEnabled bool
 	groupTargetsEnabled bool
 	imageContentEnabled bool
+	eligibilityObserver observability.GroupListEligibilityObserver
 }
 
 type ManagementOption func(*ManagementService)
@@ -43,6 +47,10 @@ func WithGroupTargetsEnabled(enabled bool) ManagementOption {
 
 func WithImageContentEnabled(enabled bool) ManagementOption {
 	return func(service *ManagementService) { service.imageContentEnabled = enabled }
+}
+
+func WithEligibilityObserver(observer observability.GroupListEligibilityObserver) ManagementOption {
+	return func(service *ManagementService) { service.eligibilityObserver = observer }
 }
 
 type GroupListTargetInput struct {
@@ -151,7 +159,12 @@ func NewManagementService(repository campaign_repository.CampaignRepository, opt
 	return service
 }
 
-func (s *ManagementService) Create(ctx context.Context, instanceID string, input CreateCampaignInput) (*CampaignDetail, error) {
+func (s *ManagementService) Create(ctx context.Context, instanceID string, input CreateCampaignInput) (detail *CampaignDetail, err error) {
+	defer func() {
+		if input.Target != nil {
+			s.observeEligibilityRejection(err)
+		}
+	}()
 	if s == nil || s.repository == nil || ctx == nil {
 		return nil, errors.New("campaign management service is unavailable")
 	}
@@ -166,7 +179,6 @@ func (s *ManagementService) Create(ctx context.Context, instanceID string, input
 	}
 	var campaign *campaign_model.Campaign
 	var recipients []campaign_model.Recipient
-	var err error
 	if input.Target != nil {
 		if !s.groupTargetsEnabled {
 			return nil, ErrGroupCampaignTargetsDisabled
@@ -192,6 +204,30 @@ func (s *ManagementService) Create(ctx context.Context, instanceID string, input
 	counts := map[campaign_model.RecipientStatus]int64{campaign_model.RecipientStatusPending: int64(len(recipients))}
 	snapshot := campaign_repository.RecipientProgress{Counts: counts, UpdatedAt: campaign.UpdatedAt}
 	return campaignDetail(campaign, snapshot), nil
+}
+
+func (s *ManagementService) observeEligibilityRejection(err error) {
+	if s == nil || s.eligibilityObserver == nil || err == nil {
+		return
+	}
+	code := ""
+	switch {
+	case errors.Is(err, group_list_repository.ErrNotFound):
+		code = "group_list_not_found"
+	case errors.Is(err, group_list_repository.ErrVersionConflict):
+		code = "group_list_version_conflict"
+	case errors.Is(err, campaign_repository.ErrGroupListEmpty):
+		code = "group_list_empty"
+	case errors.Is(err, campaign_repository.ErrGroupUnavailable), errors.Is(err, group_list_service.ErrGroupUnavailable):
+		code = "group_list_group_unavailable"
+	case errors.Is(err, campaign_repository.ErrGroupProjectionNotReady), errors.Is(err, group_list_service.ErrProjectionNotReady):
+		code = "projection_not_ready"
+	case errors.Is(err, campaign_repository.ErrInvalidCampaignInput):
+		code = "invalid_group_list_input"
+	}
+	if code != "" {
+		s.eligibilityObserver.ObserveMutationRejection(observability.EligibilityOperationCampaignCreate, code)
+	}
 }
 
 func (s *ManagementService) Get(ctx context.Context, instanceID, campaignID string) (*CampaignDetail, error) {

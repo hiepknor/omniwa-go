@@ -39,6 +39,23 @@ func TestRegistryRejectsDuplicateAndOutOfOrderVersions(t *testing.T) {
 	}
 }
 
+func TestGroupParticipantIdentityIndexesAreVersioned(t *testing.T) {
+	migration := registeredMigration(t, 29)
+	if migration.Name != "index_group_participant_identities" {
+		t.Fatalf("identity index migration = %#v", migration)
+	}
+	for _, expected := range []string{
+		"projected_group_participants_participant_identity_idx",
+		"projected_group_participants_phone_identity_idx",
+		"projected_group_participants_lid_identity_idx",
+		"WHERE tombstoned_at IS NULL",
+	} {
+		if !strings.Contains(migration.SQL, expected) {
+			t.Fatalf("identity index migration does not contain %q", expected)
+		}
+	}
+}
+
 func TestContactsProjectionMigrationIsVersionedAndIncludesAliases(t *testing.T) {
 	contacts := registry[6]
 	if contacts.Version != 7 || contacts.Name != "create_contacts_projection" {

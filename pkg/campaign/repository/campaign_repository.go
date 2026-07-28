@@ -68,6 +68,7 @@ type GroupEligibilityResult struct {
 	TargetLabel string
 	Eligibility string
 	Reason      string
+	CheckedAt   time.Time
 	RetryAt     *time.Time
 }
 

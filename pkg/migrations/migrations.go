@@ -1257,6 +1257,21 @@ UPDATE projection_states
 SET schema_version = 2, updated_at = NOW()
 WHERE resource = 'messages' AND schema_version < 2;`,
 	},
+	{
+		Version: 29,
+		Name:    "index_group_participant_identities",
+		SQL: `CREATE INDEX projected_group_participants_participant_identity_idx
+ON projected_group_participants (instance_id, participant_id, group_id)
+WHERE tombstoned_at IS NULL;
+
+CREATE INDEX projected_group_participants_phone_identity_idx
+ON projected_group_participants (instance_id, phone_number_jid, group_id)
+WHERE tombstoned_at IS NULL AND phone_number_jid IS NOT NULL;
+
+CREATE INDEX projected_group_participants_lid_identity_idx
+ON projected_group_participants (instance_id, lid, group_id)
+WHERE tombstoned_at IS NULL AND lid IS NOT NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

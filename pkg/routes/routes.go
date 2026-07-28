@@ -106,6 +106,10 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		routes.Use(r.authMiddleware.Auth)
 		routes.GET("", r.groupListHandler.List)
 		routes.POST("", r.groupListHandler.Create)
+		if r.groupListHandler.EligibilityEnabled() {
+			routes.POST("/eligibility", r.groupListHandler.Eligibility)
+			routes.GET("/:groupListId/eligibility", r.groupListHandler.AggregateEligibility)
+		}
 		routes.GET("/:groupListId", r.groupListHandler.Get)
 		routes.GET("/:groupListId/groups", r.groupListHandler.Groups)
 		routes.PUT("/:groupListId", r.groupListHandler.Update)

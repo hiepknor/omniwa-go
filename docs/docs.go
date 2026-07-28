@@ -348,10 +348,22 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.GroupListEligibilityErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.GroupListEligibilityErrorResponse"
                         }
                     }
                 }
@@ -1732,11 +1744,67 @@ const docTemplate = `{
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                            "$ref": "#/definitions/apidocs.GroupListEligibilityErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.GroupListEligibilityErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/group-lists/eligibility": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Group Lists"
+                ],
+                "summary": "Evaluate Group List eligibility",
+                "parameters": [
+                    {
+                        "description": "Group JIDs",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pkg_groupList_handler.EligibilityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.GroupListEligibilityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -1844,13 +1912,13 @@ const docTemplate = `{
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                            "$ref": "#/definitions/apidocs.GroupListEligibilityErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                            "$ref": "#/definitions/apidocs.GroupListEligibilityErrorResponse"
                         }
                     }
                 }
@@ -1952,6 +2020,76 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/group-lists/{groupListId}/eligibility": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Group Lists"
+                ],
+                "summary": "Aggregate Group List eligibility",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group List UUID",
+                        "name": "groupListId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Expected current Group List version",
+                        "name": "expectedVersion",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.GroupListEligibilityAggregateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -7857,6 +7995,7 @@ const docTemplate = `{
                         "rate_limit_retry_after",
                         "groups_projection",
                         "group_lists",
+                        "group_list_eligibility",
                         "campaign_group_targets",
                         "campaign_image_content",
                         "instance_metadata_views",
@@ -7999,6 +8138,59 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "success"
+                }
+            }
+        },
+        "apidocs.GroupListEligibilityAggregateResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityAggregate"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityMeta"
+                }
+            }
+        },
+        "apidocs.GroupListEligibilityErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "group_list_group_unavailable"
+                },
+                "details": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityIssueDetails"
+                },
+                "error": {
+                    "type": "string",
+                    "example": "group list contains an unavailable group"
+                },
+                "requestId": {
+                    "type": "string",
+                    "example": "0123456789abcdef0123456789abcdef"
+                }
+            }
+        },
+        "apidocs.GroupListEligibilityResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityResult"
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                },
+                "meta": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityMeta"
                 }
             }
         },
@@ -8950,6 +9142,29 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_groupList_repository.EligibilityIssue": {
+            "type": "object",
+            "properties": {
+                "canSend": {
+                    "type": "boolean"
+                },
+                "checkedAt": {
+                    "type": "string"
+                },
+                "currentName": {
+                    "type": "string"
+                },
+                "eligibility": {
+                    "type": "string"
+                },
+                "eligibilityReason": {
+                    "type": "string"
+                },
+                "groupJid": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_evolution-foundation_evolution-go_pkg_groupList_repository.Summary": {
             "type": "object",
             "properties": {
@@ -8982,6 +9197,95 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityAggregate": {
+            "type": "object",
+            "properties": {
+                "byReason": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "checkedAt": {
+                    "type": "string"
+                },
+                "eligible": {
+                    "type": "integer"
+                },
+                "groupListId": {
+                    "type": "string"
+                },
+                "groupListVersion": {
+                    "type": "integer"
+                },
+                "readyToTarget": {
+                    "type": "boolean"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "unavailable": {
+                    "type": "integer"
+                },
+                "unknown": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityIssueDetails": {
+            "type": "object",
+            "properties": {
+                "issueCount": {
+                    "type": "integer"
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_repository.EligibilityIssue"
+                    }
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityMeta": {
+            "type": "object",
+            "properties": {
+                "lastSyncedAt": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "syncStatus": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityResult": {
+            "type": "object",
+            "properties": {
+                "canSend": {
+                    "type": "boolean"
+                },
+                "checkedAt": {
+                    "type": "string"
+                },
+                "currentName": {
+                    "type": "string"
+                },
+                "eligibility": {
+                    "type": "string"
+                },
+                "eligibilityReason": {
+                    "type": "string"
+                },
+                "groupJid": {
+                    "type": "string"
                 }
             }
         },
@@ -11220,6 +11524,17 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "pkg_groupList_handler.EligibilityRequest": {
+            "type": "object",
+            "properties": {
+                "groupJids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

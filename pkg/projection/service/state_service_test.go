@@ -143,6 +143,23 @@ func TestAdminCapabilitiesOnlyExposeServerFeatures(t *testing.T) {
 	}
 }
 
+func TestStaticCapabilityIsAdvertisedOnlyWhenConfigured(t *testing.T) {
+	without := NewStateService(newMemoryRepository())
+	capabilities, err := without.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityGroupListEligibility) {
+		t.Fatalf("unexpected eligibility capability = %v, %v", capabilities, err)
+	}
+	with := NewStateService(newMemoryRepository(), WithStaticCapability(CapabilityGroupListEligibility))
+	capabilities, err = with.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, CapabilityGroupListEligibility) {
+		t.Fatalf("missing eligibility capability = %v, %v", capabilities, err)
+	}
+	admin, err := with.Capabilities("")
+	if err != nil || !containsCapability(admin, CapabilityGroupListEligibility) {
+		t.Fatalf("missing admin eligibility capability = %v, %v", admin, err)
+	}
+}
+
 func TestContactsCapabilityRequiresReadyCurrentSchema(t *testing.T) {
 	service := NewStateService(newMemoryRepository())
 	if err := service.MarkReady("instance-a", "contacts", ContactsProjectionSchemaVersion-1, time.Unix(100, 0)); err != nil {

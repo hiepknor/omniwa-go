@@ -112,6 +112,10 @@ func startBackground(supervisor *bootstrap.Supervisor, name string, work bootstr
 }
 
 func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *bootstrap.Supervisor) *gin.Engine {
+	metricsRegistry, err := observability.NewRegistry()
+	if err != nil {
+		logger.LogFatal("component=metrics action=initialize result=failed detail=%v", err)
+	}
 	runtimeRegistry := bootstrap.NewInstanceRuntime(appCtx)
 
 	loggerWrapper := logger_wrapper.NewLoggerManager(config)
@@ -335,6 +339,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if config.GroupListsEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupLists))
 	}
+	if config.GroupListEligibilityEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithStaticCapability(projection_service.CapabilityGroupListEligibility))
+	}
 	if groupCampaignsEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityCampaignGroupTargets))
 	}
@@ -357,10 +364,24 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	groupProjectionRepository := projection_repository.NewGroupRepository(db)
 	var groupListHandler group_list_handler.Handler
 	if config.GroupListsEnabled {
-		groupListHandler = group_list_handler.New(group_list_service.NewManagementService(
-			group_list_repository.New(db),
-			group_list_service.NewEligibilityService(groupProjectionRepository, projectionStateService),
+		groupListRepository := group_list_repository.New(db, group_list_repository.WithMutationEligibilityEvaluator(
+			func(ctx context.Context, tx *gorm.DB, instanceID, instanceJID string, groupJIDs []string) ([]group_list_repository.EntryInput, error) {
+				state := projection_service.NewStateServiceWithHealth(
+					projection_repository.NewStateRepository(tx), projection_repository.NewWorkHealthRepository(tx), projectionHealthPolicy,
+				)
+				assessment, err := group_list_service.NewEligibilityService(projection_repository.NewGroupRepository(tx), state).
+					Assess(ctx, instanceID, instanceJID, groupJIDs)
+				if err != nil {
+					return nil, err
+				}
+				return group_list_service.MutationEntries(assessment.Results)
+			},
 		))
+		groupListHandler = group_list_handler.New(group_list_service.NewManagementService(
+			groupListRepository,
+			group_list_service.NewEligibilityService(groupProjectionRepository, projectionStateService),
+			group_list_service.WithEligibilityObserver(metricsRegistry.GroupListEligibility()),
+		), group_list_handler.WithEligibilityEndpoints(config.GroupListEligibilityEnabled))
 	}
 	groupProjector := projection_service.NewGroupProjector(groupProjectionRepository, projectionStateService)
 	labelProjectionRepository := projection_repository.NewLabelProjectionRepository(db)
@@ -664,7 +685,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 					reason = *result.EligibilityReason
 				}
 				targets[index] = campaign_repository.GroupEligibilityResult{
-					GroupJID: result.GroupJID, TargetLabel: result.CurrentName, Eligibility: result.Eligibility, Reason: reason,
+					GroupJID: result.GroupJID, TargetLabel: result.CurrentName, Eligibility: result.Eligibility, Reason: reason, CheckedAt: result.CheckedAt,
 				}
 			}
 			return targets, nil
@@ -763,10 +784,6 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	r := gin.Default()
 	r.Use(httpapi.RequestIdentity())
-	metricsRegistry, err := observability.NewRegistry()
-	if err != nil {
-		logger.LogFatal("component=metrics action=initialize result=failed detail=%v", err)
-	}
 
 	// CORS middleware — must be before all business, auth, and body middleware.
 	r.Use(func(c *gin.Context) {
@@ -817,6 +834,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			campaign_service.WithDirectCreateEnabled(config.CampaignDirectCreateEnabled),
 			campaign_service.WithGroupTargetsEnabled(groupCampaignsEnabled),
 			campaign_service.WithImageContentEnabled(config.CampaignImageContentEnabled),
+			campaign_service.WithEligibilityObserver(metricsRegistry.GroupListEligibility()),
 		)),
 		campaignMediaHandler,
 		mediaAssetHandler,

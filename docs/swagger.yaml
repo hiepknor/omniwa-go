@@ -69,6 +69,7 @@ definitions:
         - rate_limit_retry_after
         - groups_projection
         - group_lists
+        - group_list_eligibility
         - campaign_group_targets
         - campaign_image_content
         - instance_metadata_views
@@ -170,6 +171,42 @@ definitions:
       message:
         example: success
         type: string
+    type: object
+  apidocs.GroupListEligibilityAggregateResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityAggregate'
+      message:
+        example: success
+        type: string
+      meta:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityMeta'
+    type: object
+  apidocs.GroupListEligibilityErrorResponse:
+    properties:
+      code:
+        example: group_list_group_unavailable
+        type: string
+      details:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityIssueDetails'
+      error:
+        example: group list contains an unavailable group
+        type: string
+      requestId:
+        example: 0123456789abcdef0123456789abcdef
+        type: string
+    type: object
+  apidocs.GroupListEligibilityResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityResult'
+        type: array
+      message:
+        example: success
+        type: string
+      meta:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityMeta'
     type: object
   apidocs.GroupListEntryListResponse:
     properties:
@@ -888,6 +925,21 @@ definitions:
       groupJid:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_groupList_repository.EligibilityIssue:
+    properties:
+      canSend:
+        type: boolean
+      checkedAt:
+        type: string
+      currentName:
+        type: string
+      eligibility:
+        type: string
+      eligibilityReason:
+        type: string
+      groupJid:
+        type: string
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_groupList_repository.Summary:
     properties:
       authorizationSource:
@@ -910,6 +962,64 @@ definitions:
         type: string
       version:
         type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityAggregate:
+    properties:
+      byReason:
+        additionalProperties:
+          type: integer
+        type: object
+      checkedAt:
+        type: string
+      eligible:
+        type: integer
+      groupListId:
+        type: string
+      groupListVersion:
+        type: integer
+      readyToTarget:
+        type: boolean
+      total:
+        type: integer
+      unavailable:
+        type: integer
+      unknown:
+        type: integer
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityIssueDetails:
+    properties:
+      issueCount:
+        type: integer
+      issues:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_groupList_repository.EligibilityIssue'
+        type: array
+      truncated:
+        type: boolean
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityMeta:
+    properties:
+      lastSyncedAt:
+        type: string
+      source:
+        type: string
+      syncStatus:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.SyncStatus'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_groupList_service.EligibilityResult:
+    properties:
+      canSend:
+        type: boolean
+      checkedAt:
+        type: string
+      currentName:
+        type: string
+      eligibility:
+        type: string
+      eligibilityReason:
+        type: string
+      groupJid:
+        type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_groupList_service.EntryView:
     properties:
@@ -2359,6 +2469,13 @@ definitions:
         type: array
       name:
         type: string
+    type: object
+  pkg_groupList_handler.EligibilityRequest:
+    properties:
+      groupJids:
+        items:
+          type: string
+        type: array
     type: object
   pkg_groupList_handler.UpdateRequest:
     properties:
@@ -9164,10 +9281,18 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.GroupListEligibilityErrorResponse'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.GroupListEligibilityErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create campaign draft
@@ -10008,11 +10133,11 @@ paths:
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/apidocs.ErrorResponse'
+            $ref: '#/definitions/apidocs.GroupListEligibilityErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/apidocs.ErrorResponse'
+            $ref: '#/definitions/apidocs.GroupListEligibilityErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create Group List
@@ -10106,11 +10231,11 @@ paths:
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/apidocs.ErrorResponse'
+            $ref: '#/definitions/apidocs.GroupListEligibilityErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/apidocs.ErrorResponse'
+            $ref: '#/definitions/apidocs.GroupListEligibilityErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update Group List
@@ -10155,6 +10280,51 @@ paths:
       summary: Get Group List audit history
       tags:
       - Group Lists
+  /group-lists/{groupListId}/eligibility:
+    get:
+      parameters:
+      - description: Group List UUID
+        in: path
+        name: groupListId
+        required: true
+        type: string
+      - description: Expected current Group List version
+        in: query
+        minimum: 1
+        name: expectedVersion
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.GroupListEligibilityAggregateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Aggregate Group List eligibility
+      tags:
+      - Group Lists
   /group-lists/{groupListId}/groups:
     get:
       parameters:
@@ -10196,6 +10366,41 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: List Group List groups
+      tags:
+      - Group Lists
+  /group-lists/eligibility:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group JIDs
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pkg_groupList_handler.EligibilityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apidocs.GroupListEligibilityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Evaluate Group List eligibility
       tags:
       - Group Lists
   /group/create:

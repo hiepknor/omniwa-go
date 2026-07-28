@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	defaultPageSize       = 50
-	maxGroupListBodyBytes = 4 << 20
+	defaultPageSize         = 50
+	maxGroupListBodyBytes   = 4 << 20
+	maxEligibilityBodyBytes = 64 << 10
 )
 
 type Handler interface {
@@ -30,6 +31,9 @@ type Handler interface {
 	Update(*gin.Context)
 	Delete(*gin.Context)
 	Audit(*gin.Context)
+	Eligibility(*gin.Context)
+	AggregateEligibility(*gin.Context)
+	EligibilityEnabled() bool
 }
 
 type managementService interface {
@@ -40,6 +44,8 @@ type managementService interface {
 	Entries(context.Context, string, string, string, int, string) (*group_list_service.EntryList, error)
 	Delete(context.Context, string, string, string) error
 	Audit(context.Context, string, string, int, string) (*group_list_service.AuditList, error)
+	Eligibility(context.Context, string, string, []string) (*group_list_service.EligibilityAssessment, error)
+	AggregateEligibility(context.Context, string, string, string, *int64) (*group_list_service.AggregateAssessment, error)
 }
 
 type AuthorizationRequest struct {
@@ -63,9 +69,95 @@ type UpdateRequest struct {
 	Authorization   AuthorizationRequest `json:"authorization"`
 }
 
-type handler struct{ service managementService }
+type EligibilityRequest struct {
+	GroupJIDs []string `json:"groupJids"`
+}
 
-func New(service managementService) Handler { return &handler{service: service} }
+type handler struct {
+	service              managementService
+	eligibilityEndpoints bool
+}
+
+type Option func(*handler)
+
+func WithEligibilityEndpoints(enabled bool) Option {
+	return func(handler *handler) { handler.eligibilityEndpoints = enabled }
+}
+
+func New(service managementService, options ...Option) Handler {
+	handler := &handler{service: service}
+	for _, option := range options {
+		option(handler)
+	}
+	return handler
+}
+
+func (h *handler) EligibilityEnabled() bool { return h != nil && h.eligibilityEndpoints }
+
+// Eligibility evaluates an ordered, bounded advisory group batch from the persisted projection.
+// @Summary Evaluate Group List eligibility
+// @Tags Group Lists
+// @Accept json
+// @Produce json
+// @Param request body EligibilityRequest true "Group JIDs"
+// @Success 200 {object} apidocs.GroupListEligibilityResponse
+// @Failure 400 {object} apidocs.ErrorResponse
+// @Failure 401 {object} apidocs.ErrorResponse
+// @Failure 500 {object} apidocs.ErrorResponse
+// @Security ApiKeyAuth
+// @Router /group-lists/eligibility [post]
+func (h *handler) Eligibility(ctx *gin.Context) {
+	instance, ok := authenticatedInstance(ctx)
+	if !ok {
+		return
+	}
+	var request EligibilityRequest
+	if !decodeStrictWithLimit(ctx, &request, maxEligibilityBodyBytes) {
+		return
+	}
+	assessment, err := h.service.Eligibility(ctx.Request.Context(), instance.Id, instance.Jid, request.GroupJIDs)
+	if err != nil {
+		writeError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": assessment.Results, "meta": assessment.Meta})
+}
+
+// AggregateEligibility evaluates the current entries of one Group List.
+// @Summary Aggregate Group List eligibility
+// @Tags Group Lists
+// @Produce json
+// @Param groupListId path string true "Group List UUID"
+// @Param expectedVersion query int false "Expected current Group List version" minimum(1)
+// @Success 200 {object} apidocs.GroupListEligibilityAggregateResponse
+// @Failure 400 {object} apidocs.ErrorResponse
+// @Failure 401 {object} apidocs.ErrorResponse
+// @Failure 404 {object} apidocs.ErrorResponse
+// @Failure 409 {object} apidocs.ErrorResponse
+// @Failure 500 {object} apidocs.ErrorResponse
+// @Security ApiKeyAuth
+// @Router /group-lists/{groupListId}/eligibility [get]
+func (h *handler) AggregateEligibility(ctx *gin.Context) {
+	instance, ok := authenticatedInstance(ctx)
+	if !ok {
+		return
+	}
+	var expectedVersion *int64
+	if raw, exists := ctx.GetQuery("expectedVersion"); exists {
+		value, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || value < 1 {
+			writeError(ctx, group_list_service.ErrInvalidInput)
+			return
+		}
+		expectedVersion = &value
+	}
+	assessment, err := h.service.AggregateEligibility(ctx.Request.Context(), instance.Id, instance.Jid, ctx.Param("groupListId"), expectedVersion)
+	if err != nil {
+		writeError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": assessment.Data, "meta": assessment.Meta})
+}
 
 // List returns an instance-scoped Group List page.
 // @Summary List Group Lists
@@ -106,8 +198,8 @@ func (h *handler) List(ctx *gin.Context) {
 // @Success 201 {object} apidocs.GroupListDetailResponse
 // @Failure 400 {object} apidocs.ErrorResponse
 // @Failure 401 {object} apidocs.ErrorResponse
-// @Failure 409 {object} apidocs.ErrorResponse
-// @Failure 503 {object} apidocs.ErrorResponse
+// @Failure 409 {object} apidocs.GroupListEligibilityErrorResponse
+// @Failure 503 {object} apidocs.GroupListEligibilityErrorResponse
 // @Security ApiKeyAuth
 // @Router /group-lists [post]
 func (h *handler) Create(ctx *gin.Context) {
@@ -183,7 +275,9 @@ func (h *handler) Groups(ctx *gin.Context) {
 		writeError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": result.Items, "meta": gin.H{"nextCursor": result.NextCursor}})
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": result.Items, "meta": gin.H{
+		"source": result.Meta.Source, "syncStatus": result.Meta.SyncStatus, "lastSyncedAt": result.Meta.LastSyncedAt, "nextCursor": result.NextCursor,
+	}})
 }
 
 // Update fully replaces mutable Group List fields and entries.
@@ -196,8 +290,8 @@ func (h *handler) Groups(ctx *gin.Context) {
 // @Success 200 {object} apidocs.GroupListDetailResponse
 // @Failure 400 {object} apidocs.ErrorResponse
 // @Failure 404 {object} apidocs.ErrorResponse
-// @Failure 409 {object} apidocs.ErrorResponse
-// @Failure 503 {object} apidocs.ErrorResponse
+// @Failure 409 {object} apidocs.GroupListEligibilityErrorResponse
+// @Failure 503 {object} apidocs.GroupListEligibilityErrorResponse
 // @Security ApiKeyAuth
 // @Router /group-lists/{groupListId} [put]
 func (h *handler) Update(ctx *gin.Context) {
@@ -289,7 +383,11 @@ func authenticatedInstance(ctx *gin.Context) (*instance_model.Instance, bool) {
 }
 
 func decodeStrict(ctx *gin.Context, target any) bool {
-	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxGroupListBodyBytes)
+	return decodeStrictWithLimit(ctx, target, maxGroupListBodyBytes)
+}
+
+func decodeStrictWithLimit(ctx *gin.Context, target any, limit int64) bool {
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, limit)
 	decoder := json.NewDecoder(ctx.Request.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -317,6 +415,15 @@ func pageSize(ctx *gin.Context) (int, bool) {
 }
 
 func writeError(ctx *gin.Context, err error) {
+	var issues *group_list_service.EligibilityIssuesError
+	if errors.As(err, &issues) {
+		if errors.Is(err, group_list_service.ErrProjectionNotReady) {
+			httpapi.WriteErrorWithDetails(ctx, http.StatusServiceUnavailable, "projection_not_ready", "groups projection is not ready", issues.Details)
+		} else {
+			httpapi.WriteErrorWithDetails(ctx, http.StatusConflict, "group_list_group_unavailable", "group list contains an unavailable group", issues.Details)
+		}
+		return
+	}
 	switch {
 	case errors.Is(err, group_list_repository.ErrNotFound):
 		httpapi.WriteError(ctx, http.StatusNotFound, "group_list_not_found", "group list not found")

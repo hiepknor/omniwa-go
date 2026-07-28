@@ -70,16 +70,20 @@ func (r *campaignRepository) CreateGroupDraft(ctx context.Context, instanceID st
 		if len(targets) != len(entries) {
 			return errors.New("group eligibility result does not match group list snapshot")
 		}
-		for _, target := range targets {
-			switch target.Eligibility {
-			case "eligible":
-			case "unknown":
-				return ErrGroupProjectionNotReady
-			case "unavailable":
-				return ErrGroupUnavailable
-			default:
-				return errors.New("group eligibility result state is invalid")
+		eligibilityResults := make([]group_list_repository.EligibilityMutationResult, len(targets))
+		for index, target := range targets {
+			var reason *string
+			if target.Reason != "" {
+				value := target.Reason
+				reason = &value
 			}
+			eligibilityResults[index] = group_list_repository.EligibilityMutationResult{
+				GroupJID: target.GroupJID, CurrentName: target.TargetLabel, Eligibility: target.Eligibility,
+				EligibilityReason: reason, CanSend: target.Eligibility == "eligible", CheckedAt: target.CheckedAt,
+			}
+		}
+		if _, err := group_list_repository.MutationEntries(eligibilityResults, ErrGroupUnavailable, ErrGroupProjectionNotReady); err != nil {
+			return err
 		}
 		campaign = campaign_model.Campaign{
 			ID: campaignID, InstanceID: instanceID, Name: name, Status: campaign_model.CampaignStatusDraft,

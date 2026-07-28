@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
@@ -26,7 +27,7 @@ const (
 )
 
 type eligibilityGroupReader interface {
-	GetForEligibility(context.Context, string, []string) ([]projection_repository.GroupRecord, error)
+	GetForEligibility(context.Context, string, string, []string) ([]projection_repository.GroupRecord, error)
 }
 
 type eligibilityStateReader interface {
@@ -42,6 +43,32 @@ type EligibilityResult struct {
 	CheckedAt         time.Time `json:"checkedAt"`
 }
 
+type EligibilityMeta struct {
+	Source       string                      `json:"source"`
+	SyncStatus   projection_model.SyncStatus `json:"syncStatus"`
+	LastSyncedAt *time.Time                  `json:"lastSyncedAt"`
+}
+
+type EligibilityAssessment struct {
+	Results []EligibilityResult
+	Meta    EligibilityMeta
+}
+
+type EligibilityIssue = group_list_repository.EligibilityIssue
+type EligibilityIssueDetails = group_list_repository.EligibilityIssueDetails
+type EligibilityIssuesError = group_list_repository.EligibilityIssuesError
+
+func MutationEntries(results []EligibilityResult) ([]group_list_repository.EntryInput, error) {
+	mutationResults := make([]group_list_repository.EligibilityMutationResult, len(results))
+	for index, result := range results {
+		mutationResults[index] = group_list_repository.EligibilityMutationResult{
+			GroupJID: result.GroupJID, CurrentName: result.CurrentName, SnapshotName: boundedName(result.CurrentName),
+			Eligibility: result.Eligibility, EligibilityReason: result.EligibilityReason, CanSend: result.CanSend, CheckedAt: result.CheckedAt,
+		}
+	}
+	return group_list_repository.MutationEntries(mutationResults, ErrGroupUnavailable, ErrProjectionNotReady)
+}
+
 type EligibilityService struct {
 	groups eligibilityGroupReader
 	state  eligibilityStateReader
@@ -53,6 +80,28 @@ func NewEligibilityService(groups eligibilityGroupReader, state eligibilityState
 }
 
 func (s *EligibilityService) Evaluate(ctx context.Context, instanceID, instanceJID string, groupJIDs []string) ([]EligibilityResult, error) {
+	assessment, err := s.Assess(ctx, instanceID, instanceJID, groupJIDs)
+	if err != nil {
+		return nil, err
+	}
+	return assessment.Results, nil
+}
+
+func (s *EligibilityService) Metadata(instanceID string) (EligibilityMeta, error) {
+	if s == nil || s.state == nil || instanceID == "" {
+		return EligibilityMeta{}, errors.New("group eligibility state is unavailable")
+	}
+	state, err := s.state.GetServingState(instanceID, "groups")
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return EligibilityMeta{Source: "groups_projection", SyncStatus: projection_model.SyncStatusNotStarted}, nil
+	}
+	if err != nil {
+		return EligibilityMeta{}, err
+	}
+	return eligibilityMeta(state), nil
+}
+
+func (s *EligibilityService) Assess(ctx context.Context, instanceID, instanceJID string, groupJIDs []string) (*EligibilityAssessment, error) {
 	if s == nil || s.groups == nil || s.state == nil || s.now == nil || ctx == nil || instanceID == "" || len(groupJIDs) == 0 || len(groupJIDs) > 10_000 {
 		return nil, errors.New("group eligibility dependencies and bounded identities are required")
 	}
@@ -71,17 +120,24 @@ func (s *EligibilityService) Evaluate(ctx context.Context, instanceID, instanceJ
 	}
 	checkedAt := s.now().UTC()
 	state, err := s.state.GetServingState(instanceID, "groups")
-	if errors.Is(err, gorm.ErrRecordNotFound) || err == nil && !readyEligibilityState(state) {
-		return unknownEligibility(canonicalGroups, checkedAt), nil
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return &EligibilityAssessment{
+			Results: unknownEligibility(canonicalGroups, checkedAt),
+			Meta:    EligibilityMeta{Source: "groups_projection", SyncStatus: projection_model.SyncStatusNotStarted},
+		}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	meta := eligibilityMeta(state)
+	if !readyEligibilityState(state) {
+		return &EligibilityAssessment{Results: unknownEligibility(canonicalGroups, checkedAt), Meta: meta}, nil
+	}
 	identity, err := canonicalIdentity(instanceJID)
 	if err != nil {
-		return unknownEligibility(canonicalGroups, checkedAt), nil
+		return &EligibilityAssessment{Results: unknownEligibility(canonicalGroups, checkedAt), Meta: meta}, nil
 	}
-	records, err := s.groups.GetForEligibility(ctx, instanceID, canonicalGroups)
+	records, err := s.groups.GetForEligibility(ctx, instanceID, identity, canonicalGroups)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +187,20 @@ func (s *EligibilityService) Evaluate(ctx context.Context, instanceID, instanceJ
 		}
 		results[index] = result
 	}
-	return results, nil
+	return &EligibilityAssessment{Results: results, Meta: meta}, nil
+}
+
+func eligibilityMeta(state *projection_model.State) EligibilityMeta {
+	meta := EligibilityMeta{Source: "groups_projection", SyncStatus: projection_model.SyncStatusNotStarted}
+	if state == nil {
+		return meta
+	}
+	meta.SyncStatus = state.SyncStatus
+	if state.LastReconciledAt != nil {
+		value := state.LastReconciledAt.UTC()
+		meta.LastSyncedAt = &value
+	}
+	return meta
 }
 
 func CanonicalGroupJID(value string) (string, error) {

@@ -13,6 +13,7 @@ import (
 
 	group_list_model "github.com/evolution-foundation/evolution-go/pkg/groupList/model"
 	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
+	"github.com/evolution-foundation/evolution-go/pkg/observability"
 	"github.com/google/uuid"
 )
 
@@ -71,6 +72,24 @@ type EntryView struct {
 type EntryList struct {
 	Items      []EntryView `json:"items"`
 	NextCursor string      `json:"nextCursor,omitempty"`
+	Meta       EligibilityMeta
+}
+
+type EligibilityAggregate struct {
+	GroupListID      string         `json:"groupListId"`
+	GroupListVersion int64          `json:"groupListVersion"`
+	Total            int            `json:"total"`
+	Eligible         int            `json:"eligible"`
+	Unavailable      int            `json:"unavailable"`
+	Unknown          int            `json:"unknown"`
+	ReadyToTarget    bool           `json:"readyToTarget"`
+	ByReason         map[string]int `json:"byReason"`
+	CheckedAt        time.Time      `json:"checkedAt"`
+}
+
+type AggregateAssessment struct {
+	Data EligibilityAggregate
+	Meta EligibilityMeta
 }
 
 type AuditList struct {
@@ -80,19 +99,124 @@ type AuditList struct {
 
 type eligibilityEvaluator interface {
 	Evaluate(context.Context, string, string, []string) ([]EligibilityResult, error)
+	Assess(context.Context, string, string, []string) (*EligibilityAssessment, error)
+	Metadata(string) (EligibilityMeta, error)
 }
 
 type ManagementService struct {
 	repository  group_list_repository.Repository
 	eligibility eligibilityEvaluator
 	now         func() time.Time
+	observer    observability.GroupListEligibilityObserver
 }
 
-func NewManagementService(repository group_list_repository.Repository, eligibility eligibilityEvaluator) *ManagementService {
-	return &ManagementService{repository: repository, eligibility: eligibility, now: time.Now}
+type ManagementOption func(*ManagementService)
+
+func WithEligibilityObserver(observer observability.GroupListEligibilityObserver) ManagementOption {
+	return func(service *ManagementService) {
+		if observer != nil {
+			service.observer = observer
+		}
+	}
 }
 
-func (s *ManagementService) Create(ctx context.Context, instanceID, instanceJID string, input CreateInput) (*group_list_repository.Summary, error) {
+func NewManagementService(repository group_list_repository.Repository, eligibility eligibilityEvaluator, options ...ManagementOption) *ManagementService {
+	service := &ManagementService{repository: repository, eligibility: eligibility, now: time.Now, observer: noopEligibilityObserver{}}
+	for _, option := range options {
+		option(service)
+	}
+	return service
+}
+
+func (s *ManagementService) Eligibility(ctx context.Context, instanceID, instanceJID string, groupJIDs []string) (*EligibilityAssessment, error) {
+	if err := s.validate(ctx, instanceID); err != nil || len(groupJIDs) < 1 || len(groupJIDs) > 100 {
+		return nil, ErrInvalidInput
+	}
+	startedAt := s.now()
+	assessment, err := s.eligibility.Assess(ctx, instanceID, instanceJID, groupJIDs)
+	if err != nil {
+		return nil, err
+	}
+	if assessment == nil || len(assessment.Results) != len(groupJIDs) {
+		return nil, errors.New("eligibility assessment does not match requested groups")
+	}
+	s.observeAssessment(observability.EligibilityOperationBatch, startedAt, assessment)
+	return assessment, nil
+}
+
+func (s *ManagementService) AggregateEligibility(ctx context.Context, instanceID, instanceJID, groupListID string, expectedVersion *int64) (*AggregateAssessment, error) {
+	if err := s.validate(ctx, instanceID); err != nil || uuid.Validate(groupListID) != nil || expectedVersion != nil && *expectedVersion < 1 {
+		return nil, ErrInvalidInput
+	}
+	summary, entries, err := s.repository.GetEligibilitySnapshot(ctx, instanceID, groupListID, maxGroupListEntries)
+	if err != nil {
+		return nil, err
+	}
+	if expectedVersion != nil && summary.Version != *expectedVersion {
+		return nil, group_list_repository.ErrVersionConflict
+	}
+	if len(entries) == 0 {
+		return nil, ErrEmpty
+	}
+	groupJIDs := make([]string, len(entries))
+	for index := range entries {
+		groupJIDs[index] = entries[index].GroupJID
+	}
+	startedAt := s.now()
+	assessment, err := s.eligibility.Assess(ctx, instanceID, instanceJID, groupJIDs)
+	if err != nil {
+		return nil, err
+	}
+	if assessment == nil || len(assessment.Results) != len(groupJIDs) {
+		return nil, errors.New("eligibility assessment does not match Group List snapshot")
+	}
+	s.observeAssessment(observability.EligibilityOperationAggregate, startedAt, assessment)
+	data := EligibilityAggregate{
+		GroupListID: groupListID, GroupListVersion: summary.Version, Total: len(assessment.Results), ByReason: map[string]int{},
+	}
+	for _, result := range assessment.Results {
+		switch result.Eligibility {
+		case EligibilityEligible:
+			data.Eligible++
+		case EligibilityUnavailable:
+			data.Unavailable++
+		case EligibilityUnknown:
+			data.Unknown++
+		}
+		if result.EligibilityReason != nil {
+			data.ByReason[*result.EligibilityReason]++
+		}
+		if data.CheckedAt.IsZero() || result.CheckedAt.After(data.CheckedAt) {
+			data.CheckedAt = result.CheckedAt
+		}
+	}
+	data.ReadyToTarget = data.Total > 0 && data.Eligible == data.Total
+	return &AggregateAssessment{Data: data, Meta: assessment.Meta}, nil
+}
+
+func (s *ManagementService) observeAssessment(operation string, startedAt time.Time, assessment *EligibilityAssessment) {
+	counts := observability.EligibilityCounts{}
+	for _, result := range assessment.Results {
+		switch result.Eligibility {
+		case EligibilityEligible:
+			counts.Eligible++
+		case EligibilityUnavailable:
+			counts.Unavailable++
+		case EligibilityUnknown:
+			counts.Unknown++
+		}
+	}
+	s.observer.ObserveRequest(operation, s.now().Sub(startedAt), len(assessment.Results), counts)
+}
+
+type noopEligibilityObserver struct{}
+
+func (noopEligibilityObserver) ObserveRequest(string, time.Duration, int, observability.EligibilityCounts) {
+}
+func (noopEligibilityObserver) ObserveMutationRejection(string, string) {}
+
+func (s *ManagementService) Create(ctx context.Context, instanceID, instanceJID string, input CreateInput) (summary *group_list_repository.Summary, err error) {
+	defer func() { s.observeMutationRejection(observability.EligibilityOperationCreate, err) }()
 	if err := s.validate(ctx, instanceID); err != nil {
 		return nil, err
 	}
@@ -105,15 +229,17 @@ func (s *ManagementService) Create(ctx context.Context, instanceID, instanceJID 
 		ID: listID, InstanceID: instanceID, Name: prepared.name, NormalizedName: prepared.normalizedName,
 		Description: prepared.description, AuthorizationSource: prepared.authorizationSource,
 		AuthorizationReferenceHash: prepared.authorizationHash, AuthorizedAt: prepared.authorizedAt,
-		ActorReferenceHash: prepared.actorHash, Entries: prepared.entries, AuditMetadata: mutationMetadata(len(prepared.entries)),
+		ActorReferenceHash: prepared.actorHash, InstanceJID: instanceJID, GroupJIDs: prepared.groupJIDs,
+		AuditMetadata: mutationMetadata(len(prepared.groupJIDs)),
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &group_list_repository.Summary{GroupList: *list, GroupCount: int64(len(prepared.entries))}, nil
+	return &group_list_repository.Summary{GroupList: *list, GroupCount: int64(len(prepared.groupJIDs))}, nil
 }
 
-func (s *ManagementService) Update(ctx context.Context, instanceID, instanceJID, groupListID string, input UpdateInput) (*group_list_repository.Summary, error) {
+func (s *ManagementService) Update(ctx context.Context, instanceID, instanceJID, groupListID string, input UpdateInput) (summary *group_list_repository.Summary, err error) {
+	defer func() { s.observeMutationRejection(observability.EligibilityOperationUpdate, err) }()
 	if err := s.validate(ctx, instanceID); err != nil || uuid.Validate(groupListID) != nil || input.ExpectedVersion < 1 {
 		return nil, ErrInvalidInput
 	}
@@ -125,12 +251,41 @@ func (s *ManagementService) Update(ctx context.Context, instanceID, instanceJID,
 		Name: prepared.name, NormalizedName: prepared.normalizedName, Description: prepared.description,
 		ExpectedVersion: input.ExpectedVersion, AuthorizationSource: prepared.authorizationSource,
 		AuthorizationReferenceHash: prepared.authorizationHash, AuthorizedAt: prepared.authorizedAt,
-		ActorReferenceHash: prepared.actorHash, Entries: prepared.entries, AuditMetadata: mutationMetadata(len(prepared.entries)),
+		ActorReferenceHash: prepared.actorHash, InstanceJID: instanceJID, GroupJIDs: prepared.groupJIDs,
+		AuditMetadata: mutationMetadata(len(prepared.groupJIDs)),
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &group_list_repository.Summary{GroupList: *list, GroupCount: int64(len(prepared.entries))}, nil
+	return &group_list_repository.Summary{GroupList: *list, GroupCount: int64(len(prepared.groupJIDs))}, nil
+}
+
+func (s *ManagementService) observeMutationRejection(operation string, err error) {
+	if s == nil || s.observer == nil || err == nil {
+		return
+	}
+	code := ""
+	switch {
+	case errors.Is(err, group_list_repository.ErrNotFound):
+		code = "group_list_not_found"
+	case errors.Is(err, group_list_repository.ErrNameConflict):
+		code = "group_list_name_conflict"
+	case errors.Is(err, group_list_repository.ErrVersionConflict):
+		code = "group_list_version_conflict"
+	case errors.Is(err, ErrEmpty):
+		code = "group_list_empty"
+	case errors.Is(err, ErrInvalidGroup):
+		code = "group_list_invalid_group"
+	case errors.Is(err, ErrProjectionNotReady):
+		code = "projection_not_ready"
+	case errors.Is(err, ErrGroupUnavailable):
+		code = "group_list_group_unavailable"
+	case errors.Is(err, ErrInvalidInput):
+		code = "invalid_group_list_input"
+	}
+	if code != "" {
+		s.observer.ObserveMutationRejection(operation, code)
+	}
 }
 
 func (s *ManagementService) Get(ctx context.Context, instanceID, groupListID string) (*group_list_repository.Summary, error) {
@@ -187,20 +342,30 @@ func (s *ManagementService) Entries(ctx context.Context, instanceID, instanceJID
 		groupJIDs[index] = page.Items[index].GroupJID
 	}
 	views := make([]EntryView, len(page.Items))
+	result := &EntryList{Items: views}
 	if len(page.Items) > 0 {
-		results, evaluateErr := s.eligibility.Evaluate(ctx, instanceID, instanceJID, groupJIDs)
+		assessment, evaluateErr := s.eligibility.Assess(ctx, instanceID, instanceJID, groupJIDs)
 		if evaluateErr != nil {
 			return nil, evaluateErr
 		}
+		if assessment == nil || len(assessment.Results) != len(groupJIDs) {
+			return nil, errors.New("eligibility assessment does not match Group List page")
+		}
+		result.Meta = assessment.Meta
 		for index := range page.Items {
 			views[index] = EntryView{
 				GroupJID: page.Items[index].GroupJID, SnapshotName: page.Items[index].GroupNameSnapshot,
-				CurrentName: results[index].CurrentName, Eligibility: results[index].Eligibility,
-				EligibilityReason: results[index].EligibilityReason, CanSend: results[index].CanSend, CheckedAt: results[index].CheckedAt,
+				CurrentName: assessment.Results[index].CurrentName, Eligibility: assessment.Results[index].Eligibility,
+				EligibilityReason: assessment.Results[index].EligibilityReason, CanSend: assessment.Results[index].CanSend, CheckedAt: assessment.Results[index].CheckedAt,
 			}
 		}
+		result.Items = views
+	} else {
+		result.Meta, err = s.eligibility.Metadata(instanceID)
+		if err != nil {
+			return nil, err
+		}
 	}
-	result := &EntryList{Items: views}
 	if page.NextCursor != nil {
 		result.NextCursor, err = encodeCursor(cursorEnvelope{Version: cursorVersion, Kind: "entries", Scope: scope, GroupJID: page.NextCursor.GroupJID})
 	}
@@ -246,7 +411,7 @@ type preparedMutation struct {
 	authorizationHash   string
 	authorizedAt        time.Time
 	actorHash           string
-	entries             []group_list_repository.EntryInput
+	groupJIDs           []string
 }
 
 func (s *ManagementService) prepareMutation(ctx context.Context, instanceID, instanceJID, groupListID, name, description string, groupJIDs []string, authorization AuthorizationInput, actorReference string) (*preparedMutation, error) {
@@ -288,27 +453,10 @@ func (s *ManagementService) prepareMutation(ctx context.Context, instanceID, ins
 		seen[groupJID] = struct{}{}
 		canonical[index] = groupJID
 	}
-	eligibility, err := s.eligibility.Evaluate(ctx, instanceID, instanceJID, canonical)
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]group_list_repository.EntryInput, len(eligibility))
-	for index, result := range eligibility {
-		switch result.Eligibility {
-		case EligibilityUnknown:
-			return nil, ErrProjectionNotReady
-		case EligibilityUnavailable:
-			return nil, ErrGroupUnavailable
-		case EligibilityEligible:
-			entries[index] = group_list_repository.EntryInput{GroupJID: result.GroupJID, GroupNameSnapshot: boundedName(result.CurrentName)}
-		default:
-			return nil, errors.New("eligibility returned an unsupported state")
-		}
-	}
 	return &preparedMutation{
 		name: name, normalizedName: normalizedName, description: descriptionPointer, authorizationSource: source,
 		authorizationHash: hashReference(groupListID, evidence), authorizedAt: authorization.AuthorizedAt.UTC(),
-		actorHash: hashReference(groupListID, actorReference), entries: entries,
+		actorHash: hashReference(groupListID, actorReference), groupJIDs: canonical,
 	}, nil
 }
 

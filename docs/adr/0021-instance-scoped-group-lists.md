@@ -5,6 +5,10 @@
 Accepted; implementation is staged and the `group_lists` capability must not be
 advertised until the complete read and write stack is available.
 
+ADR 0029 extends this decision with projection-only advisory preflight
+endpoints, structured mutation issues, and participant identity indexes. It
+does not replace the mutation or worker revalidation rules in this ADR.
+
 ## Context
 
 Campaign operators need reusable, named sets of WhatsApp groups. A set cannot be

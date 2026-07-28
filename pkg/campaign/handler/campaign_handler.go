@@ -95,6 +95,8 @@ func NewCampaignHandler(service managementService) CampaignHandler {
 // @Success 201 {object} apidocs.CampaignDetailResponse
 // @Failure 400 {object} apidocs.CampaignErrorResponse
 // @Failure 401 {object} apidocs.ErrorResponse
+// @Failure 409 {object} apidocs.GroupListEligibilityErrorResponse
+// @Failure 503 {object} apidocs.GroupListEligibilityErrorResponse
 // @Failure 500 {object} apidocs.ErrorResponse
 // @Security ApiKeyAuth
 // @Router /campaigns [post]
@@ -416,6 +418,15 @@ func pageSize(ctx *gin.Context) (int, bool) {
 }
 
 func writeCampaignError(ctx *gin.Context, err error) {
+	var issues *group_list_service.EligibilityIssuesError
+	if errors.As(err, &issues) {
+		if errors.Is(err, campaign_repository.ErrGroupProjectionNotReady) || errors.Is(err, group_list_service.ErrProjectionNotReady) {
+			httpapi.WriteErrorWithDetails(ctx, http.StatusServiceUnavailable, "projection_not_ready", "group projection is not ready", issues.Details)
+		} else {
+			httpapi.WriteErrorWithDetails(ctx, http.StatusConflict, "group_list_group_unavailable", "group list contains an unavailable group", issues.Details)
+		}
+		return
+	}
 	switch {
 	case errors.Is(err, campaign_service.ErrInvalidCampaignCursor):
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid cursor", "code": "invalid_cursor"})
@@ -430,15 +441,15 @@ func writeCampaignError(ctx *gin.Context, err error) {
 	case errors.Is(err, campaign_repository.ErrMediaAssetConflict):
 		ctx.JSON(http.StatusConflict, gin.H{"error": "campaign media is not ready", "code": "campaign_media_not_ready"})
 	case errors.Is(err, group_list_repository.ErrNotFound):
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "group list not found", "code": "group_list_not_found"})
+		httpapi.WriteError(ctx, http.StatusNotFound, "group_list_not_found", "group list not found")
 	case errors.Is(err, group_list_repository.ErrVersionConflict):
-		ctx.JSON(http.StatusConflict, gin.H{"error": "group list version changed", "code": "group_list_version_conflict"})
+		httpapi.WriteError(ctx, http.StatusConflict, "group_list_version_conflict", "group list version changed")
 	case errors.Is(err, campaign_repository.ErrGroupListEmpty), errors.Is(err, group_list_service.ErrEmpty):
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "group list is empty", "code": "group_list_empty"})
+		httpapi.WriteError(ctx, http.StatusBadRequest, "group_list_empty", "group list is empty")
 	case errors.Is(err, campaign_repository.ErrGroupUnavailable), errors.Is(err, group_list_service.ErrGroupUnavailable):
-		ctx.JSON(http.StatusConflict, gin.H{"error": "group list contains an unavailable group", "code": "group_list_group_unavailable"})
+		httpapi.WriteError(ctx, http.StatusConflict, "group_list_group_unavailable", "group list contains an unavailable group")
 	case errors.Is(err, campaign_repository.ErrGroupProjectionNotReady), errors.Is(err, group_list_service.ErrProjectionNotReady):
-		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "group projection is not ready", "code": "projection_not_ready"})
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "projection_not_ready", "group projection is not ready")
 	case errors.Is(err, campaign_repository.ErrInvalidCampaignInput):
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid campaign input", "code": "invalid_campaign_input"})
 	case errors.Is(err, campaign_repository.ErrNoEligibleTargets):
