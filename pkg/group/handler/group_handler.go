@@ -22,6 +22,7 @@ const maxGroupManagementBodyBytes int64 = 64 << 10
 type GroupHandler interface {
 	ListGroups(ctx *gin.Context)
 	SearchGroups(ctx *gin.Context)
+	GroupSummary(ctx *gin.Context)
 	ListGroupMembers(ctx *gin.Context)
 	GroupAudit(ctx *gin.Context)
 	GetGroupInfo(ctx *gin.Context)
@@ -37,6 +38,35 @@ type GroupHandler interface {
 	UpdateGroupSettings(ctx *gin.Context)
 	ManagementContractEnabled() bool
 	PhotoAssetsEnabled() bool
+}
+
+// GroupSummary returns authoritative instance-wide directory aggregates.
+// @Summary Get authoritative group summary
+// @Description Aggregate the complete normalized Group projection for the authenticated instance. Counts are never derived from a directory page and the endpoint never calls WhatsApp.
+// @Tags Group
+// @Produce json
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.GroupDirectorySummary} "success"
+// @Failure 404 {object} apidocs.ErrorResponse "not_found when the normalized management contract is disabled"
+// @Failure 503 {object} apidocs.ErrorResponse "projection_not_ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /group/summary [get]
+func (g *groupHandler) GroupSummary(ctx *gin.Context) {
+	if !g.managementContract {
+		httpapi.WriteError(ctx, http.StatusNotFound, "not_found", "group summary is not enabled")
+		return
+	}
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		httpapi.WriteInternal(ctx, nil)
+		return
+	}
+	summary, meta, err := g.groupService.GetManagementGroupSummary(ctx.Request.Context(), instance)
+	if err != nil {
+		writeGroupProjectionReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": summary, "meta": meta})
 }
 
 // GroupAudit returns terminal, public-safe management command history.

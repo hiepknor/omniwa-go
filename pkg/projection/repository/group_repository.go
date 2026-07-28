@@ -26,6 +26,7 @@ type GroupRepository interface {
 	Search(ctx context.Context, instanceID, term string, limit int, cursor *GroupCursor) (*GroupPage, error)
 	GetInviteLink(ctx context.Context, instanceID, groupID string) (*string, error)
 	SearchManagement(ctx context.Context, instanceID, instanceIdentity string, filter GroupManagementFilter, limit int, cursor *GroupCursor) (*GroupManagementPage, error)
+	GetManagementSummary(ctx context.Context, instanceID string) (*GroupManagementSummary, error)
 	GetManagement(ctx context.Context, instanceID, instanceIdentity, groupID string) (*GroupManagementRecord, error)
 	ListManagementMembers(ctx context.Context, instanceID, instanceIdentity, groupID string, filter GroupMemberFilter, limit int, cursor *GroupMemberCursor) (*GroupManagementRecord, *GroupMemberPage, error)
 	GetManagementMember(ctx context.Context, instanceID, instanceIdentity, groupID, publicID string) (*GroupManagementRecord, *GroupMemberRecord, error)
@@ -58,6 +59,18 @@ type GroupManagementRecord struct {
 type GroupManagementPage struct {
 	Items      []GroupManagementRecord
 	NextCursor *GroupCursor
+}
+
+// GroupManagementSummary is an instance-wide aggregate over the same rows
+// exposed by the normalized Group directory. Unknown facts remain outside
+// their known buckets instead of being fabricated as active or false.
+type GroupManagementSummary struct {
+	Total          int64 `gorm:"column:total"`
+	Active         int64 `gorm:"column:active"`
+	Suspended      int64 `gorm:"column:suspended"`
+	Communities    int64 `gorm:"column:communities"`
+	Subgroups      int64 `gorm:"column:subgroups"`
+	AdminsOnlySend int64 `gorm:"column:admins_only_send"`
 }
 
 type GroupMemberFilter struct {
@@ -678,6 +691,26 @@ func (r *groupRepository) SearchManagement(ctx context.Context, instanceID, inst
 		page.NextCursor = &GroupCursor{GroupID: groups[len(groups)-1].GroupID}
 	}
 	return page, nil
+}
+
+func (r *groupRepository) GetManagementSummary(ctx context.Context, instanceID string) (*GroupManagementSummary, error) {
+	if r == nil || r.db == nil || ctx == nil || uuid.Validate(instanceID) != nil {
+		return nil, errors.New("valid group summary instance is required")
+	}
+	var summary GroupManagementSummary
+	err := r.db.WithContext(ctx).Model(&projection_model.Group{}).
+		Select(`COUNT(*) AS total,
+COUNT(*) FILTER (WHERE tombstoned_at IS NULL AND suspended = FALSE) AS active,
+COUNT(*) FILTER (WHERE tombstoned_at IS NULL AND suspended = TRUE) AS suspended,
+COUNT(*) FILTER (WHERE is_parent = TRUE) AS communities,
+COUNT(*) FILTER (WHERE is_parent IS DISTINCT FROM TRUE AND parent_group_id IS NOT NULL) AS subgroups,
+COUNT(*) FILTER (WHERE announce = TRUE) AS admins_only_send`).
+		Where("instance_id = ?", instanceID).
+		Scan(&summary).Error
+	if err != nil {
+		return nil, err
+	}
+	return &summary, nil
 }
 
 func (r *groupRepository) GetManagement(ctx context.Context, instanceID, instanceIdentity, groupID string) (*GroupManagementRecord, error) {

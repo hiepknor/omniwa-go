@@ -151,6 +151,44 @@ func TestGroupManagementSearchPostgresResolvesAliasesAndKeepsTenantScope(t *test
 	if err != nil || !applied {
 		t.Fatalf("apply other group = %t, %v", applied, err)
 	}
+	communityName := "Community"
+	allMembers, community := false, true
+	applied, err = repository.ApplySnapshot(context.Background(), &projection_model.Group{
+		InstanceID: instances[0].Id, GroupID: "120363009998@g.us", Name: &communityName,
+		Suspended: &active, Announce: &allMembers, IsParent: &community, SourceOccurredAt: now.Add(time.Second), SourceEventKey: "group-community",
+	}, nil)
+	if err != nil || !applied {
+		t.Fatalf("apply community = %t, %v", applied, err)
+	}
+	subgroupName, parentGroupID := "Subgroup", "120363009998@g.us"
+	suspended := true
+	applied, err = repository.ApplySnapshot(context.Background(), &projection_model.Group{
+		InstanceID: instances[0].Id, GroupID: "120363009997@g.us", Name: &subgroupName, ParentGroupID: &parentGroupID,
+		Suspended: &suspended, Announce: &announce, IsParent: &isParent, SourceOccurredAt: now.Add(2 * time.Second), SourceEventKey: "group-subgroup",
+	}, nil)
+	if err != nil || !applied {
+		t.Fatalf("apply subgroup = %t, %v", applied, err)
+	}
+	unknownName := "Unknown facts"
+	applied, err = repository.ApplySnapshot(context.Background(), &projection_model.Group{
+		InstanceID: instances[0].Id, GroupID: "120363009996@g.us", Name: &unknownName,
+		SourceOccurredAt: now.Add(3 * time.Second), SourceEventKey: "group-unknown",
+	}, nil)
+	if err != nil || !applied {
+		t.Fatalf("apply unknown group = %t, %v", applied, err)
+	}
+	summary, err := repository.GetManagementSummary(context.Background(), instances[0].Id)
+	if err != nil || summary.Total != 4 || summary.Active != 2 || summary.Suspended != 1 || summary.Communities != 1 || summary.Subgroups != 1 || summary.AdminsOnlySend != 2 {
+		t.Fatalf("instance summary = %#v, %v", summary, err)
+	}
+	otherSummary, err := repository.GetManagementSummary(context.Background(), instances[1].Id)
+	if err != nil || otherSummary.Total != 1 || otherSummary.Active != 1 || otherSummary.Communities != 0 || otherSummary.Subgroups != 0 {
+		t.Fatalf("other instance summary = %#v, %v", otherSummary, err)
+	}
+	emptySummary, err := repository.GetManagementSummary(context.Background(), uuid.NewString())
+	if err != nil || emptySummary == nil || *emptySummary != (GroupManagementSummary{}) {
+		t.Fatalf("empty instance summary = %#v, %v", emptySummary, err)
+	}
 	page, err := repository.SearchManagement(context.Background(), instances[0].Id, instances[0].Jid, GroupManagementFilter{
 		Type: "group", MyRole: "owner", State: "active", SendMode: "admins_only", MembershipState: "joined",
 	}, 50, nil)

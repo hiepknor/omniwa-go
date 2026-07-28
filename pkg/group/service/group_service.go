@@ -29,6 +29,7 @@ type GroupService interface {
 	ListGroupsRead(ctx context.Context, instance *instance_model.Instance) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	SearchGroupsRead(ctx context.Context, instance *instance_model.Instance, term string, limit int, cursor string) ([]*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	SearchManagementGroups(ctx context.Context, instance *instance_model.Instance, filters GroupManagementFilters, limit int, cursor string) ([]GroupSummary, *projection_service.ProjectionReadMeta, error)
+	GetManagementGroupSummary(ctx context.Context, instance *instance_model.Instance) (*GroupDirectorySummary, *projection_service.ProjectionReadMeta, error)
 	GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error)
 	GetGroupInfoRead(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	GetManagementGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*GroupDetail, *projection_service.ProjectionReadMeta, error)
@@ -223,6 +224,13 @@ func (g *groupService) SearchManagementGroups(ctx context.Context, instance *ins
 		return nil, nil, errors.New("group management reader is required")
 	}
 	return g.managementReader.Search(ctx, instance, filters, limit, cursor)
+}
+
+func (g *groupService) GetManagementGroupSummary(ctx context.Context, instance *instance_model.Instance) (*GroupDirectorySummary, *projection_service.ProjectionReadMeta, error) {
+	if g.managementReader == nil {
+		return nil, nil, errors.New("group management reader is required")
+	}
+	return g.managementReader.Summary(ctx, instance)
 }
 
 func (g *groupService) GetGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, error) {

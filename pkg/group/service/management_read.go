@@ -43,6 +43,16 @@ type GroupMemberFilters struct {
 	Role  string
 }
 
+type GroupDirectorySummary struct {
+	Total          int64     `json:"total"`
+	Active         int64     `json:"active"`
+	Suspended      int64     `json:"suspended"`
+	Communities    int64     `json:"communities"`
+	Subgroups      int64     `json:"subgroups"`
+	AdminsOnlySend int64     `json:"adminsOnlySend"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
 type GroupSummary struct {
 	GroupJID           string     `json:"groupJid"`
 	Name               *string    `json:"name,omitempty"`
@@ -121,6 +131,7 @@ type GroupMember struct {
 
 type managementReadRepository interface {
 	SearchManagement(context.Context, string, string, projection_repository.GroupManagementFilter, int, *projection_repository.GroupCursor) (*projection_repository.GroupManagementPage, error)
+	GetManagementSummary(context.Context, string) (*projection_repository.GroupManagementSummary, error)
 	GetManagement(context.Context, string, string, string) (*projection_repository.GroupManagementRecord, error)
 	ListManagementMembers(context.Context, string, string, string, projection_repository.GroupMemberFilter, int, *projection_repository.GroupMemberCursor) (*projection_repository.GroupManagementRecord, *projection_repository.GroupMemberPage, error)
 	GetManagementMember(context.Context, string, string, string, string) (*projection_repository.GroupManagementRecord, *projection_repository.GroupMemberRecord, error)
@@ -189,6 +200,28 @@ func (r *ManagementReader) Search(ctx context.Context, instance *instance_model.
 		}
 	}
 	return items, meta, nil
+}
+
+func (r *ManagementReader) Summary(ctx context.Context, instance *instance_model.Instance) (*GroupDirectorySummary, *projection_service.ProjectionReadMeta, error) {
+	if r == nil || r.groups == nil || ctx == nil || instance == nil || uuid.Validate(instance.Id) != nil {
+		return nil, nil, ErrInvalidManagementFilter
+	}
+	meta, err := r.readMeta(instance.Id)
+	if err != nil {
+		return nil, nil, err
+	}
+	aggregate, err := r.groups.GetManagementSummary(ctx, instance.Id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if aggregate == nil || meta.LastSyncedAt == nil {
+		return nil, nil, errors.New("group summary repository returned no aggregate")
+	}
+	return &GroupDirectorySummary{
+		Total: aggregate.Total, Active: aggregate.Active, Suspended: aggregate.Suspended,
+		Communities: aggregate.Communities, Subgroups: aggregate.Subgroups,
+		AdminsOnlySend: aggregate.AdminsOnlySend, UpdatedAt: meta.LastSyncedAt.UTC(),
+	}, meta, nil
 }
 
 func (r *ManagementReader) Get(ctx context.Context, instance *instance_model.Instance, groupJID string) (*GroupDetail, *projection_service.ProjectionReadMeta, error) {

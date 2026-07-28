@@ -22,6 +22,9 @@ type managementReadRepositoryStub struct {
 	cursor             *projection_repository.GroupCursor
 	identity           string
 	searchErr          error
+	summary            *projection_repository.GroupManagementSummary
+	summaryErr         error
+	summaryInstanceID  string
 	memberGroup        *projection_repository.GroupManagementRecord
 	memberPage         *projection_repository.GroupMemberPage
 	memberFilter       projection_repository.GroupMemberFilter
@@ -36,6 +39,11 @@ type managementReadRepositoryStub struct {
 func (s *managementReadRepositoryStub) SearchManagement(_ context.Context, _, identity string, filter projection_repository.GroupManagementFilter, _ int, cursor *projection_repository.GroupCursor) (*projection_repository.GroupManagementPage, error) {
 	s.identity, s.filter, s.cursor = identity, filter, cursor
 	return s.page, s.searchErr
+}
+
+func (s *managementReadRepositoryStub) GetManagementSummary(_ context.Context, instanceID string) (*projection_repository.GroupManagementSummary, error) {
+	s.summaryInstanceID = instanceID
+	return s.summary, s.summaryErr
 }
 
 func (s *managementReadRepositoryStub) GetManagement(context.Context, string, string, string) (*projection_repository.GroupManagementRecord, error) {
@@ -96,6 +104,31 @@ func TestManagementReaderReturnsNormalizedSummaryWithoutParticipants(t *testing.
 	}
 	if meta.NextCursor == "" {
 		t.Fatal("next cursor was not encoded")
+	}
+}
+
+func TestManagementReaderReturnsAuthoritativeInstanceSummary(t *testing.T) {
+	instanceID := uuid.NewString()
+	repository := &managementReadRepositoryStub{summary: &projection_repository.GroupManagementSummary{
+		Total: 12, Active: 8, Suspended: 1, Communities: 2, Subgroups: 4, AdminsOnlySend: 3,
+	}}
+	reader := NewManagementReader(repository, managementReadStateStub{state: readyManagementState()})
+	summary, meta, err := reader.Summary(context.Background(), &instance_model.Instance{Id: instanceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.summaryInstanceID != instanceID || summary.Total != 12 || summary.Active != 8 || summary.Suspended != 1 || summary.Communities != 2 ||
+		summary.Subgroups != 4 || summary.AdminsOnlySend != 3 || !summary.UpdatedAt.Equal(time.Unix(100, 0).UTC()) || meta.Source != "projection" {
+		t.Fatalf("summary=%#v meta=%#v repository=%#v", summary, meta, repository)
+	}
+}
+
+func TestManagementSummaryFailsClosedBeforeProjectionIsServing(t *testing.T) {
+	repository := &managementReadRepositoryStub{summary: &projection_repository.GroupManagementSummary{Total: 99}}
+	reader := NewManagementReader(repository, managementReadStateStub{err: gorm.ErrRecordNotFound})
+	_, _, err := reader.Summary(context.Background(), &instance_model.Instance{Id: uuid.NewString()})
+	if !errors.Is(err, projection_service.ErrGroupsProjectionNotReady) || repository.summaryInstanceID != "" {
+		t.Fatalf("error=%v repository=%#v", err, repository)
 	}
 }
 

@@ -51,6 +51,7 @@ are returned only to an admin-authenticated request.
 | `group_management_commands` | Use strict journaled mutations, typed acknowledgements/outcomes, command-time permission checks, and `Idempotency-Key` | Existing `/group/*` mutation routes except photo |
 | `group_management_audit` | Show bounded public-safe terminal management history | `GET /group/{groupJid}/audit` |
 | `group_photo_assets` | Upload a private image asset, then set the Group photo by opaque asset ID | `POST /media-assets`, `POST /group/photo` |
+| `group_summary` | Show authoritative instance-wide Group metrics; never aggregate the current page | `GET /group/summary` |
 | `labels_projection` | Use persisted label list/detail reads | `GET /label/list`, `GET /label/info/{labelId}` |
 | `contacts_projection` | Use normalized persisted contacts for list/search/detail | `GET /user/contacts`, `GET /user/contacts/search`, `GET /user/contact/{contactId}` |
 | `chats_projection` | Use cursor-paged chat reads | `GET /chat/list`, `GET /chat/info/{chatId}` |
@@ -130,6 +131,38 @@ Deployment order for this read stage is:
 
 Disable the flag to restore the legacy read behavior. The additive projection
 columns and schema version remain in place; no data rollback is required.
+
+### Authoritative Group summary
+
+When `group_summary` is present, `GET /group/summary` returns one aggregate over
+the complete normalized directory for the authenticated instance:
+
+```json
+{
+  "message": "success",
+  "data": {
+    "total": 120,
+    "active": 105,
+    "suspended": 2,
+    "communities": 4,
+    "subgroups": 18,
+    "adminsOnlySend": 30,
+    "updatedAt": "2026-07-28T10:00:00Z"
+  },
+  "meta": {
+    "source": "projection",
+    "syncStatus": "ready",
+    "lastSyncedAt": "2026-07-28T10:00:00Z"
+  }
+}
+```
+
+`total` includes every directory record, including unavailable or dissolved
+records retained for truthful state display. Other counters include only rows
+with the corresponding known projected fact. Missing values are not converted
+to false or active. `updatedAt` is the last authoritative reconciliation time.
+Console must omit global metrics when the capability is absent or the endpoint
+returns `projection_not_ready`; it must never sum the current cursor page.
 
 ## Group management commands and audit
 

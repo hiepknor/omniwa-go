@@ -27,6 +27,7 @@ const (
 	CapabilityGroupManagementCommands    = "group_management_commands"
 	CapabilityGroupManagementAudit       = "group_management_audit"
 	CapabilityGroupPhotoAssets           = "group_photo_assets"
+	CapabilityGroupSummary               = "group_summary"
 )
 
 var resourceCapabilities = map[string]string{

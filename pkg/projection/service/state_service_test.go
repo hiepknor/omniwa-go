@@ -264,9 +264,10 @@ func TestGroupManagementCapabilityRequiresReadyCurrentGroupProjection(t *testing
 		WithResourceCapability("groups", CapabilityGroupManagementCommands),
 		WithResourceCapability("groups", CapabilityGroupManagementAudit),
 		WithResourceCapability("groups", CapabilityGroupPhotoAssets),
+		WithResourceCapability("groups", CapabilityGroupSummary),
 	)
 	capabilities, err := service.Capabilities("instance-a")
-	if err != nil || !containsCapability(capabilities, CapabilityGroupManagementPermissions) || !containsCapability(capabilities, CapabilityGroupMembersProjection) || !containsCapability(capabilities, CapabilityGroupManagementCommands) || !containsCapability(capabilities, CapabilityGroupManagementAudit) || !containsCapability(capabilities, CapabilityGroupPhotoAssets) {
+	if err != nil || !containsCapability(capabilities, CapabilityGroupManagementPermissions) || !containsCapability(capabilities, CapabilityGroupMembersProjection) || !containsCapability(capabilities, CapabilityGroupManagementCommands) || !containsCapability(capabilities, CapabilityGroupManagementAudit) || !containsCapability(capabilities, CapabilityGroupPhotoAssets) || !containsCapability(capabilities, CapabilityGroupSummary) {
 		t.Fatalf("ready capabilities = %v, %v", capabilities, err)
 	}
 	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
@@ -274,8 +275,16 @@ func TestGroupManagementCapabilityRequiresReadyCurrentGroupProjection(t *testing
 		SchemaVersion: GroupsProjectionSchemaVersion - 1, LastReconciledAt: &reconciledAt,
 	}
 	capabilities, err = service.Capabilities("instance-a")
-	if err != nil || containsCapability(capabilities, CapabilityGroupManagementPermissions) || containsCapability(capabilities, CapabilityGroupMembersProjection) || containsCapability(capabilities, CapabilityGroupManagementCommands) || containsCapability(capabilities, CapabilityGroupManagementAudit) || containsCapability(capabilities, CapabilityGroupPhotoAssets) {
+	if err != nil || containsCapability(capabilities, CapabilityGroupManagementPermissions) || containsCapability(capabilities, CapabilityGroupMembersProjection) || containsCapability(capabilities, CapabilityGroupManagementCommands) || containsCapability(capabilities, CapabilityGroupManagementAudit) || containsCapability(capabilities, CapabilityGroupPhotoAssets) || containsCapability(capabilities, CapabilityGroupSummary) {
 		t.Fatalf("schema-old capabilities = %v, %v", capabilities, err)
+	}
+	readyState := repository.states[stateKey("instance-a", "groups")]
+	readyState.SchemaVersion = GroupsProjectionSchemaVersion
+	repository.states[stateKey("instance-a", "groups")] = readyState
+	withoutFeature := NewStateService(repository)
+	capabilities, err = withoutFeature.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityGroupSummary) {
+		t.Fatalf("disabled summary capability = %v, %v", capabilities, err)
 	}
 }
 
