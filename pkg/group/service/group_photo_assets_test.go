@@ -65,12 +65,16 @@ func (s *groupPhotoReferencesStub) RemoveReference(_ context.Context, instanceID
 
 type groupPhotoProjectionRepositoryStub struct {
 	patches []projection_repository.GroupPatch
+	err     error
 }
 
 func (*groupPhotoProjectionRepositoryStub) ApplySnapshot(context.Context, *projection_model.Group, []projection_model.GroupParticipant) (bool, error) {
 	return true, nil
 }
 func (s *groupPhotoProjectionRepositoryStub) ApplyPatch(_ context.Context, patch projection_repository.GroupPatch) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
 	s.patches = append(s.patches, patch)
 	return true, nil
 }

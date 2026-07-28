@@ -170,11 +170,8 @@ func (r *GroupReader) InviteLink(ctx context.Context, instanceID, groupID string
 		return "", nil, false, err
 	}
 	inviteLink, err := r.groups.GetInviteLink(ctx, instanceID, groupID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", meta, false, nil
-	}
 	if err != nil {
-		return "", nil, false, err
+		return "", meta, false, err
 	}
 	if inviteLink == nil || *inviteLink == "" {
 		return "", meta, false, nil

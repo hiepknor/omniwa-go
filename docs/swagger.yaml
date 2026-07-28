@@ -134,6 +134,28 @@ definitions:
         example: 0123456789abcdef0123456789abcdef
         type: string
     type: object
+  apidocs.GroupInviteLinkNotFoundDetails:
+    properties:
+      available:
+        example: false
+        type: boolean
+      meta:
+        $ref: '#/definitions/apidocs.ProjectionMeta'
+    type: object
+  apidocs.GroupInviteLinkNotFoundErrorResponse:
+    properties:
+      code:
+        example: group_invite_link_not_found
+        type: string
+      details:
+        $ref: '#/definitions/apidocs.GroupInviteLinkNotFoundDetails'
+      error:
+        example: cached group invite link is not available
+        type: string
+      requestId:
+        example: 0123456789abcdef0123456789abcdef
+        type: string
+    type: object
   apidocs.GroupListAuditEvent:
     properties:
       actorType:
@@ -231,6 +253,25 @@ definitions:
         type: string
       meta:
         $ref: '#/definitions/apidocs.ProjectionMeta'
+    type: object
+  apidocs.GroupProjectionErrorDetails:
+    properties:
+      meta:
+        $ref: '#/definitions/apidocs.ProjectionMeta'
+    type: object
+  apidocs.GroupProjectionErrorResponse:
+    properties:
+      code:
+        example: group_permission_denied
+        type: string
+      details:
+        $ref: '#/definitions/apidocs.GroupProjectionErrorDetails'
+      error:
+        example: group management permission denied
+        type: string
+      requestId:
+        example: 0123456789abcdef0123456789abcdef
+        type: string
     type: object
   apidocs.LabelItem:
     properties:
@@ -1015,6 +1056,8 @@ definitions:
         type: integer
       groupJid:
         type: string
+      inviteLink:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupInviteLinkMetadata'
       isDefaultSubgroup:
         type: boolean
       joinApproval:
@@ -1091,6 +1134,13 @@ definitions:
         type: integer
       total:
         type: integer
+      updatedAt:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.GroupInviteLinkMetadata:
+    properties:
+      available:
+        type: boolean
       updatedAt:
         type: string
     type: object
@@ -11114,7 +11164,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Get group invite link
+      description: Read the cached group invite link from the instance-scoped Groups
+        projection. This endpoint never calls WhatsApp when reset=false. Permission
+        and cache availability are separate facts.
       parameters:
       - description: Group data
         in: body
@@ -11126,22 +11178,26 @@ paths:
       - application/json
       responses:
         "200":
-          description: success
+          description: data is a cached-link string for reset=false or a CommandAcknowledgement
+            for reset=true
           schema:
-            allOf:
-            - $ref: '#/definitions/apidocs.SuccessResponse'
-            - properties:
-                data:
-                  type: string
-              type: object
+            $ref: '#/definitions/apidocs.SuccessResponse'
         "400":
           description: Error on validation
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
-        "404":
-          description: Cached invite link not found
+        "403":
+          description: group_permission_denied
           schema:
-            $ref: '#/definitions/apidocs.ErrorResponse'
+            $ref: '#/definitions/apidocs.GroupProjectionErrorResponse'
+        "404":
+          description: group_not_found or group_invite_link_not_found
+          schema:
+            $ref: '#/definitions/apidocs.GroupInviteLinkNotFoundErrorResponse'
+        "409":
+          description: group_state_changed
+          schema:
+            $ref: '#/definitions/apidocs.GroupProjectionErrorResponse'
         "429":
           description: Information query rate limited; see Retry-After header
           schema:

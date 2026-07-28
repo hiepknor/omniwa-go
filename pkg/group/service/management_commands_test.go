@@ -25,6 +25,7 @@ type managementCommandRepositoryStub struct {
 	executeCalls  int
 	completeCalls int
 	completedAs   group_model.ManagementCommandStatus
+	auditSummary  json.RawMessage
 }
 
 func (s *managementCommandRepositoryStub) Create(_ context.Context, input group_repository.CreateManagementCommandInput) (*group_model.ManagementCommand, bool, error) {
@@ -53,6 +54,7 @@ func (s *managementCommandRepositoryStub) MarkExecuting(context.Context, string,
 func (s *managementCommandRepositoryStub) Complete(_ context.Context, _, _ string, input group_repository.CompleteManagementCommandInput) (*group_model.ManagementCommand, error) {
 	s.completeCalls++
 	s.completedAs = input.Status
+	s.auditSummary = append(s.auditSummary[:0], input.AuditSummary...)
 	s.command.Status, s.command.SafeOutcome = input.Status, input.SafeOutcome
 	return s.command, nil
 }
@@ -71,6 +73,8 @@ type managementCommandProviderStub struct {
 	prepareErr         error
 	nameCalls          int
 	nameErr            error
+	resetCalls         int
+	resetErr           error
 	participantCalls   int
 	participantResults []types.GroupParticipant
 	participantErr     error
@@ -104,8 +108,9 @@ func (s *managementCommandProviderStub) SetManagementPhoto(context.Context, stri
 func (*managementCommandProviderStub) LeaveManagementGroup(context.Context, string, types.JID) error {
 	return nil
 }
-func (*managementCommandProviderStub) ResetManagementInviteLink(context.Context, string, types.JID) error {
-	return nil
+func (s *managementCommandProviderStub) ResetManagementInviteLink(context.Context, string, types.JID) error {
+	s.resetCalls++
+	return s.resetErr
 }
 func (s *managementCommandProviderStub) UpdateManagementParticipants(context.Context, string, types.JID, []types.JID, string) ([]types.GroupParticipant, error) {
 	s.participantCalls++
@@ -145,6 +150,56 @@ func TestManagementCommandUnknownOutcomeIsNeverRetried(t *testing.T) {
 	acknowledgement, err := manager.SetName(context.Background(), &instance_model.Instance{Id: uuid.NewString(), Jid: "actor@s.whatsapp.net"}, &SetGroupNameStruct{GroupJID: "123@g.us", Name: "New name"}, ManagementCommandMetadata{ActorReference: "secret-instance-token"})
 	if err != nil || acknowledgement.Status != "unknown" || provider.nameCalls != 1 || repository.completedAs != group_model.ManagementCommandUnknown {
 		t.Fatalf("ack=%#v err=%v repository=%#v provider=%#v", acknowledgement, err, repository, provider)
+	}
+}
+
+func TestResetInviteLinkUsesTypedAcknowledgementAndNeverRetriesUnknown(t *testing.T) {
+	repository := &managementCommandRepositoryStub{created: true}
+	provider := &managementCommandProviderStub{resetErr: errors.New("projection write-through failed after provider success")}
+	manager := NewManagementCommandManager(repository, managementCommandReader(projection_model.ParticipantRoleAdmin, false), provider)
+	acknowledgement, err := manager.ResetInviteLink(context.Background(), &instance_model.Instance{Id: uuid.NewString(), Jid: "actor@s.whatsapp.net"}, &GetGroupInviteLinkStruct{GroupJID: "123@g.us", Reset: true}, ManagementCommandMetadata{ActorReference: "secret-instance-token", IdempotencyKey: "reset-once"})
+	if err != nil || acknowledgement.Status != "unknown" || provider.resetCalls != 1 || repository.completedAs != group_model.ManagementCommandUnknown {
+		t.Fatalf("ack=%#v err=%v repository=%#v provider=%#v", acknowledgement, err, repository, provider)
+	}
+	if strings.Contains(string(repository.auditSummary), "chat.whatsapp.com") || strings.Contains(string(repository.auditSummary), "reset-once") || strings.Contains(string(repository.auditSummary), "secret-instance-token") {
+		t.Fatalf("sensitive reset material entered audit: %s", repository.auditSummary)
+	}
+
+	repository.created = false
+	stored, replayErr := manager.ResetInviteLink(context.Background(), &instance_model.Instance{Id: repository.command.InstanceID, Jid: "actor@s.whatsapp.net"}, &GetGroupInviteLinkStruct{GroupJID: "123@g.us", Reset: true}, ManagementCommandMetadata{ActorReference: "secret-instance-token", IdempotencyKey: "reset-once"})
+	if replayErr != nil || stored.Status != "unknown" || provider.resetCalls != 1 {
+		t.Fatalf("replay=%#v err=%v provider=%#v", stored, replayErr, provider)
+	}
+}
+
+func TestResetInviteLinkConfirmedWriteThroughCompletes(t *testing.T) {
+	repository := &managementCommandRepositoryStub{created: true}
+	provider := &managementCommandProviderStub{}
+	manager := NewManagementCommandManager(repository, managementCommandReader(projection_model.ParticipantRoleAdmin, false), provider)
+	acknowledgement, err := manager.ResetInviteLink(context.Background(), &instance_model.Instance{Id: uuid.NewString(), Jid: "actor@s.whatsapp.net"}, &GetGroupInviteLinkStruct{GroupJID: "123@g.us", Reset: true}, ManagementCommandMetadata{ActorReference: "secret-instance-token", IdempotencyKey: "confirmed-reset"})
+	if err != nil || acknowledgement.Status != "completed" || provider.resetCalls != 1 || repository.completedAs != group_model.ManagementCommandCompleted {
+		t.Fatalf("ack=%#v err=%v repository=%#v provider=%#v", acknowledgement, err, repository, provider)
+	}
+}
+
+func TestResetInviteLinkRevalidatesPermissionBeforeProviderAdmission(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		role projection_model.ParticipantRole
+		want error
+	}{
+		{name: "denied", role: projection_model.ParticipantRoleMember, want: ErrManagementPermissionDenied},
+		{name: "unknown", role: projection_model.ParticipantRole("unknown"), want: ErrManagementPermissionUnknown},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &managementCommandRepositoryStub{created: true}
+			provider := &managementCommandProviderStub{}
+			manager := NewManagementCommandManager(repository, managementCommandReader(test.role, false), provider)
+			_, err := manager.ResetInviteLink(context.Background(), &instance_model.Instance{Id: uuid.NewString(), Jid: "actor@s.whatsapp.net"}, &GetGroupInviteLinkStruct{GroupJID: "123@g.us", Reset: true}, ManagementCommandMetadata{ActorReference: "secret-instance-token"})
+			if !errors.Is(err, test.want) || provider.prepareCalls != 0 || provider.resetCalls != 0 || repository.executeCalls != 0 {
+				t.Fatalf("error=%v repository=%#v provider=%#v", err, repository, provider)
+			}
+		})
 	}
 }
 

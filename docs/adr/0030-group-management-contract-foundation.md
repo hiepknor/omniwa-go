@@ -112,6 +112,26 @@ command type, status, bounded summary, actor type, and timestamp. They never
 expose invite links, participant aliases, raw provider payloads, credentials,
 or idempotency keys.
 
+Invite-link permission and cache availability are separate facts. The
+normalized `GroupDetail.inviteLink.available` field reports only whether a
+non-empty link is currently cached in the instance-scoped Groups projection;
+it does not claim that the provider has no link. `actions.readInviteLink` and
+`actions.resetInviteLink` remain advisory permission decisions derived from the
+same normalized Group record. A projection-backed read preserves its existing
+string success payload, revalidates `readInviteLink` before returning the
+cached secret, and adds projection metadata. A missing Group row is
+`group_not_found`; an existing Group with no cached link is
+`group_invite_link_not_found` with bounded availability and projection details.
+This additive error split was selected instead of changing successful `data`
+from a string to an object, which would break existing generated clients.
+
+A confirmed invite-link reset writes the returned link through to the Group
+projection before the command is recorded as `completed`. If the provider may
+have reset the link but write-through cannot be confirmed, the command is
+recorded as `unknown`, returned for operator review, and is never retried
+automatically. Replaying the same `Idempotency-Key` returns the stored unknown
+outcome without a second provider call.
+
 The photo stage adds migration 33 and the independent
 `WA_GROUP_PHOTO_ASSETS_ENABLED` gate. `POST /group/photo` accepts only an
 instance-owned ready device-upload `mediaAssetId` when the gate is enabled.

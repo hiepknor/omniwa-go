@@ -79,6 +79,13 @@ type GroupPhotoMetadata struct {
 	UpdatedAt    *time.Time `json:"updatedAt,omitempty"`
 }
 
+// GroupInviteLinkMetadata describes projection-cache availability only. It
+// does not assert that the provider has no invite link when Available is false.
+type GroupInviteLinkMetadata struct {
+	Available bool       `json:"available"`
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+}
+
 type ActionDecision struct {
 	State     string    `json:"state" enums:"allowed,denied,unknown"`
 	Reason    *string   `json:"reason" enums:"admin_required,owner_required,not_a_member,group_suspended,group_unavailable,protected_member,self_action_not_allowed,already_admin,not_an_admin,permission_unknown,projection_not_ready,provider_disconnected,unsupported"`
@@ -102,17 +109,18 @@ type GroupActions struct {
 
 type GroupDetail struct {
 	GroupSummary
-	Description           *string              `json:"description,omitempty"`
-	AdminCount            *int64               `json:"adminCount,omitempty"`
-	Owner                 *SafeMemberReference `json:"owner,omitempty"`
-	Announce              *bool                `json:"announce,omitempty"`
-	Locked                *bool                `json:"locked,omitempty"`
-	JoinApproval          *bool                `json:"joinApproval,omitempty"`
-	MemberAddMode         string               `json:"memberAddMode" enums:"all_members,admins_only,unknown"`
-	EphemeralEnabled      *bool                `json:"ephemeralEnabled,omitempty"`
-	EphemeralTimerSeconds *int64               `json:"ephemeralTimerSeconds,omitempty"`
-	Photo                 *GroupPhotoMetadata  `json:"photo,omitempty"`
-	Actions               GroupActions         `json:"actions"`
+	Description           *string                 `json:"description,omitempty"`
+	AdminCount            *int64                  `json:"adminCount,omitempty"`
+	Owner                 *SafeMemberReference    `json:"owner,omitempty"`
+	Announce              *bool                   `json:"announce,omitempty"`
+	Locked                *bool                   `json:"locked,omitempty"`
+	JoinApproval          *bool                   `json:"joinApproval,omitempty"`
+	MemberAddMode         string                  `json:"memberAddMode" enums:"all_members,admins_only,unknown"`
+	EphemeralEnabled      *bool                   `json:"ephemeralEnabled,omitempty"`
+	EphemeralTimerSeconds *int64                  `json:"ephemeralTimerSeconds,omitempty"`
+	Photo                 *GroupPhotoMetadata     `json:"photo,omitempty"`
+	InviteLink            GroupInviteLinkMetadata `json:"inviteLink"`
+	Actions               GroupActions            `json:"actions"`
 }
 
 type GroupMemberActions struct {
@@ -225,6 +233,27 @@ func (r *ManagementReader) Summary(ctx context.Context, instance *instance_model
 }
 
 func (r *ManagementReader) Get(ctx context.Context, instance *instance_model.Instance, groupJID string) (*GroupDetail, *projection_service.ProjectionReadMeta, error) {
+	record, meta, err := r.getRecord(ctx, instance, groupJID)
+	if err != nil {
+		return nil, meta, err
+	}
+	detail := managementDetail(*record, r.now().UTC())
+	return &detail, meta, nil
+}
+
+func (r *ManagementReader) InviteLink(ctx context.Context, instance *instance_model.Instance, groupJID string) (string, bool, ActionDecision, *projection_service.ProjectionReadMeta, error) {
+	record, meta, err := r.getRecord(ctx, instance, groupJID)
+	if err != nil {
+		return "", false, ActionDecision{}, meta, err
+	}
+	detail := managementDetail(*record, r.now().UTC())
+	if record.Group.InviteLink == nil || strings.TrimSpace(*record.Group.InviteLink) == "" {
+		return "", false, detail.Actions.ReadInviteLink, meta, nil
+	}
+	return *record.Group.InviteLink, true, detail.Actions.ReadInviteLink, meta, nil
+}
+
+func (r *ManagementReader) getRecord(ctx context.Context, instance *instance_model.Instance, groupJID string) (*projection_repository.GroupManagementRecord, *projection_service.ProjectionReadMeta, error) {
 	if r == nil || r.groups == nil || instance == nil || instance.Id == "" || instance.Jid == "" {
 		return nil, nil, errors.New("group management reader and instance are required")
 	}
@@ -238,13 +267,12 @@ func (r *ManagementReader) Get(ctx context.Context, instance *instance_model.Ins
 	}
 	record, err := r.groups.GetManagement(ctx, instance.Id, normalizedActorIdentity(instance.Jid), jid.String())
 	if err != nil {
-		return nil, nil, err
+		return nil, meta, err
 	}
 	if record == nil {
-		return nil, nil, errors.New("group management repository returned no record")
+		return nil, meta, errors.New("group management repository returned no record")
 	}
-	detail := managementDetail(*record, r.now().UTC())
-	return &detail, meta, nil
+	return record, meta, nil
 }
 
 func (r *ManagementReader) Members(ctx context.Context, instance *instance_model.Instance, groupJID string, filters GroupMemberFilters, limit int, encodedCursor string) ([]GroupMember, *projection_service.ProjectionReadMeta, error) {
@@ -453,6 +481,10 @@ func managementDetail(record projection_repository.GroupManagementRecord, checke
 		GroupSummary: summary, Description: description, AdminCount: record.AdminCount, Announce: record.Group.Announce,
 		Locked: record.Group.Locked, JoinApproval: record.Group.JoinApprovalRequired, MemberAddMode: managementMemberAddMode(record.Group.MemberAddMode),
 		EphemeralEnabled: record.Group.EphemeralEnabled, EphemeralTimerSeconds: record.Group.EphemeralTimer,
+		InviteLink: GroupInviteLinkMetadata{
+			Available: record.Group.InviteLink != nil && strings.TrimSpace(*record.Group.InviteLink) != "",
+			UpdatedAt: utcTime(record.Group.InviteLinkUpdatedAt),
+		},
 	}
 	if record.OwnerPublicID != nil {
 		detail.Owner = &SafeMemberReference{MemberID: *record.OwnerPublicID}

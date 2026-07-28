@@ -3,6 +3,7 @@ package projection_repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -201,6 +202,23 @@ func TestGroupManagementSearchPostgresResolvesAliasesAndKeepsTenantScope(t *test
 	detail, err := repository.GetManagement(context.Background(), instances[0].Id, instances[0].Jid, "120363009999@g.us")
 	if err != nil || detail.OwnerPublicID == nil || uuid.Validate(*detail.OwnerPublicID) != nil || detail.AdminCount == nil || *detail.AdminCount != 1 {
 		t.Fatalf("management detail = %#v, %v", detail, err)
+	}
+	inviteLink, err := repository.GetInviteLink(context.Background(), instances[0].Id, "120363009999@g.us")
+	if err != nil || inviteLink != nil {
+		t.Fatalf("group without cached invite link = %v, %v", inviteLink, err)
+	}
+	if _, err := repository.GetInviteLink(context.Background(), instances[0].Id, "120363008888@g.us"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-instance invite-link lookup error = %v", err)
+	}
+	cachedLink := "https://chat.whatsapp.com/cached"
+	applied, err = repository.ApplyPatch(context.Background(), GroupPatch{
+		InstanceID: instances[0].Id, GroupID: "120363009999@g.us", InviteLink: &cachedLink,
+		EventKey: "invite-link", OccurredAt: now.Add(4 * time.Second),
+	})
+	inviteLink, readErr := repository.GetInviteLink(context.Background(), instances[0].Id, "120363009999@g.us")
+	detail, detailErr := repository.GetManagement(context.Background(), instances[0].Id, instances[0].Jid, "120363009999@g.us")
+	if err != nil || !applied || readErr != nil || detailErr != nil || inviteLink == nil || *inviteLink != cachedLink || detail.Group.InviteLink == nil || *detail.Group.InviteLink != cachedLink {
+		t.Fatalf("cached invite-link write-through = applied:%v link:%v detail:%#v errors:%v/%v/%v", applied, inviteLink, detail, err, readErr, detailErr)
 	}
 	if err := db.Model(&projection_model.Group{}).Where("instance_id = ? AND group_id = ?", instances[0].Id, "120363009999@g.us").
 		Update("actor_membership_state", projection_model.GroupActorMembershipLeft).Error; err != nil {
