@@ -9,7 +9,8 @@ photo behavior remain separate rollout stages.
 The normalized directory/detail, tri-state permission reads, bounded member
 directory, journaled commands, and public audit reads are now implemented
 behind the same disabled-by-default gate. Shared-media photos are implemented
-behind an additional disabled-by-default gate.
+behind an additional disabled-by-default gate. The authoritative instance-wide
+directory summary is part of the normalized read surface.
 
 ## Context
 
@@ -123,6 +124,18 @@ durable `group_photo` owner reference, and removes the pending reservation.
 Unknown outcomes are never retried; their reservation expires after 24 hours.
 Neither image bytes nor storage metadata enter the journal or audit summary.
 
+`GET /group/summary` performs one instance-scoped aggregate over the same
+`projected_groups` rows exposed by the normalized directory. It never derives
+global metrics from a cursor page and never calls WhatsApp. `total` counts all
+directory records, including unavailable and dissolved records retained by the
+projection. `active` and `suspended` include only rows with an explicit matching
+live state. Community, subgroup, and admins-only-send counts include only rows
+whose corresponding projected fact is known; missing facts do not become false.
+`updatedAt` is the authoritative Group reconciliation timestamp, not a request
+time. The existing `(instance_id, group_id)` primary key scopes the aggregate,
+so no new migration or index is required. `group_summary` is advertised only
+when the normalized Group gate is enabled and schema version 4 is serving.
+
 ## Alternatives considered
 
 A `/v2` route tree was rejected because the product requires one Group route
@@ -146,6 +159,8 @@ not safely idempotent.
   storage metadata. A provider success followed by a local projection/reference
   failure is reported as `unknown` and requires operator review; it is never
   retried automatically.
+- The summary query is intentionally on demand. It is not added to directory
+  rows, so directory pagination remains free of aggregate N+1 work.
 
 ## Rollout and rollback
 
@@ -161,6 +176,9 @@ Enable normalized reads, members, and commands/audit in that order. Keep
 upload, normalized Group management commands, and Console contract are
 verified. Enable it after the Group management gate and require the separately
 advertised `group_photo_assets` capability before Console sends an asset ID.
+Require `group_summary` before showing global Group metrics. If the capability
+is absent or the projection is not serving, omit those metrics rather than
+calculating them from the current page.
 
 Disable the photo gate first to restore the legacy photo handler, then disable
 the management gate if needed. Leave additive columns, references, and tables

@@ -1077,6 +1077,23 @@ definitions:
       updatedAt:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_group_service.GroupDirectorySummary:
+    properties:
+      active:
+        type: integer
+      adminsOnlySend:
+        type: integer
+      communities:
+        type: integer
+      subgroups:
+        type: integer
+      suspended:
+        type: integer
+      total:
+        type: integer
+      updatedAt:
+        type: string
+    type: object
   github_com_evolution-foundation_evolution-go_pkg_group_service.GroupMember:
     properties:
       actions:
@@ -11655,6 +11672,40 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Update group settings
+      tags:
+      - Group
+  /group/summary:
+    get:
+      description: Aggregate the complete normalized Group projection for the authenticated
+        instance. Counts are never derived from a directory page and the endpoint
+        never calls WhatsApp.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.GroupDirectorySummary'
+              type: object
+        "404":
+          description: not_found when the normalized management contract is disabled
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: projection_not_ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get authoritative group summary
       tags:
       - Group
   /instance/{instanceId}/advanced-settings:

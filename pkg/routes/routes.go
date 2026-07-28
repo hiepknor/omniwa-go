@@ -244,6 +244,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		{
 			routes.GET("/list", r.groupHandler.ListGroups)
 			routes.GET("/search", r.groupHandler.SearchGroups)
+			routes.GET("/summary", r.groupHandler.GroupSummary)
 			routes.GET("/:groupJid/members", r.groupHandler.ListGroupMembers)
 			routes.GET("/:groupJid/audit", r.groupHandler.GroupAudit)
 			if r.groupHandler.PhotoAssetsEnabled() {
