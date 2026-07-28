@@ -110,6 +110,10 @@ func TestManagementCommandRepositoryIsScopedIdempotentAndAudited(t *testing.T) {
 	if err != nil || len(secondPage.Items) != 1 || secondPage.Items[0].ID == firstPage.Items[0].ID {
 		t.Fatalf("second audit page = %#v/%v", secondPage, err)
 	}
+	publicAudit, err := repository.ListPublicAudit(context.Background(), instances[0].Id, input.GroupJID, 10, nil)
+	if err != nil || len(publicAudit.Items) != 1 || publicAudit.Items[0].CommandType != input.CommandType || publicAudit.Items[0].CommandStatus != group_model.ManagementCommandPartiallyCompleted || publicAudit.Items[0].Event.EventType != "partially_completed" {
+		t.Fatalf("public audit = %#v/%v", publicAudit, err)
+	}
 }
 
 func TestManagementCommandRepositoryConcurrentIdempotencyCreatesOneCommand(t *testing.T) {
@@ -169,6 +173,46 @@ func TestManagementCommandRepositoryConcurrentIdempotencyCreatesOneCommand(t *te
 	var auditCount int64
 	if err := db.Model(&group_model.ManagementAuditEvent{}).Where("instance_id = ? AND command_id = ?", instance.Id, commandID).Count(&auditCount).Error; err != nil || auditCount != 1 {
 		t.Fatalf("requested audit count = %d/%v", auditCount, err)
+	}
+}
+
+func TestManagementCommandRepositoryResolvesCreateGroupAtCompletion(t *testing.T) {
+	db := managementPostgres(t)
+	suffix := uuid.NewString()
+	instance := instance_model.Instance{Name: "group-management-create-" + suffix, Token: "group-management-create-token-" + suffix}
+	if err := db.Create(&instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Delete(&instance).Error })
+
+	repository := NewManagementCommandRepository(db)
+	command, created, err := repository.Create(context.Background(), CreateManagementCommandInput{
+		ID: uuid.NewString(), InstanceID: instance.Id, CommandType: "created",
+		RequestFingerprint: managementHash("create-request"), ActorType: "instance", ActorReferenceHash: managementHash("create-actor"),
+	})
+	if err != nil || !created || command.GroupJID != nil {
+		t.Fatalf("unresolved create = %#v/%t/%v", command, created, err)
+	}
+	if _, err := repository.MarkExecuting(context.Background(), instance.Id, command.ID); err != nil {
+		t.Fatal(err)
+	}
+	resolved := "120363000004@g.us"
+	completed, err := repository.Complete(context.Background(), instance.Id, command.ID, CompleteManagementCommandInput{
+		Status: group_model.ManagementCommandCompleted, SafeOutcome: json.RawMessage(`{"status":"completed"}`),
+		AuditSummary: json.RawMessage(`{}`), ResolvedGroupJID: resolved,
+	})
+	if err != nil || completed.GroupJID == nil || *completed.GroupJID != resolved {
+		t.Fatalf("resolved completion = %#v/%v", completed, err)
+	}
+	publicAudit, err := repository.ListPublicAudit(context.Background(), instance.Id, resolved, 10, nil)
+	if err != nil || len(publicAudit.Items) != 1 || publicAudit.Items[0].CommandType != "created" {
+		t.Fatalf("resolved public audit = %#v/%v", publicAudit, err)
+	}
+	if _, _, err := repository.Create(context.Background(), CreateManagementCommandInput{
+		ID: uuid.NewString(), InstanceID: instance.Id, CommandType: "name_updated",
+		RequestFingerprint: managementHash("invalid-unresolved"), ActorType: "instance", ActorReferenceHash: managementHash("actor"),
+	}); !errors.Is(err, ErrInvalidManagementCommand) {
+		t.Fatalf("unresolved non-create command = %v", err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -27,6 +28,7 @@ type GroupRepository interface {
 	SearchManagement(ctx context.Context, instanceID, instanceIdentity string, filter GroupManagementFilter, limit int, cursor *GroupCursor) (*GroupManagementPage, error)
 	GetManagement(ctx context.Context, instanceID, instanceIdentity, groupID string) (*GroupManagementRecord, error)
 	ListManagementMembers(ctx context.Context, instanceID, instanceIdentity, groupID string, filter GroupMemberFilter, limit int, cursor *GroupMemberCursor) (*GroupManagementRecord, *GroupMemberPage, error)
+	GetManagementMember(ctx context.Context, instanceID, instanceIdentity, groupID, publicID string) (*GroupManagementRecord, *GroupMemberRecord, error)
 }
 
 type GroupRecord struct {
@@ -761,6 +763,36 @@ func (r *groupRepository) ListManagementMembers(ctx context.Context, instanceID,
 		page.NextCursor = &GroupMemberCursor{SortKey: last.SortKey, PublicID: last.PublicID}
 	}
 	return &groupRecords[0], page, nil
+}
+
+func (r *groupRepository) GetManagementMember(ctx context.Context, instanceID, instanceIdentity, groupID, publicID string) (*GroupManagementRecord, *GroupMemberRecord, error) {
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" || instanceIdentity == "" || groupID == "" || uuid.Validate(publicID) != nil {
+		return nil, nil, errors.New("valid group member identity is required")
+	}
+	aliases, err := r.resolveActorAliases(ctx, instanceID, instanceIdentity)
+	if err != nil {
+		return nil, nil, err
+	}
+	var group projection_model.Group
+	if err := r.db.WithContext(ctx).Where("instance_id = ? AND group_id = ?", instanceID, groupID).First(&group).Error; err != nil {
+		return nil, nil, err
+	}
+	groupRecords, err := r.managementRecords(ctx, instanceID, aliases, []projection_model.Group{group}, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	var participant projection_model.GroupParticipant
+	if err := r.db.WithContext(ctx).Where("instance_id = ? AND group_id = ? AND public_id = ? AND tombstoned_at IS NULL", instanceID, groupID, publicID).First(&participant).Error; err != nil {
+		return nil, nil, err
+	}
+	role := string(participant.Role)
+	if memberMatchesOwner(participant, group) {
+		role = "owner"
+	} else if participant.Role == projection_model.ParticipantRoleSuperAdmin {
+		role = "superadmin"
+	}
+	member := &GroupMemberRecord{Participant: participant, Role: role, IsActor: memberMatchesAliases(participant, aliases)}
+	return &groupRecords[0], member, nil
 }
 
 func memberMatchesOwner(participant projection_model.GroupParticipant, group projection_model.Group) bool {

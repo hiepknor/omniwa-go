@@ -465,3 +465,19 @@ func TestGroupMemberDirectoryIndexesAreVersionedAndScoped(t *testing.T) {
 		}
 	}
 }
+
+func TestUnresolvedGroupManagementCommandMigrationIsNarrowAndAdditive(t *testing.T) {
+	migration := registeredMigration(t, 32)
+	if migration.Name != "allow_unresolved_group_management_commands" {
+		t.Fatalf("unresolved command migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"group_management_commands", "ALTER COLUMN group_jid DROP NOT NULL",
+		"group_management_commands_resource_check", "command_type IN ('created', 'joined')",
+		"group_management_audit_events",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("unresolved command migration missing %q", required)
+		}
+	}
+}

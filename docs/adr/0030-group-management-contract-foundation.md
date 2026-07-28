@@ -6,9 +6,10 @@ Accepted as an additive, disabled-by-default foundation. Public Group API
 cutover, permission decisions, command execution, audit reads, and shared-media
 photo behavior remain separate rollout stages.
 
-The normalized directory/detail, tri-state permission reads, and bounded member
-directory are now implemented behind the same disabled-by-default gate.
-Commands, audit reads, and shared-media photos remain later stages.
+The normalized directory/detail, tri-state permission reads, bounded member
+directory, journaled commands, and public audit reads are now implemented
+behind the same disabled-by-default gate. Shared-media photos remain a later
+stage.
 
 ## Context
 
@@ -85,6 +86,31 @@ read returns only active projected participant rows and performs no live
 provider fallback. `group_members_projection` is advertised only when the
 feature gate is enabled and Groups schema version 4 is ready.
 
+The command stage adds a forward migration 32 because create and join commands
+do not have a trustworthy Group JID before the provider responds. Only
+`created` and `joined` commands may be persisted with a null Group JID. A
+terminal confirmed outcome sets the resolved Group JID; earlier audit events
+remain append-only and unresolved. Other command types continue to require a
+canonical Group JID at insertion.
+
+Every mutation uses strict, bounded JSON and command-time projection
+revalidation. Existing-member participant operations resolve an opaque member
+ID inside the instance-and-group scope; add accepts only canonical WhatsApp
+user JIDs. The journal is written before provider admission, an instance-wide
+outbound limiter is acquired before execution, and the command transitions to
+`executing` immediately before the single provider call. Provider rate limits
+are returned as HTTP 429 with `Retry-After`. Other uncertain provider outcomes
+are stored as `unknown`, returned as such, and are never retried.
+
+Create and participant mutations return bounded per-participant outcomes. Join
+returns `joined`, `already_member`, `approval_required`, `rejected`, or
+`unknown`; because the current provider library does not expose a reliable
+approval-request result, membership is claimed only after a successful
+post-command group-info confirmation. Public audit reads expose terminal
+command type, status, bounded summary, actor type, and timestamp. They never
+expose invite links, participant aliases, raw provider payloads, credentials,
+or idempotency keys.
+
 ## Alternatives considered
 
 A `/v2` route tree was rejected because the product requires one Group route
@@ -109,15 +135,16 @@ not safely idempotent.
 
 ## Rollout and rollback
 
-Apply migrations 30 and 31 with
+Apply migrations 30, 31, and 32 with
 `WA_GROUP_MANAGEMENT_CONTRACT_ENABLED=false`. Verify
 participant public IDs are populated and unique, journal constraints are
 present, member-directory indexes are valid, and existing Group projection
 reads and mutations remain unchanged. Because index creation runs in the
 versioned migration transaction, first canary the deploy against production-like
 participant volume and observe migration lock duration before broader rollout.
-Later stages enable normalized reads, members, commands/audit, and photos in
-that order.
+Enable normalized reads, members, and commands/audit in that order. Keep Group
+photos on the legacy contract until the separately advertised shared-media
+surface is ready.
 
 Disable the feature gate to roll behavior back. Leave additive columns and
 tables in place; repair schema defects with a forward migration. Do not drop

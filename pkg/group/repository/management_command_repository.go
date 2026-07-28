@@ -44,9 +44,10 @@ type CreateManagementCommandInput struct {
 }
 
 type CompleteManagementCommandInput struct {
-	Status       group_model.ManagementCommandStatus
-	SafeOutcome  json.RawMessage
-	AuditSummary json.RawMessage
+	Status           group_model.ManagementCommandStatus
+	SafeOutcome      json.RawMessage
+	AuditSummary     json.RawMessage
+	ResolvedGroupJID string
 }
 
 type ManagementAuditCursor struct {
@@ -59,6 +60,17 @@ type ManagementAuditPage struct {
 	NextCursor *ManagementAuditCursor
 }
 
+type ManagementAuditRecord struct {
+	Event         group_model.ManagementAuditEvent
+	CommandType   string
+	CommandStatus group_model.ManagementCommandStatus
+}
+
+type ManagementPublicAuditPage struct {
+	Items      []ManagementAuditRecord
+	NextCursor *ManagementAuditCursor
+}
+
 type ManagementCommandRepository interface {
 	Create(context.Context, CreateManagementCommandInput) (*group_model.ManagementCommand, bool, error)
 	Get(context.Context, string, string) (*group_model.ManagementCommand, error)
@@ -67,6 +79,7 @@ type ManagementCommandRepository interface {
 	Complete(context.Context, string, string, CompleteManagementCommandInput) (*group_model.ManagementCommand, error)
 	RecoverStaleExecuting(context.Context, time.Time, int) (int64, error)
 	ListAudit(context.Context, string, string, int, *ManagementAuditCursor) (*ManagementAuditPage, error)
+	ListPublicAudit(context.Context, string, string, int, *ManagementAuditCursor) (*ManagementPublicAuditPage, error)
 }
 
 type managementCommandRepository struct {
@@ -84,7 +97,7 @@ func (r *managementCommandRepository) Create(ctx context.Context, input CreateMa
 	}
 	now := r.now().UTC()
 	command := &group_model.ManagementCommand{
-		ID: input.ID, InstanceID: input.InstanceID, GroupJID: input.GroupJID, CommandType: strings.TrimSpace(input.CommandType),
+		ID: input.ID, InstanceID: input.InstanceID, GroupJID: managementGroupJIDPointer(input.GroupJID), CommandType: strings.TrimSpace(input.CommandType),
 		Status: group_model.ManagementCommandRequested, IdempotencyKeyHash: input.IdempotencyKeyHash,
 		RequestFingerprint: input.RequestFingerprint, RequestID: input.RequestID, ActorType: input.ActorType,
 		ActorReferenceHash: input.ActorReferenceHash, SafeOutcome: json.RawMessage(`{}`), CreatedAt: now, UpdatedAt: now,
@@ -181,11 +194,17 @@ func (r *managementCommandRepository) Complete(ctx context.Context, instanceID, 
 			return ErrManagementCommandConflict
 		}
 		command.Status = input.Status
+		if input.ResolvedGroupJID != "" {
+			if !canonicalGroupJID(input.ResolvedGroupJID) || command.GroupJID != nil {
+				return ErrInvalidManagementCommand
+			}
+			command.GroupJID = managementGroupJIDPointer(input.ResolvedGroupJID)
+		}
 		command.SafeOutcome = append(json.RawMessage(nil), input.SafeOutcome...)
 		command.CompletedAt = &now
 		command.UpdatedAt = now
 		if err := tx.Model(&group_model.ManagementCommand{}).Where("instance_id = ? AND id = ?", instanceID, commandID).Updates(map[string]any{
-			"status": command.Status, "safe_outcome": command.SafeOutcome, "completed_at": now, "updated_at": now,
+			"status": command.Status, "safe_outcome": command.SafeOutcome, "group_jid": command.GroupJID, "completed_at": now, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
@@ -254,9 +273,46 @@ func (r *managementCommandRepository) ListAudit(ctx context.Context, instanceID,
 	return page, nil
 }
 
+func (r *managementCommandRepository) ListPublicAudit(ctx context.Context, instanceID, groupJID string, limit int, cursor *ManagementAuditCursor) (*ManagementPublicAuditPage, error) {
+	if r == nil || r.db == nil || ctx == nil || uuid.Validate(instanceID) != nil || !canonicalGroupJID(groupJID) || limit < 1 || limit > maxManagementPageSize ||
+		(cursor != nil && (cursor.OccurredAt.IsZero() || uuid.Validate(cursor.ID) != nil)) {
+		return nil, ErrInvalidManagementCommand
+	}
+	type auditRow struct {
+		group_model.ManagementAuditEvent
+		CommandType   string                              `gorm:"column:command_type"`
+		CommandStatus group_model.ManagementCommandStatus `gorm:"column:command_status"`
+	}
+	query := r.db.WithContext(ctx).Table("group_management_audit_events AS audit").
+		Select("audit.*, commands.command_type, commands.status AS command_status").
+		Joins("JOIN group_management_commands AS commands ON commands.id = audit.command_id AND commands.instance_id = audit.instance_id").
+		Where("audit.instance_id = ? AND audit.group_jid = ?", instanceID, groupJID).
+		Where("audit.event_type IN ?", []string{
+			string(group_model.ManagementCommandCompleted), string(group_model.ManagementCommandPartiallyCompleted),
+			string(group_model.ManagementCommandFailed), string(group_model.ManagementCommandUnknown),
+		})
+	if cursor != nil {
+		at := cursor.OccurredAt.UTC()
+		query = query.Where("audit.occurred_at < ? OR (audit.occurred_at = ? AND audit.id < ?)", at, at, cursor.ID)
+	}
+	var rows []auditRow
+	if err := query.Order("audit.occurred_at DESC, audit.id DESC").Limit(limit + 1).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	page := &ManagementPublicAuditPage{Items: make([]ManagementAuditRecord, min(len(rows), limit))}
+	for index := range page.Items {
+		page.Items[index] = ManagementAuditRecord{Event: rows[index].ManagementAuditEvent, CommandType: rows[index].CommandType, CommandStatus: rows[index].CommandStatus}
+	}
+	if len(rows) > limit {
+		last := page.Items[len(page.Items)-1].Event
+		page.NextCursor = &ManagementAuditCursor{OccurredAt: last.OccurredAt, ID: last.ID}
+	}
+	return page, nil
+}
+
 func validateCreateManagementCommand(r *managementCommandRepository, ctx context.Context, input CreateManagementCommandInput) error {
 	if r == nil || r.db == nil || r.now == nil || ctx == nil || uuid.Validate(input.ID) != nil || uuid.Validate(input.InstanceID) != nil ||
-		!canonicalGroupJID(input.GroupJID) || strings.TrimSpace(input.CommandType) == "" || len(strings.TrimSpace(input.CommandType)) > 64 ||
+		!validManagementCommandGroup(input.GroupJID, strings.TrimSpace(input.CommandType)) || strings.TrimSpace(input.CommandType) == "" || len(strings.TrimSpace(input.CommandType)) > 64 ||
 		!sha256Pattern.MatchString(input.RequestFingerprint) || !sha256Pattern.MatchString(input.ActorReferenceHash) ||
 		(input.ActorType != "instance" && input.ActorType != "system") ||
 		(input.IdempotencyKeyHash != nil && !sha256Pattern.MatchString(*input.IdempotencyKeyHash)) ||
@@ -264,6 +320,18 @@ func validateCreateManagementCommand(r *managementCommandRepository, ctx context
 		return ErrInvalidManagementCommand
 	}
 	return nil
+}
+
+func validManagementCommandGroup(groupJID, commandType string) bool {
+	return canonicalGroupJID(groupJID) || (groupJID == "" && (commandType == "created" || commandType == "joined"))
+}
+
+func managementGroupJIDPointer(value string) *string {
+	if value == "" {
+		return nil
+	}
+	copy := value
+	return &copy
 }
 
 func validManagementRead(r *managementCommandRepository, ctx context.Context, instanceID, commandID string) bool {

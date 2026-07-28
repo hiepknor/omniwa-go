@@ -24,6 +24,8 @@ const (
 	CapabilityInboundImageContent        = "chat_inbound_image_content"
 	CapabilityGroupManagementPermissions = "group_management_permissions"
 	CapabilityGroupMembersProjection     = "group_members_projection"
+	CapabilityGroupManagementCommands    = "group_management_commands"
+	CapabilityGroupManagementAudit       = "group_management_audit"
 )
 
 var resourceCapabilities = map[string]string{

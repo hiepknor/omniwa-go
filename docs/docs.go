@@ -2170,7 +2170,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Create group",
+                "description": "Create a group with bounded typed participant outcomes. The command is journaled before provider admission when group management commands are enabled.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2194,13 +2194,31 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "success",
+                        "description": "accepted",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.SuccessResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CreateGroupCommandResult"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "idempotency_conflict",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -2227,7 +2245,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Set group description",
+                "description": "Set or clear group description with command-time permission revalidation and a journaled acknowledgement.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2251,9 +2269,21 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "success",
+                        "description": "accepted",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.SuccessResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -2262,8 +2292,32 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "group_permission_denied",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "group_state_changed or idempotency_conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Mutation rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "projection_not_ready or provider_disconnected",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -2434,7 +2488,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Join group link",
+                "description": "Join with an invite code and return a typed public-safe outcome without claiming membership when post-command confirmation is unavailable.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2458,9 +2512,21 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "success",
+                        "description": "accepted",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.SuccessResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.JoinGroupCommandResult"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -2469,8 +2535,26 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "idempotency_conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Mutation rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "provider_disconnected",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -2485,7 +2569,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Leave group",
+                "description": "Leave a group after command-time membership revalidation; unknown provider outcomes are not retried.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2503,15 +2587,27 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.LeaveGroupStruct"
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementLeaveGroupRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "success",
+                        "description": "accepted",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.SuccessResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -2520,8 +2616,32 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "group_permission_denied",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "group_state_changed or idempotency_conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Mutation rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "projection_not_ready or provider_disconnected",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -2666,7 +2786,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Set group name",
+                "description": "Set group name with command-time permission revalidation and a journaled acknowledgement when group management commands are enabled.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2690,9 +2810,21 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "success",
+                        "description": "accepted",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.SuccessResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -2701,8 +2833,32 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "group_permission_denied",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "group_state_changed or idempotency_conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Mutation rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "projection_not_ready or provider_disconnected",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -2717,7 +2873,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Update participant",
+                "description": "Execute a bounded participant command. Add accepts canonical user JIDs; remove/promote/demote accept opaque memberId values when group management commands are enabled.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2730,20 +2886,32 @@ const docTemplate = `{
                 "summary": "Update participant",
                 "parameters": [
                     {
-                        "description": "Group data",
+                        "description": "Group participant command",
                         "name": "message",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.AddParticipantStruct"
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementParticipantRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "success",
+                        "description": "accepted",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.SuccessResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantCommandResult"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -2752,8 +2920,32 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "group_permission_denied",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "group_state_changed or idempotency_conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Mutation rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "projection_not_ready or provider_disconnected",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -2999,13 +3191,131 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "success",
+                        "description": "accepted",
                         "schema": {
-                            "$ref": "#/definitions/apidocs.SuccessResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
                         "description": "Error on validation",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "group_permission_denied",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "group_state_changed or idempotency_conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Mutation rate limited; see Retry-After header",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "projection_not_ready or provider_disconnected",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/group/{groupJid}/audit": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List terminal management command outcomes without provider payloads, aliases, invite links, media, or credentials.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Group"
+                ],
+                "summary": "Get group management audit history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical WhatsApp Group JID",
+                        "name": "groupJid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "maximum": 200,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque cursor bound to instance and group",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementAuditEvent"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_cursor or invalid_pagination",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -9510,6 +9820,25 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_group_model.ManagementCommandStatus": {
+            "type": "string",
+            "enum": [
+                "requested",
+                "executing",
+                "completed",
+                "partially_completed",
+                "failed",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "ManagementCommandRequested",
+                "ManagementCommandExecuting",
+                "ManagementCommandCompleted",
+                "ManagementCommandPartiallyCompleted",
+                "ManagementCommandFailed",
+                "ManagementCommandUnknown"
+            ]
+        },
         "github_com_evolution-foundation_evolution-go_pkg_group_service.ActionDecision": {
             "type": "object",
             "properties": {
@@ -9544,20 +9873,75 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_evolution-foundation_evolution-go_pkg_group_service.AddParticipantStruct": {
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.CommandAcknowledgement": {
             "type": "object",
             "properties": {
-                "action": {
-                    "$ref": "#/definitions/whatsmeow.ParticipantChange"
+                "command": {
+                    "type": "string"
+                },
+                "commandId": {
+                    "type": "string",
+                    "format": "uuid"
                 },
                 "groupJid": {
-                    "$ref": "#/definitions/types.JID"
+                    "type": "string"
                 },
-                "participants": {
+                "projectionRefreshExpected": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "accepted",
+                        "completed",
+                        "partially_completed",
+                        "unknown"
+                    ]
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.CreateGroupCommandResult": {
+            "type": "object",
+            "properties": {
+                "acknowledgementStatus": {
+                    "type": "string",
+                    "enum": [
+                        "completed",
+                        "partially_completed",
+                        "failed",
+                        "unknown"
+                    ]
+                },
+                "commandId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "failedCount": {
+                    "type": "integer"
+                },
+                "groupJid": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "participantOutcomes": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantOutcome"
                     }
+                },
+                "projectionRefreshExpected": {
+                    "type": "boolean"
+                },
+                "requestedCount": {
+                    "type": "integer"
+                },
+                "succeededCount": {
+                    "type": "integer"
+                },
+                "unknownCount": {
+                    "type": "integer"
                 }
             }
         },
@@ -9883,6 +10267,34 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.JoinGroupCommandResult": {
+            "type": "object",
+            "properties": {
+                "commandId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "groupJid": {
+                    "type": "string"
+                },
+                "projectionRefreshExpected": {
+                    "type": "boolean"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "joined",
+                        "already_member",
+                        "approval_required",
+                        "rejected",
+                        "unknown"
+                    ]
+                }
+            }
+        },
         "github_com_evolution-foundation_evolution-go_pkg_group_service.JoinGroupStruct": {
             "type": "object",
             "properties": {
@@ -9891,11 +10303,170 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_evolution-foundation_evolution-go_pkg_group_service.LeaveGroupStruct": {
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementAuditEvent": {
+            "type": "object",
+            "properties": {
+                "actorType": {
+                    "type": "string",
+                    "enum": [
+                        "instance",
+                        "system"
+                    ]
+                },
+                "commandStatus": {
+                    "enum": [
+                        "completed",
+                        "partially_completed",
+                        "failed",
+                        "unknown"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_model.ManagementCommandStatus"
+                        }
+                    ]
+                },
+                "eventType": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "occurredAt": {
+                    "type": "string"
+                },
+                "summary": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementAuditSummary"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementAuditSummary": {
+            "type": "object",
+            "properties": {
+                "failureCount": {
+                    "type": "integer"
+                },
+                "participantCount": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "setting": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementLeaveGroupRequest": {
             "type": "object",
             "properties": {
                 "groupJid": {
-                    "$ref": "#/definitions/types.JID"
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.ManagementParticipantRequest": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "add",
+                        "remove",
+                        "promote",
+                        "demote"
+                    ]
+                },
+                "groupJid": {
+                    "type": "string"
+                },
+                "participants": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantCommandResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "add",
+                        "remove",
+                        "promote",
+                        "demote"
+                    ]
+                },
+                "commandId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "failedCount": {
+                    "type": "integer"
+                },
+                "groupJid": {
+                    "type": "string"
+                },
+                "outcomes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantOutcome"
+                    }
+                },
+                "projectionRefreshExpected": {
+                    "type": "boolean"
+                },
+                "requestedCount": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "completed",
+                        "partially_completed",
+                        "failed",
+                        "unknown"
+                    ]
+                },
+                "succeededCount": {
+                    "type": "integer"
+                },
+                "unknownCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_group_service.ParticipantOutcome": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "enum": [
+                        "already_member",
+                        "not_member",
+                        "admin_required",
+                        "invalid_participant",
+                        "provider_rejected",
+                        "unknown_outcome"
+                    ]
+                },
+                "message": {
+                    "type": "string"
+                },
+                "participant": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "succeeded",
+                        "failed",
+                        "unknown"
+                    ]
                 }
             }
         },
@@ -21570,21 +22141,6 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
-        },
-        "whatsmeow.ParticipantChange": {
-            "type": "string",
-            "enum": [
-                "add",
-                "remove",
-                "promote",
-                "demote"
-            ],
-            "x-enum-varnames": [
-                "ParticipantChangeAdd",
-                "ParticipantChangeRemove",
-                "ParticipantChangePromote",
-                "ParticipantChangeDemote"
-            ]
         }
     },
     "securityDefinitions": {

@@ -19,7 +19,7 @@ const (
 type ManagementCommand struct {
 	ID                 string                  `json:"id" gorm:"column:id;type:uuid;primaryKey"`
 	InstanceID         string                  `json:"-" gorm:"column:instance_id;type:uuid;not null"`
-	GroupJID           string                  `json:"groupJid" gorm:"column:group_jid;size:255;not null"`
+	GroupJID           *string                 `json:"groupJid,omitempty" gorm:"column:group_jid;size:255"`
 	CommandType        string                  `json:"command" gorm:"column:command_type;size:64;not null"`
 	Status             ManagementCommandStatus `json:"commandStatus" gorm:"column:status;size:32;not null"`
 	IdempotencyKeyHash *string                 `json:"-" gorm:"column:idempotency_key_hash;size:64"`
@@ -40,7 +40,7 @@ type ManagementAuditEvent struct {
 	ID                 string          `json:"id" gorm:"column:id;type:uuid;primaryKey"`
 	CommandID          string          `json:"commandId" gorm:"column:command_id;type:uuid;not null"`
 	InstanceID         string          `json:"-" gorm:"column:instance_id;type:uuid;not null"`
-	GroupJID           string          `json:"-" gorm:"column:group_jid;size:255;not null"`
+	GroupJID           *string         `json:"-" gorm:"column:group_jid;size:255"`
 	EventType          string          `json:"eventType" gorm:"column:event_type;size:32;not null"`
 	ActorType          string          `json:"actorType" gorm:"column:actor_type;size:32;not null"`
 	ActorReferenceHash string          `json:"-" gorm:"column:actor_reference_hash;size:64;not null"`

@@ -1372,6 +1372,19 @@ CREATE INDEX projected_group_participants_member_search_idx
 ON projected_group_participants (instance_id, group_id, (LOWER(COALESCE(display_name, ''))) text_pattern_ops, public_id)
 WHERE tombstoned_at IS NULL;`,
 	},
+	{
+		Version: 32,
+		Name:    "allow_unresolved_group_management_commands",
+		SQL: `ALTER TABLE group_management_commands
+    ALTER COLUMN group_jid DROP NOT NULL;
+
+ALTER TABLE group_management_commands
+    ADD CONSTRAINT group_management_commands_resource_check
+        CHECK (group_jid IS NOT NULL OR command_type IN ('created', 'joined'));
+
+ALTER TABLE group_management_audit_events
+    ALTER COLUMN group_jid DROP NOT NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

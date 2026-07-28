@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	group_repository "github.com/evolution-foundation/evolution-go/pkg/group/repository"
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -16,11 +17,13 @@ import (
 )
 
 const maxGroupInfoBodyBytes int64 = 16 << 10
+const maxGroupManagementBodyBytes int64 = 64 << 10
 
 type GroupHandler interface {
 	ListGroups(ctx *gin.Context)
 	SearchGroups(ctx *gin.Context)
 	ListGroupMembers(ctx *gin.Context)
+	GroupAudit(ctx *gin.Context)
 	GetGroupInfo(ctx *gin.Context)
 	GetGroupInviteLink(ctx *gin.Context)
 	SetGroupPhoto(ctx *gin.Context)
@@ -32,6 +35,55 @@ type GroupHandler interface {
 	JoinGroupLink(ctx *gin.Context)
 	LeaveGroup(ctx *gin.Context)
 	UpdateGroupSettings(ctx *gin.Context)
+	ManagementContractEnabled() bool
+}
+
+// GroupAudit returns terminal, public-safe management command history.
+// @Summary Get group management audit history
+// @Description List terminal management command outcomes without provider payloads, aliases, invite links, media, or credentials.
+// @Tags Group
+// @Produce json
+// @Param groupJid path string true "Canonical WhatsApp Group JID"
+// @Param limit query int false "Page size (1-200)" minimum(1) maximum(200) default(50)
+// @Param cursor query string false "Opaque cursor bound to instance and group"
+// @Success 200 {object} apidocs.SuccessResponse{data=[]group_service.ManagementAuditEvent} "success"
+// @Failure 400 {object} apidocs.ErrorResponse "invalid_cursor or invalid_pagination"
+// @Failure 404 {object} apidocs.ErrorResponse "not_found"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @Router /group/{groupJid}/audit [get]
+func (g *groupHandler) GroupAudit(ctx *gin.Context) {
+	if !g.managementContract {
+		httpapi.WriteError(ctx, http.StatusNotFound, "not_found", "group management audit is not enabled")
+		return
+	}
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		httpapi.WriteInternal(ctx, nil)
+		return
+	}
+	limit := 50
+	if value := ctx.Query("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 200 {
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_pagination", "limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+	result, err := g.groupService.ListManagementAudit(ctx.Request.Context(), instance.Id, ctx.Param("groupJid"), limit, ctx.Query("cursor"))
+	if err != nil {
+		switch {
+		case errors.Is(err, group_service.ErrInvalidManagementAuditCursor):
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_cursor", "invalid group management audit cursor")
+		case errors.Is(err, group_repository.ErrInvalidManagementCommand):
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_filter", "invalid group management audit request")
+		default:
+			httpapi.WriteInternal(ctx, err)
+		}
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": result.Items, "meta": gin.H{"nextCursor": result.NextCursor}})
 }
 
 // ListGroupMembers returns a bounded projected member page.
@@ -151,6 +203,55 @@ type Option func(*groupHandler)
 
 func WithManagementContract(enabled bool) Option {
 	return func(handler *groupHandler) { handler.managementContract = enabled }
+}
+
+func (g *groupHandler) ManagementContractEnabled() bool { return g != nil && g.managementContract }
+
+func decodeStrictManagementBody[T any](ctx *gin.Context, target *T) bool {
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxGroupManagementBodyBytes)
+	decoder := json.NewDecoder(ctx.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_request", "invalid group management request")
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_request", "invalid group management request")
+		return false
+	}
+	return true
+}
+
+func managementCommandMetadata(ctx *gin.Context) group_service.ManagementCommandMetadata {
+	return group_service.ManagementCommandMetadata{
+		ActorReference: ctx.GetHeader("apikey"), RequestID: httpapi.RequestID(ctx), IdempotencyKey: ctx.GetHeader("Idempotency-Key"),
+	}
+}
+
+func writeManagementCommandError(ctx *gin.Context, err error) {
+	if httpapi.WriteRateLimit(ctx, err) {
+		return
+	}
+	switch {
+	case errors.Is(err, group_service.ErrInvalidManagementFilter), errors.Is(err, group_repository.ErrInvalidManagementCommand):
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_request", "invalid group management request")
+	case errors.Is(err, group_service.ErrManagementPermissionDenied):
+		httpapi.WriteError(ctx, http.StatusForbidden, "group_permission_denied", "group management permission denied")
+	case errors.Is(err, group_service.ErrManagementPermissionUnknown):
+		httpapi.WriteError(ctx, http.StatusConflict, "group_state_changed", "group management permission could not be established")
+	case errors.Is(err, group_service.ErrManagementProviderNotReady):
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "provider_disconnected", "WhatsApp provider is disconnected")
+	case errors.Is(err, group_repository.ErrManagementIdempotencyConflict):
+		httpapi.WriteError(ctx, http.StatusConflict, "idempotency_conflict", "idempotency key was reused with different input")
+	case errors.Is(err, group_repository.ErrManagementCommandConflict):
+		httpapi.WriteError(ctx, http.StatusConflict, "command_conflict", "group management command is already terminal")
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		httpapi.WriteError(ctx, http.StatusNotFound, "group_not_found", "group projection record not found")
+	case errors.Is(err, projection_service.ErrGroupsProjectionNotReady):
+		httpapi.WriteError(ctx, http.StatusServiceUnavailable, "projection_not_ready", "groups projection is not ready")
+	default:
+		httpapi.WriteInternal(ctx, err)
+	}
 }
 
 // List groups
@@ -311,14 +412,27 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 	}
 
 	var data *group_service.GetGroupInviteLinkStruct
-	err := ctx.ShouldBindBodyWithJSON(&data)
-	if err != nil {
+	if g.managementContract {
+		data = &group_service.GetGroupInviteLinkStruct{}
+		if !decodeStrictManagementBody(ctx, data) {
+			return
+		}
+	} else if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	if data.GroupJID == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJID is required"})
+		return
+	}
+	if g.managementContract && data.Reset {
+		acknowledgement, err := g.groupService.ExecuteResetInviteLink(ctx.Request.Context(), data, instance, managementCommandMetadata(ctx))
+		if err != nil {
+			writeManagementCommandError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "accepted", "data": acknowledgement})
 		return
 	}
 
@@ -402,13 +516,17 @@ func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 
 // Set group name
 // @Summary Set group name
-// @Description Set group name
+// @Description Set group name with command-time permission revalidation and a journaled acknowledgement when group management commands are enabled.
 // @Tags Group
 // @Accept json
 // @Produce json
 // @Param message body group_service.SetGroupNameStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.CommandAcknowledgement} "accepted"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 403 {object} apidocs.ErrorResponse "group_permission_denied"
+// @Failure 409 {object} apidocs.ErrorResponse "group_state_changed or idempotency_conflict"
+// @Failure 429 {object} apidocs.RateLimitResponse "Mutation rate limited; see Retry-After header"
+// @Failure 503 {object} apidocs.ErrorResponse "projection_not_ready or provider_disconnected"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /group/name [post]
@@ -422,8 +540,12 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 	}
 
 	var data *group_service.SetGroupNameStruct
-	err := ctx.ShouldBindBodyWithJSON(&data)
-	if err != nil {
+	if g.managementContract {
+		data = &group_service.SetGroupNameStruct{}
+		if !decodeStrictManagementBody(ctx, data) {
+			return
+		}
+	} else if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -438,7 +560,17 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 		return
 	}
 
-	err = g.groupService.SetGroupName(data, instance)
+	if g.managementContract {
+		acknowledgement, err := g.groupService.ExecuteSetGroupName(ctx.Request.Context(), data, instance, managementCommandMetadata(ctx))
+		if err != nil {
+			writeManagementCommandError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "accepted", "data": acknowledgement})
+		return
+	}
+
+	err := g.groupService.SetGroupName(data, instance)
 	if err != nil {
 		httpapi.WriteInternal(ctx, err)
 		return
@@ -449,13 +581,17 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 
 // Set group description
 // @Summary Set group description
-// @Description Set group description
+// @Description Set or clear group description with command-time permission revalidation and a journaled acknowledgement.
 // @Tags Group
 // @Accept json
 // @Produce json
 // @Param message body group_service.SetGroupDescriptionStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.CommandAcknowledgement} "accepted"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 403 {object} apidocs.ErrorResponse "group_permission_denied"
+// @Failure 409 {object} apidocs.ErrorResponse "group_state_changed or idempotency_conflict"
+// @Failure 429 {object} apidocs.RateLimitResponse "Mutation rate limited; see Retry-After header"
+// @Failure 503 {object} apidocs.ErrorResponse "projection_not_ready or provider_disconnected"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /group/description [post]
@@ -469,8 +605,12 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 	}
 
 	var data *group_service.SetGroupDescriptionStruct
-	err := ctx.ShouldBindBodyWithJSON(&data)
-	if err != nil {
+	if g.managementContract {
+		data = &group_service.SetGroupDescriptionStruct{}
+		if !decodeStrictManagementBody(ctx, data) {
+			return
+		}
+	} else if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -483,7 +623,17 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 	// Description can be empty to clear the group description
 	// No validation needed for Description field
 
-	err = g.groupService.SetGroupDescription(data, instance)
+	if g.managementContract {
+		acknowledgement, err := g.groupService.ExecuteSetGroupDescription(ctx.Request.Context(), data, instance, managementCommandMetadata(ctx))
+		if err != nil {
+			writeManagementCommandError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "accepted", "data": acknowledgement})
+		return
+	}
+
+	err := g.groupService.SetGroupDescription(data, instance)
 	if err != nil {
 		httpapi.WriteInternal(ctx, err)
 		return
@@ -494,13 +644,14 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 
 // Create group
 // @Summary Create group
-// @Description Create group
+// @Description Create a group with bounded typed participant outcomes. The command is journaled before provider admission when group management commands are enabled.
 // @Tags Group
 // @Accept json
 // @Produce json
 // @Param message body group_service.CreateGroupStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.CreateGroupCommandResult} "accepted"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 409 {object} apidocs.ErrorResponse "idempotency_conflict"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Failure 429 {object} apidocs.RateLimitResponse "Mutation or information query rate limited; see Retry-After header"
 // @Security ApiKeyAuth
@@ -515,8 +666,12 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 	}
 
 	var data *group_service.CreateGroupStruct
-	err := ctx.ShouldBindBodyWithJSON(&data)
-	if err != nil {
+	if g.managementContract {
+		data = &group_service.CreateGroupStruct{}
+		if !decodeStrictManagementBody(ctx, data) {
+			return
+		}
+	} else if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -528,6 +683,16 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 
 	if len(data.Participants) < 1 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "participants are required"})
+		return
+	}
+
+	if g.managementContract {
+		result, err := g.groupService.ExecuteCreateGroup(ctx.Request.Context(), data, instance, managementCommandMetadata(ctx))
+		if err != nil {
+			writeManagementCommandError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "accepted", "data": result})
 		return
 	}
 
@@ -545,13 +710,17 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 
 // Update participant
 // @Summary Update participant
-// @Description Update participant
+// @Description Execute a bounded participant command. Add accepts canonical user JIDs; remove/promote/demote accept opaque memberId values when group management commands are enabled.
 // @Tags Group
 // @Accept json
 // @Produce json
-// @Param message body group_service.AddParticipantStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Param message body group_service.ManagementParticipantRequest true "Group participant command"
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.ParticipantCommandResult} "accepted"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 403 {object} apidocs.ErrorResponse "group_permission_denied"
+// @Failure 409 {object} apidocs.ErrorResponse "group_state_changed or idempotency_conflict"
+// @Failure 429 {object} apidocs.RateLimitResponse "Mutation rate limited; see Retry-After header"
+// @Failure 503 {object} apidocs.ErrorResponse "projection_not_ready or provider_disconnected"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /group/participant [post]
@@ -561,6 +730,20 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
 		httpapi.WriteInternal(ctx, nil)
+		return
+	}
+
+	if g.managementContract {
+		data := &group_service.ManagementParticipantRequest{}
+		if !decodeStrictManagementBody(ctx, data) {
+			return
+		}
+		result, err := g.groupService.ExecuteUpdateParticipant(ctx.Request.Context(), data, instance, managementCommandMetadata(ctx))
+		if err != nil {
+			writeManagementCommandError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "accepted", "data": result})
 		return
 	}
 
@@ -629,13 +812,16 @@ func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
 
 // Join group link
 // @Summary Join group link
-// @Description Join group link
+// @Description Join with an invite code and return a typed public-safe outcome without claiming membership when post-command confirmation is unavailable.
 // @Tags Group
 // @Accept json
 // @Produce json
 // @Param message body group_service.JoinGroupStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.JoinGroupCommandResult} "accepted"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 409 {object} apidocs.ErrorResponse "idempotency_conflict"
+// @Failure 429 {object} apidocs.RateLimitResponse "Mutation rate limited; see Retry-After header"
+// @Failure 503 {object} apidocs.ErrorResponse "provider_disconnected"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /group/join [post]
@@ -649,8 +835,12 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 	}
 
 	var data *group_service.JoinGroupStruct
-	err := ctx.ShouldBindBodyWithJSON(&data)
-	if err != nil {
+	if g.managementContract {
+		data = &group_service.JoinGroupStruct{}
+		if !decodeStrictManagementBody(ctx, data) {
+			return
+		}
+	} else if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -660,7 +850,17 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 		return
 	}
 
-	err = g.groupService.JoinGroupLink(data, instance)
+	if g.managementContract {
+		result, err := g.groupService.ExecuteJoinGroup(ctx.Request.Context(), data, instance, managementCommandMetadata(ctx))
+		if err != nil {
+			writeManagementCommandError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "accepted", "data": result})
+		return
+	}
+
+	err := g.groupService.JoinGroupLink(data, instance)
 	if err != nil {
 		httpapi.WriteInternal(ctx, err)
 		return
@@ -671,13 +871,17 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 
 // Leave group
 // @Summary Leave group
-// @Description Leave group
+// @Description Leave a group after command-time membership revalidation; unknown provider outcomes are not retried.
 // @Tags Group
 // @Accept json
 // @Produce json
-// @Param message body group_service.LeaveGroupStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Param message body group_service.ManagementLeaveGroupRequest true "Group data"
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.CommandAcknowledgement} "accepted"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 403 {object} apidocs.ErrorResponse "group_permission_denied"
+// @Failure 409 {object} apidocs.ErrorResponse "group_state_changed or idempotency_conflict"
+// @Failure 429 {object} apidocs.RateLimitResponse "Mutation rate limited; see Retry-After header"
+// @Failure 503 {object} apidocs.ErrorResponse "projection_not_ready or provider_disconnected"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /group/leave [post]
@@ -690,19 +894,35 @@ func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 		return
 	}
 
-	var data *group_service.LeaveGroupStruct
-	err := ctx.ShouldBindBodyWithJSON(&data)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if g.managementContract {
+		data := &group_service.ManagementLeaveGroupRequest{}
+		if !decodeStrictManagementBody(ctx, data) {
+			return
+		}
+		if data.GroupJID == "" {
+			writeManagementCommandError(ctx, group_service.ErrInvalidManagementFilter)
+			return
+		}
+		acknowledgement, err := g.groupService.ExecuteLeaveGroup(ctx.Request.Context(), data, instance, managementCommandMetadata(ctx))
+		if err != nil {
+			writeManagementCommandError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "accepted", "data": acknowledgement})
 		return
 	}
 
+	var data *group_service.LeaveGroupStruct
+	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if data.GroupJID.String() == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJid is required"})
 		return
 	}
 
-	err = g.groupService.LeaveGroup(data, instance)
+	err := g.groupService.LeaveGroup(data, instance)
 	if err != nil {
 		httpapi.WriteInternal(ctx, err)
 		return
@@ -718,8 +938,12 @@ func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param message body group_service.UpdateGroupSettingsStruct true "Group data"
-// @Success 200 {object} apidocs.SuccessResponse "success"
+// @Success 200 {object} apidocs.SuccessResponse{data=group_service.CommandAcknowledgement} "accepted"
 // @Failure 400 {object} apidocs.ErrorResponse "Error on validation"
+// @Failure 403 {object} apidocs.ErrorResponse "group_permission_denied"
+// @Failure 409 {object} apidocs.ErrorResponse "group_state_changed or idempotency_conflict"
+// @Failure 429 {object} apidocs.RateLimitResponse "Mutation rate limited; see Retry-After header"
+// @Failure 503 {object} apidocs.ErrorResponse "projection_not_ready or provider_disconnected"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /group/settings [post]
@@ -733,8 +957,12 @@ func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 	}
 
 	var data *group_service.UpdateGroupSettingsStruct
-	err := ctx.ShouldBindBodyWithJSON(&data)
-	if err != nil {
+	if g.managementContract {
+		data = &group_service.UpdateGroupSettingsStruct{}
+		if !decodeStrictManagementBody(ctx, data) {
+			return
+		}
+	} else if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -749,7 +977,17 @@ func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 		return
 	}
 
-	err = g.groupService.UpdateGroupSettings(data, instance)
+	if g.managementContract {
+		acknowledgement, err := g.groupService.ExecuteUpdateGroupSettings(ctx.Request.Context(), data, instance, managementCommandMetadata(ctx))
+		if err != nil {
+			writeManagementCommandError(ctx, err)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "accepted", "data": acknowledgement})
+		return
+	}
+
+	err := g.groupService.UpdateGroupSettings(data, instance)
 	if err != nil {
 		httpapi.WriteInternal(ctx, err)
 		return

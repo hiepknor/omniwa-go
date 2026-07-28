@@ -7,10 +7,12 @@ import (
 	"strings"
 	"time"
 
+	group_repository "github.com/evolution-foundation/evolution-go/pkg/group/repository"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/netguard"
+	"github.com/evolution-foundation/evolution-go/pkg/outbound"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
@@ -31,6 +33,15 @@ type GroupService interface {
 	GetGroupInfoRead(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*types.GroupInfo, *projection_service.ProjectionReadMeta, error)
 	GetManagementGroupInfo(ctx context.Context, data *GetGroupInfoStruct, instance *instance_model.Instance) (*GroupDetail, *projection_service.ProjectionReadMeta, error)
 	ListManagementGroupMembers(ctx context.Context, instance *instance_model.Instance, groupJID string, filters GroupMemberFilters, limit int, cursor string) ([]GroupMember, *projection_service.ProjectionReadMeta, error)
+	ListManagementAudit(ctx context.Context, instanceID, groupJID string, limit int, cursor string) (*ManagementAuditResult, error)
+	ExecuteSetGroupName(context.Context, *SetGroupNameStruct, *instance_model.Instance, ManagementCommandMetadata) (*CommandAcknowledgement, error)
+	ExecuteSetGroupDescription(context.Context, *SetGroupDescriptionStruct, *instance_model.Instance, ManagementCommandMetadata) (*CommandAcknowledgement, error)
+	ExecuteUpdateGroupSettings(context.Context, *UpdateGroupSettingsStruct, *instance_model.Instance, ManagementCommandMetadata) (*CommandAcknowledgement, error)
+	ExecuteLeaveGroup(context.Context, *ManagementLeaveGroupRequest, *instance_model.Instance, ManagementCommandMetadata) (*CommandAcknowledgement, error)
+	ExecuteResetInviteLink(context.Context, *GetGroupInviteLinkStruct, *instance_model.Instance, ManagementCommandMetadata) (*CommandAcknowledgement, error)
+	ExecuteUpdateParticipant(context.Context, *ManagementParticipantRequest, *instance_model.Instance, ManagementCommandMetadata) (*ParticipantCommandResult, error)
+	ExecuteCreateGroup(context.Context, *CreateGroupStruct, *instance_model.Instance, ManagementCommandMetadata) (*CreateGroupCommandResult, error)
+	ExecuteJoinGroup(context.Context, *JoinGroupStruct, *instance_model.Instance, ManagementCommandMetadata) (*JoinGroupCommandResult, error)
 	GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error)
 	SetGroupPhoto(data *SetGroupPhotoStruct, instance *instance_model.Instance) (string, error)
 	SetGroupName(data *SetGroupNameStruct, instance *instance_model.Instance) error
@@ -50,8 +61,11 @@ type groupService struct {
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
+	outboundGuard    outbound.Guard
 	groupReader      *projection_service.GroupReader
 	managementReader *ManagementReader
+	auditReader      *ManagementAuditReader
+	commandManager   *ManagementCommandManager
 	groupWriter      *projection_service.GroupWriter
 	mediaFetcher     netguard.Fetcher
 }
@@ -109,6 +123,13 @@ type JoinGroupStruct struct {
 
 type LeaveGroupStruct struct {
 	GroupJID types.JID `json:"groupJid"`
+}
+
+// ManagementLeaveGroupRequest is the stable public request used by the
+// normalized management contract. The legacy provider-typed DTO remains only
+// for the disabled-feature compatibility path.
+type ManagementLeaveGroupRequest struct {
+	GroupJID string `json:"groupJid"`
 }
 
 type UpdateGroupSettingsStruct struct {
@@ -227,6 +248,45 @@ func (g *groupService) ListManagementGroupMembers(ctx context.Context, instance 
 		return nil, nil, errors.New("group management reader is required")
 	}
 	return g.managementReader.Members(ctx, instance, groupJID, filters, limit, cursor)
+}
+
+func (g *groupService) ListManagementAudit(ctx context.Context, instanceID, groupJID string, limit int, cursor string) (*ManagementAuditResult, error) {
+	if g.auditReader == nil {
+		return nil, errors.New("group management audit reader is required")
+	}
+	return g.auditReader.List(ctx, instanceID, groupJID, limit, cursor)
+}
+
+func (g *groupService) ExecuteSetGroupName(ctx context.Context, data *SetGroupNameStruct, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*CommandAcknowledgement, error) {
+	return g.commandManager.SetName(ctx, instance, data, metadata)
+}
+
+func (g *groupService) ExecuteSetGroupDescription(ctx context.Context, data *SetGroupDescriptionStruct, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*CommandAcknowledgement, error) {
+	return g.commandManager.SetDescription(ctx, instance, data, metadata)
+}
+
+func (g *groupService) ExecuteUpdateGroupSettings(ctx context.Context, data *UpdateGroupSettingsStruct, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*CommandAcknowledgement, error) {
+	return g.commandManager.UpdateSetting(ctx, instance, data, metadata)
+}
+
+func (g *groupService) ExecuteLeaveGroup(ctx context.Context, data *ManagementLeaveGroupRequest, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*CommandAcknowledgement, error) {
+	return g.commandManager.Leave(ctx, instance, data, metadata)
+}
+
+func (g *groupService) ExecuteResetInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*CommandAcknowledgement, error) {
+	return g.commandManager.ResetInviteLink(ctx, instance, data, metadata)
+}
+
+func (g *groupService) ExecuteUpdateParticipant(ctx context.Context, data *ManagementParticipantRequest, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*ParticipantCommandResult, error) {
+	return g.commandManager.UpdateParticipants(ctx, instance, data, metadata)
+}
+
+func (g *groupService) ExecuteCreateGroup(ctx context.Context, data *CreateGroupStruct, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*CreateGroupCommandResult, error) {
+	return g.commandManager.CreateGroup(ctx, instance, data, metadata)
+}
+
+func (g *groupService) ExecuteJoinGroup(ctx context.Context, data *JoinGroupStruct, instance *instance_model.Instance, metadata ManagementCommandMetadata) (*JoinGroupCommandResult, error) {
+	return g.commandManager.JoinGroup(ctx, instance, data, metadata)
 }
 
 func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInviteLinkStruct, instance *instance_model.Instance) (string, error) {
@@ -640,6 +700,181 @@ func (g *groupService) writeGroupProjection(instanceID string, write func(contex
 	}
 }
 
+func (g *groupService) PrepareManagementCommand(ctx context.Context, instanceID string) error {
+	if g.outboundGuard == nil {
+		return errors.New("group management outbound guard is required")
+	}
+	if err := g.outboundGuard.Wait(ctx, instanceID, 1); err != nil {
+		return err
+	}
+	_, err := g.ensureClientConnected(instanceID)
+	return err
+}
+
+func (g *groupService) observeManagementError(instanceID string, err error) error {
+	if observer, ok := g.queryGuard.(interface{ ObserveError(string, error) error }); ok {
+		return observer.ObserveError(instanceID, err)
+	}
+	return err
+}
+
+func (g *groupService) managementClient(instanceID string) (*whatsmeow.Client, error) {
+	client := g.clients.Get(instanceID)
+	if client == nil || !client.IsConnected() {
+		return nil, ErrManagementProviderNotReady
+	}
+	return client, nil
+}
+
+func (g *groupService) SetManagementName(ctx context.Context, instanceID string, groupJID types.JID, name string) error {
+	client, err := g.managementClient(instanceID)
+	if err != nil {
+		return err
+	}
+	if err := client.SetGroupName(ctx, groupJID, name); err != nil {
+		return g.observeManagementError(instanceID, err)
+	}
+	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteName(writeCtx, instanceID, groupJID.String(), name)
+	})
+	return nil
+}
+
+func (g *groupService) SetManagementDescription(ctx context.Context, instanceID string, groupJID types.JID, description string) error {
+	client, err := g.managementClient(instanceID)
+	if err != nil {
+		return err
+	}
+	if err := client.SetGroupTopic(ctx, groupJID, "", "", description); err != nil {
+		return g.observeManagementError(instanceID, err)
+	}
+	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteTopic(writeCtx, instanceID, groupJID.String(), description)
+	})
+	return nil
+}
+
+func (g *groupService) SetManagementSetting(ctx context.Context, instanceID string, groupJID types.JID, action string) error {
+	client, err := g.managementClient(instanceID)
+	if err != nil {
+		return g.observeManagementError(instanceID, err)
+	}
+	var projectionSetting string
+	var enabled bool
+	switch action {
+	case "announcement":
+		err, projectionSetting, enabled = client.SetGroupAnnounce(ctx, groupJID, true), "announce", true
+	case "not_announcement":
+		err, projectionSetting, enabled = client.SetGroupAnnounce(ctx, groupJID, false), "announce", false
+	case "locked":
+		err, projectionSetting, enabled = client.SetGroupLocked(ctx, groupJID, true), "locked", true
+	case "unlocked":
+		err, projectionSetting, enabled = client.SetGroupLocked(ctx, groupJID, false), "locked", false
+	case "approval_on":
+		err, projectionSetting, enabled = client.SetGroupJoinApprovalMode(ctx, groupJID, true), "join_approval", true
+	case "approval_off":
+		err, projectionSetting, enabled = client.SetGroupJoinApprovalMode(ctx, groupJID, false), "join_approval", false
+	case "admin_add":
+		err, projectionSetting, enabled = client.SetGroupMemberAddMode(ctx, groupJID, "admin_add"), "member_add", false
+	case "all_member_add":
+		err, projectionSetting, enabled = client.SetGroupMemberAddMode(ctx, groupJID, "all_member_add"), "member_add", true
+	default:
+		return ErrInvalidManagementFilter
+	}
+	if err != nil {
+		return err
+	}
+	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteSetting(writeCtx, instanceID, groupJID.String(), projectionSetting, enabled)
+	})
+	return nil
+}
+
+func (g *groupService) LeaveManagementGroup(ctx context.Context, instanceID string, groupJID types.JID) error {
+	client, err := g.managementClient(instanceID)
+	if err != nil {
+		return err
+	}
+	if err := client.LeaveGroup(ctx, groupJID); err != nil {
+		return g.observeManagementError(instanceID, err)
+	}
+	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
+		return g.groupWriter.Tombstone(writeCtx, instanceID, groupJID.String())
+	})
+	return nil
+}
+
+func (g *groupService) ResetManagementInviteLink(ctx context.Context, instanceID string, groupJID types.JID) error {
+	client, err := g.managementClient(instanceID)
+	if err != nil {
+		return g.observeManagementError(instanceID, err)
+	}
+	inviteLink, err := client.GetGroupInviteLink(ctx, groupJID, true)
+	if err != nil {
+		return err
+	}
+	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteInviteLink(writeCtx, instanceID, groupJID.String(), inviteLink)
+	})
+	return nil
+}
+
+func (g *groupService) UpdateManagementParticipants(ctx context.Context, instanceID string, groupJID types.JID, participants []types.JID, action string) ([]types.GroupParticipant, error) {
+	client, err := g.managementClient(instanceID)
+	if err != nil {
+		return nil, g.observeManagementError(instanceID, err)
+	}
+	results, err := client.UpdateGroupParticipants(ctx, groupJID, participants, whatsmeow.ParticipantChange(action))
+	if err != nil {
+		return nil, g.observeManagementError(instanceID, err)
+	}
+	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
+		return g.groupWriter.WriteParticipants(writeCtx, instanceID, groupJID.String(), action, results)
+	})
+	return results, nil
+}
+
+func (g *groupService) CreateManagementGroup(ctx context.Context, instanceID, name string, participants []types.JID) (*types.GroupInfo, error) {
+	client, err := g.managementClient(instanceID)
+	if err != nil {
+		return nil, err
+	}
+	group, err := client.CreateGroup(ctx, whatsmeow.ReqCreateGroup{Name: name, Participants: participants})
+	if err != nil {
+		return nil, err
+	}
+	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error { return g.groupWriter.WriteInfo(writeCtx, instanceID, group) })
+	return group, nil
+}
+
+func (g *groupService) JoinManagementGroup(ctx context.Context, instanceID, code string) (managementJoinProviderResult, error) {
+	client, err := g.managementClient(instanceID)
+	if err != nil {
+		return managementJoinProviderResult{}, g.observeManagementError(instanceID, err)
+	}
+	joinedGroup, err := client.JoinGroupWithLink(ctx, code)
+	if errors.Is(err, whatsmeow.ErrInviteLinkInvalid) {
+		return managementJoinProviderResult{Status: "rejected", Reason: "invalid_invite_link"}, nil
+	}
+	if errors.Is(err, whatsmeow.ErrInviteLinkRevoked) {
+		return managementJoinProviderResult{Status: "rejected", Reason: "revoked_invite_link"}, nil
+	}
+	if err != nil {
+		return managementJoinProviderResult{}, err
+	}
+	result := managementJoinProviderResult{GroupJID: joinedGroup.String(), Status: "unknown", Reason: "membership_not_confirmed"}
+	queryCtx, cancel := context.WithTimeout(context.Background(), groupPostMutationQueryTimeout)
+	defer cancel()
+	info, queryErr := waquery.Do(queryCtx, g.queryGuard, instanceID, waquery.OperationGroupInfo, joinedGroup.String(), func(queryCtx context.Context) (*types.GroupInfo, error) {
+		return client.GetGroupInfo(queryCtx, joinedGroup)
+	})
+	if queryErr == nil && info != nil {
+		result.Status, result.Reason = "joined", ""
+		g.writeGroupProjection(instanceID, func(writeCtx context.Context) error { return g.groupWriter.WriteInfo(writeCtx, instanceID, info) })
+	}
+	return result, nil
+}
+
 func (g *groupService) GetGroupRequestParticipants(ctx context.Context, data *GetGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]EnrichedGroupParticipantRequest, error) {
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
@@ -773,20 +1008,26 @@ func NewGroupService(
 	clients instance_runtime.ClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
+	outboundGuard outbound.Guard,
 	groupReader *projection_service.GroupReader,
 	managementReader *ManagementReader,
 	groupWriter *projection_service.GroupWriter,
+	managementCommands group_repository.ManagementCommandRepository,
 	mediaFetcher netguard.Fetcher,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) GroupService {
-	return &groupService{
+	service := &groupService{
 		clients:          clients,
 		whatsmeowService: whatsmeowService,
 		queryGuard:       queryGuard,
+		outboundGuard:    outboundGuard,
 		groupReader:      groupReader,
 		managementReader: managementReader,
+		auditReader:      NewManagementAuditReader(managementCommands),
 		groupWriter:      groupWriter,
 		mediaFetcher:     mediaFetcher,
 		loggerWrapper:    loggerWrapper,
 	}
+	service.commandManager = NewManagementCommandManager(managementCommands, managementReader, service)
+	return service
 }

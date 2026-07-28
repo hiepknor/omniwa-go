@@ -48,6 +48,8 @@ are returned only to an admin-authenticated request.
 | `groups_projection` | Use projection-backed groups; do not fan out live refreshes | `GET /group/list`, `GET /group/search`, `POST /group/info` |
 | `group_management_permissions` | Use normalized Group summaries/detail and tri-state advisory action decisions; never infer permissions from members | `GET /group/list`, `GET /group/search`, `POST /group/info` |
 | `group_members_projection` | Use the projection-backed member directory with opaque member references and advisory per-member actions | `GET /group/{groupJid}/members` |
+| `group_management_commands` | Use strict journaled mutations, typed acknowledgements/outcomes, command-time permission checks, and `Idempotency-Key` | Existing `/group/*` mutation routes except photo |
+| `group_management_audit` | Show bounded public-safe terminal management history | `GET /group/{groupJid}/audit` |
 | `labels_projection` | Use persisted label list/detail reads | `GET /label/list`, `GET /label/info/{labelId}` |
 | `contacts_projection` | Use normalized persisted contacts for list/search/detail | `GET /user/contacts`, `GET /user/contacts/search`, `GET /user/contact/{contactId}` |
 | `chats_projection` | Use cursor-paged chat reads | `GET /chat/list`, `GET /chat/info/{chatId}` |
@@ -127,6 +129,54 @@ Deployment order for this read stage is:
 
 Disable the flag to restore the legacy read behavior. The additive projection
 columns and schema version remain in place; no data rollback is required.
+
+## Group management commands and audit
+
+When both `group_management_permissions` and `group_management_commands` are
+present, Console may use the normalized mutation contract on the existing
+paths. Requests use the instance token in `apikey`, strict JSON, a maximum
+64 KiB body, and an optional `Idempotency-Key` of at most 255 bytes. Reusing a
+key with different input returns `idempotency_conflict`. Console must not retry
+an `unknown` outcome automatically.
+
+Name, description, settings, invite-link reset, and leave return a
+`CommandAcknowledgement`. `completed` means the provider command returned a
+confirmed success; `unknown` means the final provider outcome could not be
+established. `projectionRefreshExpected` does not claim projection convergence.
+All commands revalidate the current projected actor permission and group state
+immediately before provider admission.
+
+`POST /group/participant` accepts 1-100 unique participants. `add` uses
+canonical `@s.whatsapp.net` JIDs; `remove`, `promote`, and `demote` use the
+opaque `memberId` returned by the member directory. The ordered response has a
+separate `succeeded`, `failed`, or `unknown` outcome per requested participant.
+Outcomes preserve request order, but `participant` is an opaque public
+reference and must not be treated as a provider alias. Only confirmed successes
+are written through to projection.
+
+`POST /group/create` accepts 1-100 canonical, unique user JIDs and returns
+bounded participant outcomes, including partial and unknown results.
+`POST /group/join` never infers membership from provider acknowledgement alone:
+it returns `joined` only after post-command confirmation, otherwise a stable
+rejected reason or `unknown`. Create and join may have no resolved Group JID
+while their command is in progress.
+
+HTTP 429 responses include `Retry-After`; Console must delay the operator action
+and must not submit an automatic mutation retry. HTTP 403
+`group_permission_denied`, HTTP 409 `group_state_changed`, and HTTP 503
+`projection_not_ready` are expected race-safe command-time rejections.
+
+When `group_management_audit` is present,
+`GET /group/{groupJid}/audit?limit=&cursor=` returns terminal events newest
+first. The default limit is 50 and maximum is 200. Its cursor is opaque and
+bound to the instance and Group JID. Audit summaries are deliberately bounded
+and never contain participant identities, invite links, media, credentials,
+idempotency keys, or provider payloads.
+
+Rollout commands/audit only after migrations 30-32 are applied, Groups schema
+version 4 is serving, and Console recognizes both capabilities. Disable
+`WA_GROUP_MANAGEMENT_CONTRACT_ENABLED` to restore legacy route behavior; retain
+the append-only journal and audit data during rollback.
 
 ## Shared response behavior
 

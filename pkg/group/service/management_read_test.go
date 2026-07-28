@@ -16,18 +16,21 @@ import (
 )
 
 type managementReadRepositoryStub struct {
-	page          *projection_repository.GroupManagementPage
-	record        *projection_repository.GroupManagementRecord
-	filter        projection_repository.GroupManagementFilter
-	cursor        *projection_repository.GroupCursor
-	identity      string
-	searchErr     error
-	memberGroup   *projection_repository.GroupManagementRecord
-	memberPage    *projection_repository.GroupMemberPage
-	memberFilter  projection_repository.GroupMemberFilter
-	memberCursor  *projection_repository.GroupMemberCursor
-	memberGroupID string
-	memberErr     error
+	page               *projection_repository.GroupManagementPage
+	record             *projection_repository.GroupManagementRecord
+	filter             projection_repository.GroupManagementFilter
+	cursor             *projection_repository.GroupCursor
+	identity           string
+	searchErr          error
+	memberGroup        *projection_repository.GroupManagementRecord
+	memberPage         *projection_repository.GroupMemberPage
+	memberFilter       projection_repository.GroupMemberFilter
+	memberCursor       *projection_repository.GroupMemberCursor
+	memberGroupID      string
+	memberErr          error
+	commandMemberGroup *projection_repository.GroupManagementRecord
+	commandMember      *projection_repository.GroupMemberRecord
+	commandMemberErr   error
 }
 
 func (s *managementReadRepositoryStub) SearchManagement(_ context.Context, _, identity string, filter projection_repository.GroupManagementFilter, _ int, cursor *projection_repository.GroupCursor) (*projection_repository.GroupManagementPage, error) {
@@ -45,6 +48,16 @@ func (s *managementReadRepositoryStub) GetManagement(context.Context, string, st
 func (s *managementReadRepositoryStub) ListManagementMembers(_ context.Context, _, _, groupID string, filter projection_repository.GroupMemberFilter, _ int, cursor *projection_repository.GroupMemberCursor) (*projection_repository.GroupManagementRecord, *projection_repository.GroupMemberPage, error) {
 	s.memberGroupID, s.memberFilter, s.memberCursor = groupID, filter, cursor
 	return s.memberGroup, s.memberPage, s.memberErr
+}
+
+func (s *managementReadRepositoryStub) GetManagementMember(context.Context, string, string, string, string) (*projection_repository.GroupManagementRecord, *projection_repository.GroupMemberRecord, error) {
+	if s.commandMemberErr != nil {
+		return nil, nil, s.commandMemberErr
+	}
+	if s.commandMember == nil {
+		return nil, nil, gorm.ErrRecordNotFound
+	}
+	return s.commandMemberGroup, s.commandMember, nil
 }
 
 type managementReadStateStub struct {
