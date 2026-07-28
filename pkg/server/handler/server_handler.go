@@ -187,6 +187,8 @@ func (s *serverHandler) ServerOk(ctx *gin.Context) {
 
 // Capabilities returns non-sensitive server and instance capability metadata.
 // @Summary Get server capabilities
+// @Description Authenticates either the global admin key or an instance token and returns an explicit credentialScope. instanceId is present only for an instance credential.
+// @Description Credential scope is independent of capabilities and projection readiness. A missing or invalid credential returns 401; projection infrastructure failures may return 500.
 // @Tags Server
 // @Produce json
 // @Success 200 {object} apidocs.CapabilitiesResponse "success"
@@ -195,22 +197,34 @@ func (s *serverHandler) ServerOk(ctx *gin.Context) {
 // @Security ApiKeyAuth
 // @Router /server/capabilities [get]
 func (s *serverHandler) Capabilities(ctx *gin.Context) {
-	instanceID := ""
-	if value, exists := ctx.Get("instance"); exists {
-		if instance, ok := value.(*instance_model.Instance); ok {
-			instanceID = instance.Id
-		}
+	principal, ok := httpapi.AuthPrincipalFrom(ctx)
+	if !ok {
+		httpapi.WriteInternal(ctx, errors.New("capabilities handler missing authentication principal"))
+		return
 	}
+	instanceID := principal.InstanceID
 	capabilities, err := s.projectionState.Capabilities(instanceID)
 	if err != nil {
 		httpapi.WriteInternal(ctx, err)
 		return
 	}
-	if ctx.GetString("auth_scope") == "admin" {
+	if capabilities == nil {
+		capabilities = []string{}
+	}
+	if principal.Scope == httpapi.CredentialScopeAdmin {
 		capabilities = append(capabilities, s.adminCapabilities...)
 		sort.Strings(capabilities)
 	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{"version": s.version, "revision": s.revision, "capabilities": capabilities}})
+	data := gin.H{
+		"version":         s.version,
+		"revision":        s.revision,
+		"capabilities":    capabilities,
+		"credentialScope": principal.Scope,
+	}
+	if principal.Scope == httpapi.CredentialScopeInstance {
+		data["instanceId"] = principal.InstanceID
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": data})
 }
 
 type ServerOption func(*serverHandler)

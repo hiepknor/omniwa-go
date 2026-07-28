@@ -2,20 +2,31 @@ package server_handler
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/evolution-foundation/evolution-go/pkg/config"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
+	auth_middleware "github.com/evolution-foundation/evolution-go/pkg/middleware"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/gin-gonic/gin"
 )
 
-type projectionStateHandlerStub struct{ healthInstanceID string }
+type projectionStateHandlerStub struct {
+	healthInstanceID       string
+	capabilitiesInstanceID string
+	capabilities           []string
+	capabilitiesErr        error
+}
 
 func (s *projectionStateHandlerStub) Get(string, string) (*projection_model.State, error) {
 	return nil, nil
@@ -104,7 +115,10 @@ func (s *projectionStateHandlerStub) MarkSyncing(string, string, int64) error   
 func (s *projectionStateHandlerStub) MarkReady(string, string, int64, time.Time) error   { return nil }
 func (s *projectionStateHandlerStub) MarkStale(string, string, int64) error              { return nil }
 func (s *projectionStateHandlerStub) MarkFailed(string, string, int64) error             { return nil }
-func (s *projectionStateHandlerStub) Capabilities(string) ([]string, error)              { return nil, nil }
+func (s *projectionStateHandlerStub) Capabilities(instanceID string) ([]string, error) {
+	s.capabilitiesInstanceID = instanceID
+	return s.capabilities, s.capabilitiesErr
+}
 func (s *projectionStateHandlerStub) Health(instanceID string) (*projection_service.ProjectionHealth, error) {
 	s.healthInstanceID = instanceID
 	return &projection_service.ProjectionHealth{Status: "healthy", GeneratedAt: time.Unix(100, 0), ByStatus: map[string]int{}, Resources: []projection_service.ProjectionResourceHealth{}}, nil
@@ -116,6 +130,7 @@ func TestCapabilitiesExposeBuildRevision(t *testing.T) {
 	response := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(response)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/server/capabilities", nil)
+	httpapi.SetAuthPrincipal(ctx, httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeAdmin})
 
 	handler.Capabilities(ctx)
 
@@ -129,20 +144,145 @@ func TestCredentialCapabilityIsAdminScoped(t *testing.T) {
 	handler := NewServerHandler("test", "abc123", &projectionStateHandlerStub{}, nil, nil, WithAdminCapabilities("instance_token_rotation"))
 	for _, test := range []struct {
 		name      string
-		authScope string
+		principal httpapi.AuthPrincipal
 		want      bool
 	}{
-		{name: "admin", authScope: "admin", want: true},
-		{name: "instance", authScope: "instance", want: false},
+		{name: "admin", principal: httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeAdmin}, want: true},
+		{name: "instance", principal: httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeInstance, InstanceID: "instance-a"}, want: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(response)
 			ctx.Request = httptest.NewRequest(http.MethodGet, "/server/capabilities", nil)
-			ctx.Set("auth_scope", test.authScope)
+			httpapi.SetAuthPrincipal(ctx, test.principal)
 			handler.Capabilities(ctx)
 			got := strings.Contains(response.Body.String(), "instance_token_rotation")
 			if response.Code != http.StatusOK || got != test.want {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+type capabilitiesCredentialResolver struct {
+	instance *instance_model.Instance
+}
+
+func (r capabilitiesCredentialResolver) GetInstanceByToken(token string) (*instance_model.Instance, error) {
+	switch token {
+	case "instance-token":
+		return r.instance, nil
+	case "invalid-token":
+		return nil, instance_service.ErrInvalidInstanceCredential
+	default:
+		return nil, errors.New("credential lookup unavailable")
+	}
+}
+
+func TestCapabilitiesAuthenticationContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	digest := "credential-digest-must-not-leak"
+	instance := &instance_model.Instance{
+		Id:          "0bca2c34-ef2a-463c-98fd-e2afb6978457",
+		Name:        "private-instance-name",
+		Token:       "instance-token",
+		TokenDigest: &digest,
+		Jid:         "15550001111@s.whatsapp.net",
+		Proxy:       `{"provider":"private-provider-payload"}`,
+	}
+	state := &projectionStateHandlerStub{capabilities: []string{}}
+	handler := NewServerHandler("1.2.3", "abc123", state, nil, nil, WithAdminCapabilities("instance_token_rotation"))
+	auth := auth_middleware.NewMiddleware(&config.Config{GlobalApiKey: "admin-token"}, capabilitiesCredentialResolver{instance: instance})
+	router := gin.New()
+	router.GET("/server/capabilities", auth.AuthAdminOrInstance, handler.Capabilities)
+
+	for _, test := range []struct {
+		name             string
+		token            string
+		wantStatus       int
+		wantScope        string
+		wantInstanceID   string
+		wantInstanceIDOK bool
+		wantCapability   string
+	}{
+		{name: "admin credential", token: "admin-token", wantStatus: http.StatusOK, wantScope: "admin", wantCapability: "instance_token_rotation"},
+		{name: "instance credential with projection not ready", token: "instance-token", wantStatus: http.StatusOK, wantScope: "instance", wantInstanceID: instance.Id, wantInstanceIDOK: true},
+		{name: "missing credential", wantStatus: http.StatusUnauthorized},
+		{name: "invalid credential", token: "invalid-token", wantStatus: http.StatusUnauthorized},
+		{name: "credential lookup failure", token: "lookup-failure", wantStatus: http.StatusInternalServerError},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/server/capabilities", nil)
+			if test.token != "" {
+				request.Header.Set("apikey", test.token)
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != test.wantStatus {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if test.wantStatus != http.StatusOK {
+				return
+			}
+
+			var envelope struct {
+				Message string `json:"message"`
+				Data    struct {
+					Version         string   `json:"version"`
+					Revision        string   `json:"revision"`
+					Capabilities    []string `json:"capabilities"`
+					CredentialScope string   `json:"credentialScope"`
+					InstanceID      *string  `json:"instanceId"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if envelope.Message != "success" || envelope.Data.Version != "1.2.3" || envelope.Data.Revision != "abc123" || envelope.Data.CredentialScope != test.wantScope {
+				t.Fatalf("unexpected contract: %#v", envelope)
+			}
+			if (envelope.Data.InstanceID != nil) != test.wantInstanceIDOK || (envelope.Data.InstanceID != nil && *envelope.Data.InstanceID != test.wantInstanceID) {
+				t.Fatalf("instanceId=%v body=%s", envelope.Data.InstanceID, response.Body.String())
+			}
+			if envelope.Data.Capabilities == nil {
+				t.Fatalf("capabilities must serialize as an array: %s", response.Body.String())
+			}
+			if test.wantCapability != "" && !strings.Contains(response.Body.String(), test.wantCapability) {
+				t.Fatalf("missing capability %q: %s", test.wantCapability, response.Body.String())
+			}
+			for _, forbidden := range []string{instance.Token, digest, instance.Jid, instance.Name, "private-provider-payload", `"token"`, `"tokenDigest"`, `"jid"`, `"phone"`, `"provider"`} {
+				if strings.Contains(response.Body.String(), forbidden) {
+					t.Fatalf("response leaked %q: %s", forbidden, response.Body.String())
+				}
+			}
+		})
+	}
+
+	if state.capabilitiesInstanceID != instance.Id {
+		t.Fatalf("instance capabilities scope=%q", state.capabilitiesInstanceID)
+	}
+}
+
+func TestCapabilitiesRejectsMissingPrincipalAndPreservesProjectionErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, test := range []struct {
+		name      string
+		principal *httpapi.AuthPrincipal
+		state     *projectionStateHandlerStub
+	}{
+		{name: "missing principal", state: &projectionStateHandlerStub{}},
+		{name: "projection error", principal: &httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeInstance, InstanceID: "instance-a"}, state: &projectionStateHandlerStub{capabilitiesErr: errors.New("projection repository unavailable")}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := NewServerHandler("test", "abc123", test.state, nil, nil)
+			response := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(response)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/server/capabilities", nil)
+			if test.principal != nil {
+				httpapi.SetAuthPrincipal(ctx, *test.principal)
+			}
+			handler.Capabilities(ctx)
+			if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), `"code":"internal_error"`) {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 			}
 		})
