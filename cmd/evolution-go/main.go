@@ -341,6 +341,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	if config.GroupManagementEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupManagementPermissions))
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithResourceCapability("groups", projection_service.CapabilityGroupMembersProjection))
 	}
 	if config.GroupListEligibilityEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithStaticCapability(projection_service.CapabilityGroupListEligibility))

@@ -6,9 +6,9 @@ Accepted as an additive, disabled-by-default foundation. Public Group API
 cutover, permission decisions, command execution, audit reads, and shared-media
 photo behavior remain separate rollout stages.
 
-The normalized directory/detail and tri-state permission read stage is now
-implemented behind the same disabled-by-default gate. Member reads, commands,
-audit reads, and shared-media photos remain later stages.
+The normalized directory/detail, tri-state permission reads, and bounded member
+directory are now implemented behind the same disabled-by-default gate.
+Commands, audit reads, and shared-media photos remain later stages.
 
 ## Context
 
@@ -77,6 +77,14 @@ current-actor and owner references needed for decisions; they do not hydrate
 participant collections. Alias resolution reads the persisted contact identity
 graph and never falls back to WhatsApp.
 
+The member-directory stage adds migration 31 with partial B-tree indexes for
+instance-and-group-scoped display-name ordering and prefix search. Its keyset
+cursor orders by normalized display name and opaque participant public ID, so
+members without display names remain pageable without exposing an alias. The
+read returns only active projected participant rows and performs no live
+provider fallback. `group_members_projection` is advertised only when the
+feature gate is enabled and Groups schema version 4 is ready.
+
 ## Alternatives considered
 
 A `/v2` route tree was rejected because the product requires one Group route
@@ -101,9 +109,13 @@ not safely idempotent.
 
 ## Rollout and rollback
 
-Apply migration 30 with `WA_GROUP_MANAGEMENT_CONTRACT_ENABLED=false`. Verify
+Apply migrations 30 and 31 with
+`WA_GROUP_MANAGEMENT_CONTRACT_ENABLED=false`. Verify
 participant public IDs are populated and unique, journal constraints are
-present, and existing Group projection reads and mutations remain unchanged.
+present, member-directory indexes are valid, and existing Group projection
+reads and mutations remain unchanged. Because index creation runs in the
+versioned migration transaction, first canary the deploy against production-like
+participant volume and observe migration lock duration before broader rollout.
 Later stages enable normalized reads, members, commands/audit, and photos in
 that order.
 

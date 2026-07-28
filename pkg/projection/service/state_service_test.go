@@ -258,9 +258,12 @@ func TestGroupManagementCapabilityRequiresReadyCurrentGroupProjection(t *testing
 		InstanceID: "instance-a", Resource: "groups", SyncStatus: projection_model.SyncStatusReady,
 		SchemaVersion: GroupsProjectionSchemaVersion, LastReconciledAt: &reconciledAt,
 	}
-	service := NewStateService(repository, WithResourceCapability("groups", CapabilityGroupManagementPermissions))
+	service := NewStateService(repository,
+		WithResourceCapability("groups", CapabilityGroupManagementPermissions),
+		WithResourceCapability("groups", CapabilityGroupMembersProjection),
+	)
 	capabilities, err := service.Capabilities("instance-a")
-	if err != nil || !containsCapability(capabilities, CapabilityGroupManagementPermissions) {
+	if err != nil || !containsCapability(capabilities, CapabilityGroupManagementPermissions) || !containsCapability(capabilities, CapabilityGroupMembersProjection) {
 		t.Fatalf("ready capabilities = %v, %v", capabilities, err)
 	}
 	repository.states[stateKey("instance-a", "groups")] = projection_model.State{
@@ -268,7 +271,7 @@ func TestGroupManagementCapabilityRequiresReadyCurrentGroupProjection(t *testing
 		SchemaVersion: GroupsProjectionSchemaVersion - 1, LastReconciledAt: &reconciledAt,
 	}
 	capabilities, err = service.Capabilities("instance-a")
-	if err != nil || containsCapability(capabilities, CapabilityGroupManagementPermissions) {
+	if err != nil || containsCapability(capabilities, CapabilityGroupManagementPermissions) || containsCapability(capabilities, CapabilityGroupMembersProjection) {
 		t.Fatalf("schema-old capabilities = %v, %v", capabilities, err)
 	}
 }

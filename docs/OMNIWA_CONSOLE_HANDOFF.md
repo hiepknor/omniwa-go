@@ -47,6 +47,7 @@ are returned only to an admin-authenticated request.
 | `rate_limit_retry_after` | Parse public 429 responses and honor `Retry-After` | Existing information-query endpoints |
 | `groups_projection` | Use projection-backed groups; do not fan out live refreshes | `GET /group/list`, `GET /group/search`, `POST /group/info` |
 | `group_management_permissions` | Use normalized Group summaries/detail and tri-state advisory action decisions; never infer permissions from members | `GET /group/list`, `GET /group/search`, `POST /group/info` |
+| `group_members_projection` | Use the projection-backed member directory with opaque member references and advisory per-member actions | `GET /group/{groupJid}/members` |
 | `labels_projection` | Use persisted label list/detail reads | `GET /label/list`, `GET /label/info/{labelId}` |
 | `contacts_projection` | Use normalized persisted contacts for list/search/detail | `GET /user/contacts`, `GET /user/contacts/search`, `GET /user/contact/{contactId}` |
 | `chats_projection` | Use cursor-paged chat reads | `GET /chat/list`, `GET /chat/info/{chatId}` |
@@ -102,13 +103,25 @@ and role. An incomplete alias graph or missing participant cannot establish
 explicit `left` or `removed` membership state. Owner references are opaque
 member IDs, not provider aliases.
 
+`GET /group/{groupJid}/members` is available only with
+`group_members_projection`. It accepts `q`, `role`, `limit`, and `cursor`, uses
+the same 50/200 page limits, and never calls WhatsApp. Search is a
+case-insensitive display-name prefix search. Rows expose only an opaque UUID
+`memberId`, optional display name, normalized role and membership state, plus
+tri-state `promote`, `demote`, and `remove` decisions. They do not expose Phone,
+LID, or provider JID aliases. The cursor is bound to the instance, group, query,
+and role filter. Per-member decisions are UI preflight only; command handlers
+must resolve the opaque reference and revalidate actor and target state before
+provider admission.
+
 Deployment order for this read stage is:
 
 1. Deploy the backend with the flag disabled and allow reconciliation to
    publish Groups schema version 4.
 2. Deploy Console support for both the legacy and normalized response shapes.
 3. Enable the flag for a canary instance and require
-   `group_management_permissions` before using the normalized path.
+   `group_management_permissions` before using the normalized path. Require
+   `group_members_projection` separately before loading the member directory.
 4. Monitor `projection_not_ready`, invalid cursor/filter responses, and the
    proportion of `unknown` action decisions before broader rollout.
 

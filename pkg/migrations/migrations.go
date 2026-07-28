@@ -1361,6 +1361,17 @@ CREATE TABLE group_management_audit_events (
 CREATE INDEX group_management_audit_history_idx
 ON group_management_audit_events (instance_id, group_jid, occurred_at DESC, id DESC);`,
 	},
+	{
+		Version: 31,
+		Name:    "index_group_member_directory",
+		SQL: `CREATE INDEX projected_group_participants_member_page_idx
+ON projected_group_participants (instance_id, group_id, (LOWER(COALESCE(display_name, ''))), public_id)
+WHERE tombstoned_at IS NULL;
+
+CREATE INDEX projected_group_participants_member_search_idx
+ON projected_group_participants (instance_id, group_id, (LOWER(COALESCE(display_name, ''))) text_pattern_ops, public_id)
+WHERE tombstoned_at IS NULL;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

@@ -11,16 +11,23 @@ import (
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type managementReadRepositoryStub struct {
-	page      *projection_repository.GroupManagementPage
-	record    *projection_repository.GroupManagementRecord
-	filter    projection_repository.GroupManagementFilter
-	cursor    *projection_repository.GroupCursor
-	identity  string
-	searchErr error
+	page          *projection_repository.GroupManagementPage
+	record        *projection_repository.GroupManagementRecord
+	filter        projection_repository.GroupManagementFilter
+	cursor        *projection_repository.GroupCursor
+	identity      string
+	searchErr     error
+	memberGroup   *projection_repository.GroupManagementRecord
+	memberPage    *projection_repository.GroupMemberPage
+	memberFilter  projection_repository.GroupMemberFilter
+	memberCursor  *projection_repository.GroupMemberCursor
+	memberGroupID string
+	memberErr     error
 }
 
 func (s *managementReadRepositoryStub) SearchManagement(_ context.Context, _, identity string, filter projection_repository.GroupManagementFilter, _ int, cursor *projection_repository.GroupCursor) (*projection_repository.GroupManagementPage, error) {
@@ -33,6 +40,11 @@ func (s *managementReadRepositoryStub) GetManagement(context.Context, string, st
 		return nil, gorm.ErrRecordNotFound
 	}
 	return s.record, nil
+}
+
+func (s *managementReadRepositoryStub) ListManagementMembers(_ context.Context, _, _, groupID string, filter projection_repository.GroupMemberFilter, _ int, cursor *projection_repository.GroupMemberCursor) (*projection_repository.GroupManagementRecord, *projection_repository.GroupMemberPage, error) {
+	s.memberGroupID, s.memberFilter, s.memberCursor = groupID, filter, cursor
+	return s.memberGroup, s.memberPage, s.memberErr
 }
 
 type managementReadStateStub struct {
@@ -216,5 +228,84 @@ func TestManagementActorDoesNotReuseStaleRoleAfterAccessLoss(t *testing.T) {
 	})
 	if membership != "unknown" || role != "unknown" {
 		t.Fatalf("membership=%s role=%s", membership, role)
+	}
+}
+
+func TestManagementMembersReturnsOpaqueReferencesAndTargetDecisions(t *testing.T) {
+	suspended, announce, isParent := false, false, false
+	membership := projection_model.GroupActorMembershipJoined
+	memberID, nextID := uuid.NewString(), uuid.NewString()
+	displayName := "Alice"
+	repository := &managementReadRepositoryStub{
+		memberGroup: &projection_repository.GroupManagementRecord{
+			Group:        projection_model.Group{GroupID: "123@g.us", Suspended: &suspended, Announce: &announce, IsParent: &isParent, MembershipState: &membership, UpdatedAt: time.Unix(1, 0)},
+			ActorIsOwner: true,
+		},
+		memberPage: &projection_repository.GroupMemberPage{
+			Items: []projection_repository.GroupMemberRecord{{
+				Participant: projection_model.GroupParticipant{PublicID: memberID, DisplayName: &displayName, Role: projection_model.ParticipantRoleMember}, Role: "member",
+			}},
+			NextCursor: &projection_repository.GroupMemberCursor{SortKey: "alice", PublicID: nextID},
+		},
+	}
+	reader := NewManagementReader(repository, managementReadStateStub{state: readyManagementState()})
+	items, meta, err := reader.Members(context.Background(), &instance_model.Instance{Id: "instance-a", Jid: "owner@s.whatsapp.net"}, "123@g.us", GroupMemberFilters{Query: "Ali", Role: "member"}, 50, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.memberGroupID != "123@g.us" || repository.memberFilter.Term != "ali" || repository.memberFilter.Role != "member" || len(items) != 1 || items[0].MemberID != memberID || items[0].DisplayName == nil || *items[0].DisplayName != displayName || items[0].Role != "member" || items[0].MembershipState != "active" {
+		t.Fatalf("repository=%#v items=%#v", repository, items)
+	}
+	if items[0].Actions.Promote.State != "allowed" || items[0].Actions.Remove.State != "allowed" || items[0].Actions.Demote.State != "denied" || items[0].Actions.Demote.Reason == nil || *items[0].Actions.Demote.Reason != "not_an_admin" || meta.NextCursor == "" {
+		t.Fatalf("actions=%#v meta=%#v", items[0].Actions, meta)
+	}
+	if _, _, err := reader.Members(context.Background(), &instance_model.Instance{Id: "instance-a", Jid: "owner@s.whatsapp.net"}, "123@g.us", GroupMemberFilters{Role: "admin"}, 50, meta.NextCursor); !errors.Is(err, ErrInvalidManagementCursor) {
+		t.Fatalf("filter-scoped cursor error = %v", err)
+	}
+	if _, _, err := reader.Members(context.Background(), &instance_model.Instance{Id: "instance-a", Jid: "owner@s.whatsapp.net"}, "456@g.us", GroupMemberFilters{Query: "Ali", Role: "member"}, 50, meta.NextCursor); !errors.Is(err, ErrInvalidManagementCursor) {
+		t.Fatalf("group-scoped cursor error = %v", err)
+	}
+}
+
+func TestManagementMemberDecisionsProtectSelfAndPrivilegedTargets(t *testing.T) {
+	checkedAt := time.Unix(600, 0).UTC()
+	summary := GroupSummary{Type: "group", State: "active", MembershipState: "joined", MyRole: "admin", SendMode: "all_members"}
+	self := memberActions(summary, "admin", true, checkedAt)
+	if self.Remove.State != "denied" || self.Remove.Reason == nil || *self.Remove.Reason != "self_action_not_allowed" {
+		t.Fatalf("self actions = %#v", self)
+	}
+	protected := memberActions(summary, "superadmin", false, checkedAt)
+	if protected.Demote.State != "denied" || protected.Remove.State != "denied" || protected.Remove.Reason == nil || *protected.Remove.Reason != "protected_member" {
+		t.Fatalf("protected actions = %#v", protected)
+	}
+	peer := memberActions(summary, "admin", false, checkedAt)
+	if peer.Demote.State != "unknown" || peer.Remove.State != "unknown" {
+		t.Fatalf("peer admin actions = %#v", peer)
+	}
+}
+
+func TestManagementMembersRejectsUnavailableGroup(t *testing.T) {
+	tombstonedAt := time.Now().UTC()
+	repository := &managementReadRepositoryStub{
+		memberGroup: &projection_repository.GroupManagementRecord{Group: projection_model.Group{GroupID: "123@g.us", TombstonedAt: &tombstonedAt}},
+		memberPage:  &projection_repository.GroupMemberPage{Items: []projection_repository.GroupMemberRecord{}},
+	}
+	reader := NewManagementReader(repository, managementReadStateStub{state: readyManagementState()})
+	_, _, err := reader.Members(context.Background(), &instance_model.Instance{Id: "instance-a", Jid: "actor@s.whatsapp.net"}, "123@g.us", GroupMemberFilters{}, 50, "")
+	if !errors.Is(err, ErrManagementGroupUnavailable) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestManagementMemberCursorSupportsMissingDisplayName(t *testing.T) {
+	scope := memberCursorScope("instance-a", "123@g.us", GroupMemberFilters{})
+	publicID := uuid.NewString()
+	encoded, err := encodeMemberCursor(&projection_repository.GroupMemberCursor{SortKey: "", PublicID: publicID}, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeMemberCursor(encoded, scope)
+	if err != nil || decoded.SortKey != "" || decoded.PublicID != publicID {
+		t.Fatalf("decoded=%#v error=%v", decoded, err)
 	}
 }

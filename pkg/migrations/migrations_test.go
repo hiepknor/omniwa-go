@@ -446,3 +446,22 @@ func TestGroupManagementFoundationMigrationIsAdditiveScopedAndSecretFree(t *test
 		t.Fatal("foundation migration must not advertise a serving projection schema")
 	}
 }
+
+func TestGroupMemberDirectoryIndexesAreVersionedAndScoped(t *testing.T) {
+	migration := registeredMigration(t, 31)
+	if migration.Name != "index_group_member_directory" {
+		t.Fatalf("member directory index migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"projected_group_participants_member_page_idx",
+		"projected_group_participants_member_search_idx",
+		"instance_id, group_id",
+		"LOWER(COALESCE(display_name, ''))",
+		"text_pattern_ops",
+		"WHERE tombstoned_at IS NULL",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("member directory index migration missing %q", required)
+		}
+	}
+}

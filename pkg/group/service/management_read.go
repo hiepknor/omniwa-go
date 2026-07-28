@@ -16,13 +16,15 @@ import (
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
+	"github.com/google/uuid"
 	"go.mau.fi/whatsmeow/types"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrInvalidManagementFilter = errors.New("invalid group management filter")
-	ErrInvalidManagementCursor = errors.New("invalid group management cursor")
+	ErrInvalidManagementFilter    = errors.New("invalid group management filter")
+	ErrInvalidManagementCursor    = errors.New("invalid group management cursor")
+	ErrManagementGroupUnavailable = errors.New("group management projection is unavailable")
 )
 
 const managementCursorVersion = 1
@@ -34,6 +36,11 @@ type GroupManagementFilters struct {
 	SendMode        string
 	State           string
 	MembershipState string
+}
+
+type GroupMemberFilters struct {
+	Query string
+	Role  string
 }
 
 type GroupSummary struct {
@@ -63,7 +70,7 @@ type GroupPhotoMetadata struct {
 
 type ActionDecision struct {
 	State     string    `json:"state" enums:"allowed,denied,unknown"`
-	Reason    *string   `json:"reason" enums:"admin_required,owner_required,not_a_member,group_suspended,group_unavailable,protected_member,self_action_not_allowed,permission_unknown,projection_not_ready,provider_disconnected,unsupported"`
+	Reason    *string   `json:"reason" enums:"admin_required,owner_required,not_a_member,group_suspended,group_unavailable,protected_member,self_action_not_allowed,already_admin,not_an_admin,permission_unknown,projection_not_ready,provider_disconnected,unsupported"`
 	CheckedAt time.Time `json:"checkedAt"`
 }
 
@@ -97,9 +104,24 @@ type GroupDetail struct {
 	Actions               GroupActions         `json:"actions"`
 }
 
+type GroupMemberActions struct {
+	Promote ActionDecision `json:"promote"`
+	Demote  ActionDecision `json:"demote"`
+	Remove  ActionDecision `json:"remove"`
+}
+
+type GroupMember struct {
+	MemberID        string             `json:"memberId" format:"uuid"`
+	DisplayName     *string            `json:"displayName,omitempty"`
+	Role            string             `json:"role" enums:"owner,superadmin,admin,member"`
+	MembershipState string             `json:"membershipState" enums:"active,pending,removed,unknown"`
+	Actions         GroupMemberActions `json:"actions"`
+}
+
 type managementReadRepository interface {
 	SearchManagement(context.Context, string, string, projection_repository.GroupManagementFilter, int, *projection_repository.GroupCursor) (*projection_repository.GroupManagementPage, error)
 	GetManagement(context.Context, string, string, string) (*projection_repository.GroupManagementRecord, error)
+	ListManagementMembers(context.Context, string, string, string, projection_repository.GroupMemberFilter, int, *projection_repository.GroupMemberCursor) (*projection_repository.GroupManagementRecord, *projection_repository.GroupMemberPage, error)
 }
 
 type managementReadState interface {
@@ -121,6 +143,14 @@ type managementCursorEnvelope struct {
 	Kind    string `json:"kind"`
 	Scope   string `json:"scope"`
 	GroupID string `json:"groupId"`
+}
+
+type memberCursorEnvelope struct {
+	Version  int    `json:"v"`
+	Kind     string `json:"kind"`
+	Scope    string `json:"scope"`
+	SortKey  string `json:"sortKey"`
+	PublicID string `json:"memberId"`
 }
 
 func (r *ManagementReader) Search(ctx context.Context, instance *instance_model.Instance, filters GroupManagementFilters, limit int, encodedCursor string) ([]GroupSummary, *projection_service.ProjectionReadMeta, error) {
@@ -180,6 +210,57 @@ func (r *ManagementReader) Get(ctx context.Context, instance *instance_model.Ins
 	}
 	detail := managementDetail(*record, r.now().UTC())
 	return &detail, meta, nil
+}
+
+func (r *ManagementReader) Members(ctx context.Context, instance *instance_model.Instance, groupJID string, filters GroupMemberFilters, limit int, encodedCursor string) ([]GroupMember, *projection_service.ProjectionReadMeta, error) {
+	if r == nil || r.groups == nil || instance == nil || instance.Id == "" || instance.Jid == "" || limit < 1 || limit > 200 ||
+		utf8.RuneCountInString(strings.TrimSpace(filters.Query)) > 128 || !oneOf(filters.Role, "", "owner", "superadmin", "admin", "member") {
+		return nil, nil, ErrInvalidManagementFilter
+	}
+	jid, ok := utils.ParseJID(groupJID)
+	if !ok || jid.Server != types.GroupServer {
+		return nil, nil, ErrInvalidManagementFilter
+	}
+	meta, err := r.readMeta(instance.Id)
+	if err != nil {
+		return nil, nil, err
+	}
+	filters.Query = strings.ToLower(strings.TrimSpace(filters.Query))
+	scope := memberCursorScope(instance.Id, jid.String(), filters)
+	cursor, err := decodeMemberCursor(encodedCursor, scope)
+	if err != nil {
+		return nil, nil, err
+	}
+	record, page, err := r.groups.ListManagementMembers(ctx, instance.Id, normalizedActorIdentity(instance.Jid), jid.String(), projection_repository.GroupMemberFilter{Term: filters.Query, Role: filters.Role}, limit, cursor)
+	if err != nil {
+		return nil, nil, err
+	}
+	if record == nil || page == nil {
+		return nil, nil, errors.New("group member repository returned no result")
+	}
+	summary := managementSummary(*record)
+	if summary.State == "unavailable" || summary.State == "dissolved" {
+		return nil, nil, ErrManagementGroupUnavailable
+	}
+	checkedAt := r.now().UTC()
+	items := make([]GroupMember, len(page.Items))
+	for index := range page.Items {
+		item := page.Items[index]
+		if uuid.Validate(item.Participant.PublicID) != nil {
+			return nil, nil, errors.New("projected group member has invalid public identity")
+		}
+		items[index] = GroupMember{
+			MemberID: item.Participant.PublicID, DisplayName: item.Participant.DisplayName, Role: item.Role,
+			MembershipState: "active", Actions: memberActions(summary, item.Role, item.IsActor, checkedAt),
+		}
+	}
+	if page.NextCursor != nil {
+		meta.NextCursor, err = encodeMemberCursor(page.NextCursor, scope)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return items, meta, nil
 }
 
 func (r *ManagementReader) readMeta(instanceID string) (*projection_service.ProjectionReadMeta, error) {
@@ -259,6 +340,43 @@ func encodeManagementCursor(cursor *projection_repository.GroupCursor, scope str
 		return "", ErrInvalidManagementCursor
 	}
 	payload, err := json.Marshal(managementCursorEnvelope{Version: managementCursorVersion, Kind: "group_management", Scope: scope, GroupID: cursor.GroupID})
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func memberCursorScope(instanceID, groupJID string, filters GroupMemberFilters) string {
+	payload, _ := json.Marshal(struct {
+		InstanceID string             `json:"instanceId"`
+		GroupJID   string             `json:"groupJid"`
+		Filters    GroupMemberFilters `json:"filters"`
+	}{instanceID, groupJID, filters})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func decodeMemberCursor(value, scope string) (*projection_repository.GroupMemberCursor, error) {
+	if value == "" {
+		return nil, nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return nil, ErrInvalidManagementCursor
+	}
+	var envelope memberCursorEnvelope
+	if err := json.Unmarshal(payload, &envelope); err != nil || envelope.Version != managementCursorVersion || envelope.Kind != "group_members" || envelope.Scope != scope ||
+		len(envelope.SortKey) > 512 || uuid.Validate(envelope.PublicID) != nil {
+		return nil, ErrInvalidManagementCursor
+	}
+	return &projection_repository.GroupMemberCursor{SortKey: envelope.SortKey, PublicID: envelope.PublicID}, nil
+}
+
+func encodeMemberCursor(cursor *projection_repository.GroupMemberCursor, scope string) (string, error) {
+	if cursor == nil || len(cursor.SortKey) > 512 || uuid.Validate(cursor.PublicID) != nil || scope == "" {
+		return "", ErrInvalidManagementCursor
+	}
+	payload, err := json.Marshal(memberCursorEnvelope{Version: managementCursorVersion, Kind: "group_members", Scope: scope, SortKey: cursor.SortKey, PublicID: cursor.PublicID})
 	if err != nil {
 		return "", err
 	}
@@ -431,6 +549,46 @@ func managementActions(summary GroupSummary, checkedAt time.Time) GroupActions {
 		RemoveMembers: admin, PromoteMembers: admin, DemoteMembers: admin, ReadInviteLink: admin,
 		ResetInviteLink: admin, SetPhoto: admin, LeaveGroup: leave,
 	}
+}
+
+func memberActions(summary GroupSummary, targetRole string, isActor bool, checkedAt time.Time) GroupMemberActions {
+	base := adminDecision(summary, checkedAt)
+	if base.State != "allowed" {
+		return GroupMemberActions{Promote: base, Demote: base, Remove: base}
+	}
+	if isActor {
+		denied := decision("denied", "self_action_not_allowed", checkedAt)
+		return GroupMemberActions{Promote: denied, Demote: denied, Remove: denied}
+	}
+	protected := targetRole == "owner" || targetRole == "superadmin"
+	var promote, demote, remove ActionDecision
+	switch targetRole {
+	case "member":
+		promote = decision("allowed", "", checkedAt)
+		demote = decision("denied", "not_an_admin", checkedAt)
+		remove = decision("allowed", "", checkedAt)
+	case "admin":
+		promote = decision("denied", "already_admin", checkedAt)
+		if summary.MyRole == "owner" || summary.MyRole == "superadmin" {
+			demote = decision("allowed", "", checkedAt)
+			remove = decision("allowed", "", checkedAt)
+		} else {
+			demote = decision("unknown", "permission_unknown", checkedAt)
+			remove = decision("unknown", "permission_unknown", checkedAt)
+		}
+	case "owner", "superadmin":
+		promote = decision("denied", "already_admin", checkedAt)
+		demote = decision("denied", "protected_member", checkedAt)
+		remove = decision("denied", "protected_member", checkedAt)
+	default:
+		unknown := decision("unknown", "permission_unknown", checkedAt)
+		return GroupMemberActions{Promote: unknown, Demote: unknown, Remove: unknown}
+	}
+	if protected {
+		demote = decision("denied", "protected_member", checkedAt)
+		remove = decision("denied", "protected_member", checkedAt)
+	}
+	return GroupMemberActions{Promote: promote, Demote: demote, Remove: remove}
 }
 
 func adminDecision(summary GroupSummary, checkedAt time.Time) ActionDecision {
