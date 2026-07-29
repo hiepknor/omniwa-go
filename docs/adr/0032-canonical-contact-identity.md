@@ -49,7 +49,18 @@ time-bounded lease so another process can resume after a crash. Live contact
 events and full local contact snapshots use the same resolver while the feature
 gate is enabled. Missing mappings leave partial contacts unchanged; mapping
 store failures release or expire the lease and are retried on a later bounded
-run.
+run. A completed pass is reopened on each successful connection and after a
+successfully ingested HistorySync that contains PN/LID mappings. Refreshes are
+serialized per instance and the durable lease still prevents competing
+processes from stealing active work. Resolution reads the parameterized local
+SQL mapping table directly instead of the live client's in-memory cache, so a
+previous negative cache entry cannot hide a mapping now present in storage.
+This is required because Whatsmeow may persist a mapping after the connection
+event that started the initial pass.
+
+Backfill candidates use explicit persisted-column mappings for `preferred_jid`,
+`phone_jid`, and `lid`. This avoids ORM acronym inference silently projecting
+empty identity fields while still advancing the durable cursor.
 
 The public `ContactInfo` contract retains every legacy Pascal-cased field and
 adds `contactId`, `addressingJid`, `aliases`, `identityStatus`, `displayName`,

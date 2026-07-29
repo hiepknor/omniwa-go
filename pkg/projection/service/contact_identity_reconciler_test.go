@@ -28,9 +28,10 @@ func (f *contactLIDResolverFake) GetLIDForPN(context.Context, types.JID) (types.
 }
 
 type contactIdentityBackfillRepositoryFake struct {
-	batches []*projection_repository.ContactIdentityBackfillBatch
-	commits []projection_repository.ContactIdentityBackfillCounts
-	failed  string
+	batches  []*projection_repository.ContactIdentityBackfillBatch
+	commits  []projection_repository.ContactIdentityBackfillCounts
+	failed   string
+	restarts int
 }
 
 func (f *contactIdentityBackfillRepositoryFake) ClaimBatch(context.Context, string, int, string, int, time.Time, time.Time) (*projection_repository.ContactIdentityBackfillBatch, error) {
@@ -40,6 +41,11 @@ func (f *contactIdentityBackfillRepositoryFake) ClaimBatch(context.Context, stri
 	batch := f.batches[0]
 	f.batches = f.batches[1:]
 	return batch, nil
+}
+
+func (f *contactIdentityBackfillRepositoryFake) RestartCompleted(context.Context, string, int, time.Time) (bool, error) {
+	f.restarts++
+	return true, nil
 }
 
 func (f *contactIdentityBackfillRepositoryFake) CommitBatch(_ context.Context, _ string, _ int, _ string, _ *string, counts projection_repository.ContactIdentityBackfillCounts, _ bool, _ time.Time) error {
@@ -143,6 +149,26 @@ func TestContactIdentityReconcilerRecordsSafeFailureAndRetriesLater(t *testing.T
 	_, err := reconciler.RunBounded(context.Background(), "instance-a", &contactLIDResolverFake{err: errors.New("database offline")}, 10, 1)
 	if err == nil || repository.failed != "mapping_store_unavailable" || len(repository.commits) != 0 {
 		t.Fatalf("mapping failure = %v, code=%q, commits=%#v", err, repository.failed, repository.commits)
+	}
+}
+
+func TestContactIdentityReconcilerRefreshesCompletedPassForLateMapping(t *testing.T) {
+	phone := "15550001@s.whatsapp.net"
+	repository := &contactIdentityBackfillRepositoryFake{batches: []*projection_repository.ContactIdentityBackfillBatch{{
+		Items: []projection_repository.ContactIdentityCandidate{{ContactID: "absorbed", PreferredJID: phone, PhoneJID: &phone}}, Complete: true,
+	}}}
+	writer := &contactIdentityWriterFake{}
+	reconciler := NewContactIdentityReconciler(repository, writer)
+	reconciler.now = func() time.Time { return time.Unix(100, 0).UTC() }
+	resolver := &contactLIDResolverFake{
+		phone: types.NewJID("15550001", types.DefaultUserServer), lid: types.NewJID("9000001", types.HiddenUserServer),
+	}
+	result, err := reconciler.RefreshBounded(context.Background(), "instance-a", resolver, 10, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.restarts != 1 || !result.Complete || result.Mapped != 1 || result.Merged != 1 || len(writer.patches) != 1 {
+		t.Fatalf("refresh result = %#v, restarts=%d, patches=%#v", result, repository.restarts, writer.patches)
 	}
 }
 

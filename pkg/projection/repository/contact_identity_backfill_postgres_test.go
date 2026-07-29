@@ -55,8 +55,11 @@ func TestContactIdentityBackfillCheckpointLeasesResumeAndComplete(t *testing.T) 
 	backfill := NewContactIdentityBackfillRepository(db)
 	ownerOne, ownerTwo := uuid.NewString(), uuid.NewString()
 	first, err := backfill.ClaimBatch(context.Background(), instance.Id, 1, ownerOne, 1, time.Unix(100, 0).UTC(), time.Unix(200, 0).UTC())
-	if err != nil || len(first.Items) != 1 || first.Items[0].ContactID != ids[0] || first.Complete {
+	if err != nil || len(first.Items) != 1 || first.Items[0].ContactID != ids[0] || first.Items[0].PreferredJID == "" || first.Items[0].PhoneJID == nil || *first.Items[0].PhoneJID == "" || first.Complete {
 		t.Fatalf("first claim = %#v, %v", first, err)
+	}
+	if restarted, restartErr := backfill.RestartCompleted(context.Background(), instance.Id, 1, time.Unix(101, 0).UTC()); restartErr != nil || restarted {
+		t.Fatalf("active pass restart = %t, %v", restarted, restartErr)
 	}
 	if _, err = backfill.ClaimBatch(context.Background(), instance.Id, 1, ownerTwo, 1, time.Unix(150, 0).UTC(), time.Unix(250, 0).UTC()); !errors.Is(err, ErrContactIdentityBackfillLeaseHeld) {
 		t.Fatalf("competing lease error = %v", err)
@@ -95,5 +98,13 @@ func TestContactIdentityBackfillCheckpointLeasesResumeAndComplete(t *testing.T) 
 	state, err := backfill.GetState(context.Background(), instance.Id)
 	if err != nil || state.Status != projection_model.ContactIdentityBackfillComplete || state.ScannedCount != 2 || state.MappedCount != 1 || state.MergedCount != 1 || state.UnchangedCount != 1 || state.CursorContactID == nil || *state.CursorContactID != ids[1] {
 		t.Fatalf("checkpoint state = %#v, %v", state, err)
+	}
+	restarted, err := backfill.RestartCompleted(context.Background(), instance.Id, 1, time.Unix(209, 0).UTC())
+	if err != nil || !restarted {
+		t.Fatalf("completed pass restart = %t, %v", restarted, err)
+	}
+	refreshed, err := backfill.ClaimBatch(context.Background(), instance.Id, 1, uuid.NewString(), 1, time.Unix(210, 0).UTC(), time.Unix(310, 0).UTC())
+	if err != nil || refreshed.AlreadyComplete || len(refreshed.Items) != 1 || refreshed.Items[0].ContactID != ids[0] {
+		t.Fatalf("refreshed first claim = %#v, %v", refreshed, err)
 	}
 }
