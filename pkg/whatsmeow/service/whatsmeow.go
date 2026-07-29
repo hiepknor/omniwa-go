@@ -452,7 +452,11 @@ func (mycli *MyClient) triggerHistoryProjectionSync(event *events.HistorySync) {
 		ctx, cancel := context.WithTimeout(parent, historyProjectionSyncTimeout)
 		defer cancel()
 		if err := mycli.historySyncer.Sync(ctx, mycli.userID, event, mycli.WAClient.ParseWebMessage); err != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=history_sync instance_id=%s result=failed error_code=history_sync_failed", mycli.userID)
+			details := projection_service.DescribeHistorySyncFailure(err)
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError(
+				"component=projection action=history_sync instance_id=%s result=failed stage=%s error_code=%s conversation_index=%d message_index=%d",
+				mycli.userID, details.Stage, details.Code, details.ConversationIndex, details.MessageIndex,
+			)
 			return
 		}
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=history_sync instance_id=%s result=ingested", mycli.userID)

@@ -19,6 +19,7 @@ import (
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type projectionStateHandlerStub struct {
@@ -168,6 +169,13 @@ type capabilitiesCredentialResolver struct {
 	instance *instance_model.Instance
 }
 
+func (r capabilitiesCredentialResolver) GetInstanceByID(instanceID string) (*instance_model.Instance, error) {
+	if r.instance != nil && r.instance.Id == instanceID {
+		return r.instance, nil
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
 func (r capabilitiesCredentialResolver) GetInstanceByToken(token string) (*instance_model.Instance, error) {
 	switch token {
 	case "instance-token":
@@ -176,6 +184,59 @@ func (r capabilitiesCredentialResolver) GetInstanceByToken(token string) (*insta
 		return nil, instance_service.ErrInvalidInstanceCredential
 	default:
 		return nil, errors.New("credential lookup unavailable")
+	}
+}
+
+func TestAdminCapabilitiesCanTargetAnInstance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	instance := &instance_model.Instance{Id: "0bca2c34-ef2a-463c-98fd-e2afb6978457"}
+	state := &projectionStateHandlerStub{capabilities: []string{"messages_projection", "messages_projection"}}
+	handler := NewServerHandler(
+		"1.2.3", "abc123", state, nil, nil,
+		WithAdminCapabilities("instance_token_rotation", "messages_projection"),
+		WithCapabilityInstanceReader(capabilitiesCredentialResolver{instance: instance}),
+	)
+
+	response := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(response)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/server/capabilities?instanceId="+instance.Id, nil)
+	httpapi.SetAuthPrincipal(ctx, httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeAdmin})
+	handler.Capabilities(ctx)
+
+	body := response.Body.String()
+	if response.Code != http.StatusOK || state.capabilitiesInstanceID != instance.Id ||
+		!strings.Contains(body, `"credentialScope":"admin"`) || !strings.Contains(body, `"instanceId":"`+instance.Id+`"`) ||
+		strings.Count(body, `"messages_projection"`) != 1 {
+		t.Fatalf("Capabilities() status=%d target=%q body=%s", response.Code, state.capabilitiesInstanceID, body)
+	}
+}
+
+func TestCapabilityTargetValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	instance := &instance_model.Instance{Id: "0bca2c34-ef2a-463c-98fd-e2afb6978457"}
+	for _, test := range []struct {
+		name      string
+		url       string
+		principal httpapi.AuthPrincipal
+		want      int
+		code      string
+	}{
+		{name: "invalid admin target", url: "/server/capabilities?instanceId=not-a-uuid", principal: httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeAdmin}, want: http.StatusBadRequest, code: "invalid_instance_id"},
+		{name: "unknown admin target", url: "/server/capabilities?instanceId=71b08adc-3400-4932-9aa1-cdcbe5004207", principal: httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeAdmin}, want: http.StatusNotFound, code: "instance_not_found"},
+		{name: "instance cross scope", url: "/server/capabilities?instanceId=71b08adc-3400-4932-9aa1-cdcbe5004207", principal: httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeInstance, InstanceID: instance.Id}, want: http.StatusForbidden, code: "instance_scope_mismatch"},
+		{name: "instance own scope", url: "/server/capabilities?instanceId=" + instance.Id, principal: httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeInstance, InstanceID: instance.Id}, want: http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := NewServerHandler("test", "abc123", &projectionStateHandlerStub{}, nil, nil, WithCapabilityInstanceReader(capabilitiesCredentialResolver{instance: instance}))
+			response := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(response)
+			ctx.Request = httptest.NewRequest(http.MethodGet, test.url, nil)
+			httpapi.SetAuthPrincipal(ctx, test.principal)
+			handler.Capabilities(ctx)
+			if response.Code != test.want || (test.code != "" && !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`)) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 

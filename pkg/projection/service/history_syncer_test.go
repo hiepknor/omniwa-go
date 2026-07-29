@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,10 +109,18 @@ func TestHistorySyncerUsesConservativeReadinessAndMarksFailure(t *testing.T) {
 
 	failedState := newHistoryStateStub()
 	err := NewHistorySyncer(&captureHistoryEvents{}, failedState).Sync(context.Background(), "instance-a", testHistorySync(waHistorySync.HistorySync_RECENT, 50), func(types.JID, *waWeb.WebMessageInfo) (*events.Message, error) {
-		return nil, errors.New("cannot parse")
+		return nil, errors.New("sensitive provider parse detail")
 	})
 	if err == nil || len(failedState.failed) != 2 {
 		t.Fatalf("failed history sync = %v failed=%#v", err, failedState.failed)
+	}
+	details := DescribeHistorySyncFailure(err)
+	if details.Stage != "message_parse" || details.Code != "history_sync_message_parse_failed" ||
+		details.ConversationIndex != 0 || details.MessageIndex != 0 {
+		t.Fatalf("failure details = %#v", details)
+	}
+	if strings.Contains(err.Error(), "sensitive provider parse detail") {
+		t.Fatalf("history sync error leaked provider detail: %v", err)
 	}
 }
 

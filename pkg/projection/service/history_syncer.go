@@ -23,6 +23,41 @@ import (
 
 type HistoryMessageParser func(types.JID, *waWeb.WebMessageInfo) (*events.Message, error)
 
+// HistorySyncFailureDetails is safe to include in operational logs. It identifies
+// the failing stage and ordinal without exposing provider identities or payloads.
+type HistorySyncFailureDetails struct {
+	Stage             string
+	Code              string
+	ConversationIndex int
+	MessageIndex      int
+}
+
+type historySyncFailure struct {
+	details HistorySyncFailureDetails
+	cause   error
+}
+
+func (e *historySyncFailure) Error() string { return e.details.Code }
+func (e *historySyncFailure) Unwrap() error { return e.cause }
+
+func DescribeHistorySyncFailure(err error) HistorySyncFailureDetails {
+	details := HistorySyncFailureDetails{Stage: "unknown", Code: "history_sync_failed", ConversationIndex: -1, MessageIndex: -1}
+	var failure *historySyncFailure
+	if errors.As(err, &failure) {
+		return failure.details
+	}
+	return details
+}
+
+func newHistorySyncFailure(stage, code string, conversationIndex, messageIndex int, cause error) error {
+	if cause == nil {
+		cause = errors.New(code)
+	}
+	return &historySyncFailure{details: HistorySyncFailureDetails{
+		Stage: stage, Code: code, ConversationIndex: conversationIndex, MessageIndex: messageIndex,
+	}, cause: cause}
+}
+
 type historySyncEvents interface {
 	Ingest(context.Context, *projection_model.Event) (bool, error)
 }
@@ -61,31 +96,31 @@ func (s *HistorySyncer) Sync(ctx context.Context, instanceID string, raw *events
 
 	for _, resource := range resources {
 		if err := s.ensureSyncing(instanceID, resource, historyResourceSchemaVersion(resource)); err != nil {
-			return err
+			return newHistorySyncFailure("state_transition", "history_sync_state_transition_failed", -1, -1, err)
 		}
 	}
 	syncID := historySyncIdentity(raw.Data)
-	for _, conversation := range raw.Data.GetConversations() {
-		if err := s.ingestConversation(ctx, instanceID, syncID, conversation, parser); err != nil {
+	for conversationIndex, conversation := range raw.Data.GetConversations() {
+		if err := s.ingestConversation(ctx, instanceID, syncID, conversationIndex, conversation, parser); err != nil {
 			return s.fail(instanceID, resources, err)
 		}
 	}
 	if raw.Data.Progress != nil && raw.Data.GetProgress() >= 100 &&
 		(historySyncCompletesChats(syncType) || historySyncCompletesMessages(syncType)) {
 		if err := s.ingestCompletion(ctx, instanceID, syncID, syncType); err != nil {
-			return s.fail(instanceID, resources, err)
+			return s.fail(instanceID, resources, newHistorySyncFailure("completion", "history_sync_completion_failed", -1, -1, err))
 		}
 	}
 	return nil
 }
 
-func (s *HistorySyncer) ingestConversation(ctx context.Context, instanceID, syncID string, conversation *waHistorySync.Conversation, parser HistoryMessageParser) error {
+func (s *HistorySyncer) ingestConversation(ctx context.Context, instanceID, syncID string, conversationIndex int, conversation *waHistorySync.Conversation, parser HistoryMessageParser) error {
 	if conversation == nil || conversation.GetID() == "" {
-		return errors.New("history sync conversation has no identity")
+		return newHistorySyncFailure("conversation", "history_sync_conversation_identity_missing", conversationIndex, -1, nil)
 	}
 	chatJID, err := types.ParseJID(conversation.GetID())
 	if err != nil || chatJID.IsEmpty() {
-		return errors.New("history sync conversation identity is invalid")
+		return newHistorySyncFailure("conversation", "history_sync_conversation_identity_invalid", conversationIndex, -1, err)
 	}
 	lastActivityAt := historyConversationTime(conversation)
 	name := conversation.GetName()
@@ -113,21 +148,21 @@ func (s *HistorySyncer) ingestConversation(ctx context.Context, instanceID, sync
 	}
 	chatEvent, _, err := newMessageProjectionEvent(instanceID, "history_chat", payload.ChatID, occurredAt, payload)
 	if err != nil {
-		return err
+		return newHistorySyncFailure("conversation", "history_sync_chat_event_invalid", conversationIndex, -1, err)
 	}
 	if _, err := s.events.Ingest(ctx, chatEvent); err != nil {
-		return err
+		return newHistorySyncFailure("conversation", "history_sync_chat_ingest_failed", conversationIndex, -1, err)
 	}
-	for _, historyMessage := range conversation.GetMessages() {
+	for messageIndex, historyMessage := range conversation.GetMessages() {
 		if historyMessage == nil || historyMessage.GetMessage() == nil {
-			return errors.New("history sync contains an empty message")
+			return newHistorySyncFailure("message", "history_sync_message_missing", conversationIndex, messageIndex, nil)
 		}
 		parsed, err := parser(chatJID, historyMessage.GetMessage())
 		if err != nil {
-			return fmt.Errorf("parse history message: %w", err)
+			return newHistorySyncFailure("message_parse", "history_sync_message_parse_failed", conversationIndex, messageIndex, err)
 		}
 		if err := s.ingestMessage(ctx, instanceID, syncID, parsed, historyMessage.GetMessage()); err != nil {
-			return err
+			return newHistorySyncFailure("message_ingest", "history_sync_message_ingest_failed", conversationIndex, messageIndex, err)
 		}
 	}
 	return nil
