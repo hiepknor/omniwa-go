@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -14,12 +15,14 @@ import (
 	community_handler "github.com/evolution-foundation/evolution-go/pkg/community/handler"
 	group_handler "github.com/evolution-foundation/evolution-go/pkg/group/handler"
 	group_list_handler "github.com/evolution-foundation/evolution-go/pkg/groupList/handler"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
 	label_handler "github.com/evolution-foundation/evolution-go/pkg/label/handler"
 	media_handler "github.com/evolution-foundation/evolution-go/pkg/media/handler"
 	message_handler "github.com/evolution-foundation/evolution-go/pkg/message/handler"
 	auth_middleware "github.com/evolution-foundation/evolution-go/pkg/middleware"
 	newsletter_handler "github.com/evolution-foundation/evolution-go/pkg/newsletter/handler"
+	"github.com/evolution-foundation/evolution-go/pkg/observability"
 	poll_handler "github.com/evolution-foundation/evolution-go/pkg/poll/handler"
 	send_handler "github.com/evolution-foundation/evolution-go/pkg/sendMessage/handler"
 	server_handler "github.com/evolution-foundation/evolution-go/pkg/server/handler"
@@ -46,6 +49,18 @@ type Routes struct {
 	newsletterHandler       newsletter_handler.NewsletterHandler
 	pollHandler             *poll_handler.PollHandler
 	serverHandler           server_handler.ServerHandler
+	conversationObserver    observability.ConversationAPIObserver
+	legacyChatReadsEnabled  bool
+}
+
+type Option func(*Routes)
+
+func WithConversationAPIObserver(observer observability.ConversationAPIObserver) Option {
+	return func(routes *Routes) { routes.conversationObserver = observer }
+}
+
+func WithLegacyChatReadsEnabled(enabled bool) Option {
+	return func(routes *Routes) { routes.legacyChatReadsEnabled = enabled }
 }
 
 func (r *Routes) AssignRoutes(eng *gin.Engine) {
@@ -211,7 +226,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		routes.Use(r.authMiddleware.Auth)
 		{
 			routes.GET("/:messageId/delivery", r.messageHandler.Receipts)
-			routes.GET("/:messageId", r.messageHandler.GetProjected)
+			routes.GET("/:messageId", r.observeConversationAPI(observability.ConversationContractLegacyChat, observability.ConversationOperationMessage), r.legacyProjectionRead(r.messageHandler.GetProjected))
 			routes.POST("/react", r.jidValidationMiddleware.ValidateJIDFields("number"), r.messageHandler.React)
 			routes.POST("/presence", r.jidValidationMiddleware.ValidateNumberField(), r.messageHandler.ChatPresence)
 			routes.POST("/markread", r.jidValidationMiddleware.ValidateNumberField(), r.messageHandler.MarkRead)
@@ -226,9 +241,9 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	{
 		routes.Use(r.authMiddleware.Auth)
 		{
-			routes.GET("/list", r.chatHandler.List)
-			routes.GET("/:chatId/messages", r.chatHandler.Messages)
-			routes.GET("/info/:chatId", r.chatHandler.Get)
+			routes.GET("/list", r.observeConversationAPI(observability.ConversationContractLegacyChat, observability.ConversationOperationList), r.legacyProjectionRead(r.chatHandler.List))
+			routes.GET("/:chatId/messages", r.observeConversationAPI(observability.ConversationContractLegacyChat, observability.ConversationOperationMessages), r.legacyProjectionRead(r.chatHandler.Messages))
+			routes.GET("/info/:chatId", r.observeConversationAPI(observability.ConversationContractLegacyChat, observability.ConversationOperationGet), r.legacyProjectionRead(r.chatHandler.Get))
 			routes.POST("/pin", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatPin)             // TODO: not working
 			routes.POST("/unpin", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnpin)         // TODO: not working
 			routes.POST("/archive", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatArchive)     // TODO: not working
@@ -242,9 +257,10 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	{
 		routes.Use(r.authMiddleware.Auth)
 		{
-			routes.GET("", r.chatHandler.ListConversations)
-			routes.GET("/:conversationRef", r.chatHandler.GetConversation)
-			routes.GET("/:conversationRef/messages", r.chatHandler.ConversationMessages)
+			routes.GET("", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationList), r.chatHandler.ListConversations)
+			routes.GET("/:conversationRef", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationGet), r.chatHandler.GetConversation)
+			routes.GET("/:conversationRef/messages", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMessages), r.chatHandler.ConversationMessages)
+			routes.GET("/:conversationRef/messages/:messageId", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMessage), r.chatHandler.ConversationMessage)
 		}
 	}
 	routes = eng.Group("/group")
@@ -350,6 +366,25 @@ func (r *Routes) assignMetricsRoute(eng *gin.Engine) {
 	eng.GET("/metrics", r.authMiddleware.AuthAdmin, gin.WrapH(r.metricsHandler))
 }
 
+func (r *Routes) observeConversationAPI(contract, operation string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		startedAt := time.Now()
+		ctx.Next()
+		if r != nil && r.conversationObserver != nil {
+			r.conversationObserver.ObserveConversationRequest(contract, operation, ctx.Writer.Status(), time.Since(startedAt))
+		}
+	}
+}
+
+func (r *Routes) legacyProjectionRead(handler gin.HandlerFunc) gin.HandlerFunc {
+	if r != nil && r.legacyChatReadsEnabled {
+		return handler
+	}
+	return func(ctx *gin.Context) {
+		httpapi.WriteError(ctx, http.StatusGone, "legacy_contract_removed", "use the canonical Conversation API")
+	}
+}
+
 func NewRouter(
 	authMiddleware auth_middleware.Middleware,
 	metricsHandler http.Handler,
@@ -369,8 +404,9 @@ func NewRouter(
 	newsletterHandler newsletter_handler.NewsletterHandler,
 	pollHandler *poll_handler.PollHandler,
 	serverHandler server_handler.ServerHandler,
+	options ...Option,
 ) *Routes {
-	return &Routes{
+	result := &Routes{
 		authMiddleware:          authMiddleware,
 		metricsHandler:          metricsHandler,
 		jidValidationMiddleware: auth_middleware.NewJIDValidationMiddleware(),
@@ -390,5 +426,12 @@ func NewRouter(
 		newsletterHandler:       newsletterHandler,
 		pollHandler:             pollHandler,
 		serverHandler:           serverHandler,
+		legacyChatReadsEnabled:  true,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(result)
+		}
+	}
+	return result
 }

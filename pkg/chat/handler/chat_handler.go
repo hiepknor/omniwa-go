@@ -27,6 +27,7 @@ type ChatHandler interface {
 	ListConversations(ctx *gin.Context)
 	GetConversation(ctx *gin.Context)
 	ConversationMessages(ctx *gin.Context)
+	ConversationMessage(ctx *gin.Context)
 }
 
 type chatHandler struct {
@@ -45,6 +46,7 @@ const defaultProjectionPageSize = 50
 // @Param cursor query string false "Opaque pagination cursor"
 // @Success 200 {object} apidocs.SuccessResponse{data=[]projection_service.ProjectedChat} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Invalid pagination"
+// @Failure 410 {object} apidocs.ErrorResponse "Legacy contract retired"
 // @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
@@ -76,6 +78,7 @@ func (c *chatHandler) List(ctx *gin.Context) {
 // @Param chatId path string true "Canonical conversation UUID or provider Chat ID"
 // @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ProjectedChat} "success"
 // @Failure 404 {object} apidocs.ErrorResponse "Chat not found"
+// @Failure 410 {object} apidocs.ErrorResponse "Legacy contract retired"
 // @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
@@ -105,6 +108,7 @@ func (c *chatHandler) Get(ctx *gin.Context) {
 // @Param cursor query string false "Opaque pagination cursor"
 // @Success 200 {object} apidocs.SuccessResponse{data=[]projection_service.ProjectedMessage} "success"
 // @Failure 400 {object} apidocs.ErrorResponse "Invalid pagination"
+// @Failure 410 {object} apidocs.ErrorResponse "Legacy contract retired"
 // @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
@@ -216,6 +220,33 @@ func (c *chatHandler) ConversationMessages(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
+}
+
+// ConversationMessage returns one canonical conversation-scoped message.
+// @Summary Get a message in a canonical conversation
+// @Description Resolves conversationRef through the canonical instance-scoped resolver and returns the message only when it belongs to that canonical conversation. conversationId is required and providerChatId is provenance only.
+// @Tags Conversation
+// @Produce json
+// @Param conversationRef path string true "Canonical conversation UUID or absorbed provider Chat ID"
+// @Param messageId path string true "Provider message ID scoped to the canonical conversation"
+// @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ProjectedConversationMessage} "success"
+// @Failure 404 {object} apidocs.ErrorResponse "Conversation or message not found"
+// @Failure 503 {object} apidocs.ErrorResponse "Canonical conversation projection not ready"
+// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
+// @Security ApiKeyAuth
+// @ID getConversationMessage
+// @Router /conversations/{conversationRef}/messages/{messageId} [get]
+func (c *chatHandler) ConversationMessage(ctx *gin.Context) {
+	instance, ok := projectionInstance(ctx)
+	if !ok {
+		return
+	}
+	item, meta, err := c.reader.GetConversationMessage(ctx.Request.Context(), instance.Id, ctx.Param("conversationRef"), ctx.Param("messageId"))
+	if err != nil {
+		writeProjectionReadError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": item, "meta": meta})
 }
 
 func projectionInstance(ctx *gin.Context) (*instance_model.Instance, bool) {

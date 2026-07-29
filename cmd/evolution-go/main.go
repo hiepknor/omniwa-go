@@ -401,10 +401,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		))
 	}
 	if config.CanonicalChatIdentityEnabled {
-		for _, capability := range []string{
-			projection_service.CapabilityCanonicalChatIdentity,
-			projection_service.CapabilityCanonicalConversationIdentity,
-		} {
+		canonicalCapabilities := []string{projection_service.CapabilityCanonicalConversationIdentity}
+		if config.LegacyChatReadsEnabled {
+			canonicalCapabilities = append(canonicalCapabilities, projection_service.CapabilityCanonicalChatIdentity)
+		}
+		for _, capability := range canonicalCapabilities {
 			projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
 				capability,
 				[]string{"contacts", "chats", "messages"},
@@ -457,7 +458,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 				return false, err
 			}
 			for _, capability := range capabilities {
-				if capability == projection_service.CapabilityCanonicalChatIdentity {
+				if capability == projection_service.CapabilityCanonicalConversationIdentity {
 					return true, nil
 				}
 			}
@@ -959,6 +960,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			server_handler.WithAdminCapabilities(credentialCapabilities...),
 			server_handler.WithCapabilityInstanceReader(instanceRepository),
 		),
+		routes.WithConversationAPIObserver(metricsRegistry.ConversationAPI()),
+		routes.WithLegacyChatReadsEnabled(config.LegacyChatReadsEnabled),
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {

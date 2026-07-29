@@ -118,9 +118,10 @@ is not copied into the Conversation contract.
 Repository and GitHub code searches found no owned consumer outside
 `omniwa-console` that references these exact canonical fields or read paths.
 That is not proof that third-party or deployed clients do not exist. The backend
-has no route-labelled request metric or legacy-endpoint usage counter, so usage
-cannot currently be measured from its Prometheus endpoint. Access logs or an
-external gateway must supply rollout evidence.
+had no route-labelled request metric or legacy-endpoint usage counter. This
+decision adds bounded contract/operation/status-class metrics so retirement can
+be based on backend evidence; historical traffic still requires access logs or
+an external gateway.
 
 ## Alternatives
 
@@ -142,7 +143,7 @@ new cursors or identities. This option is rejected.
 
 ### C. Add a Conversation contract and phase out Chat reads
 
-This adds three routes and two response DTOs while sharing all canonical
+This adds four routes and two response DTOs while sharing all canonical
 application and repository logic. It preserves legacy paths, fields,
 capability, cache keys, and cursors. The costs are parallel documentation,
 generated-client surface, and the risk of adapter drift. Shared private read
@@ -156,6 +157,7 @@ Add these canonical reads:
 - `GET /conversations`
 - `GET /conversations/{conversationRef}`
 - `GET /conversations/{conversationRef}/messages`
+- `GET /conversations/{conversationRef}/messages/{messageId}`
 
 `conversationRef` accepts the canonical UUID, a current or absorbed provider
 Chat ID alias, or a one-hop absorbed Conversation UUID through the existing
@@ -173,6 +175,11 @@ recomputation.
 contain `chatId`. Optional `providerChatId` preserves arrival/provenance metadata
 without presenting it as the entity identity.
 
+The scoped message-detail route is the canonical replacement for consumers of
+the legacy `GET /message/{messageId}` projection DTO. It verifies membership in
+the resolved Conversation instead of treating a provider message ID as a
+complete resource scope.
+
 The legacy `ProjectedChat`, `ProjectedMessage`, `ChatType`, `chatAliases`,
 `chatId`, `/chat/*` routes, and canonical behavior remain compatible. The three
 legacy Chat read operations are deprecated in OpenAPI; provider commands remain
@@ -180,10 +187,17 @@ available and are not claimed as canonical Conversation commands.
 
 Add `canonical_conversation_identity` as the preferred capability.
 `canonical_chat_identity` remains a deprecated compatibility alias. Both use
-the identical configuration gate, required resources, durable Contact and
-Conversation checkpoints, association validation, and authoritative unread
-readiness function. A new binary advertises both or neither; neither capability
-is derived from the version string.
+the identical canonical configuration gate, required resources, durable Contact
+and Conversation checkpoints, association validation, and authoritative unread
+readiness function. During the compatibility phase, a new binary advertises
+both or neither; neither capability is derived from the version string. After
+the measured deprecation window, setting `WA_LEGACY_CHAT_READS_ENABLED=false`
+retires the three legacy Chat reads and legacy projected-message detail with
+machine-readable HTTP 410 responses, and removes the legacy capability alias
+while the preferred capability and canonical behavior remain unchanged.
+Keeping bounded tombstone routes for the retirement release makes residual
+authenticated attempts measurable before physical deletion in a later major
+release.
 
 ## Command decisions
 
@@ -211,16 +225,20 @@ canonical capabilities and serves the new endpoints. Clients switch only when
 `canonical_conversation_identity` is present and should keep their legacy path
 fallback during mixed-version rollout.
 
-Monitor new-versus-legacy route traffic at the gateway or access-log layer,
-plus projection health, reconciliation failures, API error rate, and latency.
-Do not remove legacy routes until external usage is measurable and a separate
-deprecation window has completed.
+Monitor `omniwa_conversation_api_requests_total` and
+`omniwa_conversation_api_request_duration_seconds` for bounded
+new-versus-legacy read traffic, plus projection health, reconciliation failures,
+API error rate, and latency. These metrics never label instance, Conversation,
+Chat, message, or provider identities. Do not disable legacy reads until their
+successful authenticated traffic has remained at zero for the agreed
+deprecation window and every supported instance advertises the preferred
+capability.
 
-Rollback disables `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restarts, or deploys
-the previous binary after clients have returned to legacy reads. The new routes
-then return projection-not-ready or are absent, while legacy reads revert to
-provider Chat mode exactly as before. There is no database migration, backfill,
-data deletion, or cursor rewrite to reverse.
+The first rollback sets `WA_LEGACY_CHAT_READS_ENABLED=true` and restarts, which
+restores the four legacy projection reads and capability alias without changing
+canonical data. Disabling `WA_CANONICAL_CHAT_IDENTITY_ENABLED` remains the deeper rollback
+after clients have returned to legacy reads. There is no database migration,
+backfill, data deletion, or cursor rewrite to reverse.
 
 ## Consequences
 
@@ -230,4 +248,6 @@ data deletion, or cursor rewrite to reverse.
   instance isolation, and cursor scope remain backend-owned.
 - Two public read surfaces coexist temporarily, but shared query helpers and
   parity tests prevent independent business logic.
-- Command migration and legacy usage telemetry are deliberately deferred.
+- Command migration remains deliberately deferred because the existing provider
+  operations are not authoritative. Legacy usage telemetry and a reversible
+  read-removal control are included in the migration contract.

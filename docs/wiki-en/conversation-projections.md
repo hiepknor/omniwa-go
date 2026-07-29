@@ -158,6 +158,7 @@ The preferred public read contract is:
 - `GET /conversations`
 - `GET /conversations/{conversationRef}`
 - `GET /conversations/{conversationRef}/messages`
+- `GET /conversations/{conversationRef}/messages/{messageId}`
 
 Use these endpoints only when `canonical_conversation_identity` is advertised.
 The legacy `canonical_chat_identity` capability is emitted by the same readiness
@@ -181,6 +182,24 @@ The archive, pin, mute, and HistorySync endpoints remain provider-Chat commands.
 They do not currently accept a canonical Conversation UUID. Resolve and use the
 published `addressingJid` only where the command contract explicitly accepts a
 provider JID.
+
+### Legacy-read retirement
+
+Prometheus exposes `omniwa_conversation_api_requests_total` by the bounded
+`contract`, `operation`, and HTTP status-class labels, plus
+`omniwa_conversation_api_request_duration_seconds`. No identity is used as a
+label. Keep `WA_LEGACY_CHAT_READS_ENABLED=true` during mixed-client rollout.
+
+After successful authenticated `legacy_chat` traffic has remained at zero for
+the agreed deprecation window and all supported instances advertise
+`canonical_conversation_identity`, set
+`WA_LEGACY_CHAT_READS_ENABLED=false`. This retires the three deprecated Chat
+read routes and `GET /message/{messageId}` with HTTP 410
+`legacy_contract_removed`, and stops advertising `canonical_chat_identity`;
+provider Chat commands and message receipts remain registered. Retired attempts
+remain visible in the legacy metric as 4xx traffic. The setting requires
+canonical identity to be enabled. Set it back to `true` and restart for
+immediate route/capability rollback.
 
 ## Projected message field contract
 

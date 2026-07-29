@@ -908,6 +908,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "410": {
+                        "description": "Legacy contract retired",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -978,6 +984,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Invalid pagination",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Legacy contract retired",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -1378,6 +1390,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "410": {
+                        "description": "Legacy contract retired",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
@@ -1763,6 +1781,78 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Conversation not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Canonical conversation projection not ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/conversations/{conversationRef}/messages/{messageId}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Resolves conversationRef through the canonical instance-scoped resolver and returns the message only when it belongs to that canonical conversation. conversationId is required and providerChatId is provenance only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversation"
+                ],
+                "summary": "Get a message in a canonical conversation",
+                "operationId": "getConversationMessage",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical conversation UUID or absorbed provider Chat ID",
+                        "name": "conversationRef",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider message ID scoped to the canonical conversation",
+                        "name": "messageId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedConversationMessage"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Conversation or message not found",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -5938,6 +6028,8 @@ const docTemplate = `{
                     "Message"
                 ],
                 "summary": "Get a projected message",
+                "operationId": "getProjectedMessage",
+                "deprecated": true,
                 "parameters": [
                     {
                         "type": "string",
@@ -5968,6 +6060,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Message not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Legacy contract retired",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }

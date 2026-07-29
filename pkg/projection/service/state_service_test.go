@@ -231,6 +231,26 @@ func TestCanonicalConversationCapabilityRollsOutWithLegacyAlias(t *testing.T) {
 	}
 }
 
+func TestCanonicalConversationCapabilityCanOutliveLegacyAlias(t *testing.T) {
+	service := NewStateService(newMemoryRepository(), WithConditionalCapability(
+		CapabilityCanonicalConversationIdentity, []string{"contacts", "chats", "messages"},
+		func(instanceID string) (bool, error) { return instanceID == "instance-a", nil },
+	))
+	for resource, version := range map[string]int64{
+		"contacts": ContactsProjectionSchemaVersion,
+		"chats":    ChatsProjectionSchemaVersion,
+		"messages": MessagesProjectionSchemaVersion,
+	} {
+		if err := service.MarkReady("instance-a", resource, version, time.Unix(100, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, CapabilityCanonicalConversationIdentity) || containsCapability(capabilities, CapabilityCanonicalChatIdentity) {
+		t.Fatalf("post-deprecation capabilities = %v, %v", capabilities, err)
+	}
+}
+
 func TestContactsCapabilityRequiresReadyCurrentSchema(t *testing.T) {
 	service := NewStateService(newMemoryRepository())
 	if err := service.MarkReady("instance-a", "contacts", ContactsProjectionSchemaVersion-1, time.Unix(100, 0)); err != nil {

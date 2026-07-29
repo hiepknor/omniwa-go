@@ -20,9 +20,10 @@ func TestGeneratedOpenAPIContainsAdditiveConversationContract(t *testing.T) {
 	}
 	paths := object(t, document, "paths")
 	wantedOperations := map[string]string{
-		"/conversations":                            "listConversations",
-		"/conversations/{conversationRef}":          "getConversation",
-		"/conversations/{conversationRef}/messages": "listConversationMessages",
+		"/conversations":                                        "listConversations",
+		"/conversations/{conversationRef}":                      "getConversation",
+		"/conversations/{conversationRef}/messages":             "listConversationMessages",
+		"/conversations/{conversationRef}/messages/{messageId}": "getConversationMessage",
 	}
 	operationIDs := map[string]bool{}
 	for path, rawPath := range paths {
@@ -58,9 +59,10 @@ func TestGeneratedOpenAPIContainsAdditiveConversationContract(t *testing.T) {
 		}
 	}
 	for path, statuses := range map[string][]string{
-		"/conversations":                            {"400"},
-		"/conversations/{conversationRef}":          {"404"},
-		"/conversations/{conversationRef}/messages": {"400", "404"},
+		"/conversations":                                        {"400"},
+		"/conversations/{conversationRef}":                      {"404"},
+		"/conversations/{conversationRef}/messages":             {"400", "404"},
+		"/conversations/{conversationRef}/messages/{messageId}": {"404"},
 	} {
 		responses := object(t, object(t, object(t, paths, path), "get"), "responses")
 		for _, status := range statuses {
@@ -69,10 +71,28 @@ func TestGeneratedOpenAPIContainsAdditiveConversationContract(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/chat/list", "/chat/info/{chatId}", "/chat/{chatId}/messages"} {
+	for _, path := range []string{"/chat/list", "/chat/info/{chatId}", "/chat/{chatId}/messages", "/message/{messageId}"} {
 		operation := object(t, object(t, paths, path), "get")
 		if operation["deprecated"] != true {
 			t.Fatalf("legacy Chat read %s is not deprecated", path)
+		}
+		if _, ok := object(t, operation, "responses")["410"]; !ok {
+			t.Fatalf("legacy Chat read %s is missing retirement response", path)
+		}
+	}
+	for _, path := range []string{"/chat/archive", "/chat/unarchive", "/chat/mute", "/chat/unmute", "/chat/pin", "/chat/unpin", "/chat/history-sync"} {
+		if _, ok := object(t, paths, path)["post"]; !ok {
+			t.Fatalf("provider Chat command %s was removed", path)
+		}
+	}
+	for path, rawPath := range paths {
+		if !strings.HasPrefix(path, "/conversations") {
+			continue
+		}
+		for method := range rawPath.(map[string]any) {
+			if method != "get" {
+				t.Fatalf("non-authoritative Conversation command was published: %s %s", method, path)
+			}
 		}
 	}
 

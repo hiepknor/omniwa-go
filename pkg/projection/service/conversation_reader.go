@@ -7,6 +7,7 @@ import (
 
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
+	"gorm.io/gorm"
 )
 
 // ConversationType is the public canonical conversation classification. The
@@ -130,6 +131,32 @@ func (r *ChatMessageReader) ListConversationMessages(ctx context.Context, instan
 		}
 	}
 	return items, meta, nil
+}
+
+func (r *ChatMessageReader) GetConversationMessage(ctx context.Context, instanceID, conversationRef, messageID string) (*ProjectedConversationMessage, *ProjectionReadMeta, error) {
+	if conversationRef == "" || messageID == "" {
+		return nil, nil, errors.New("conversation reference and message identity are required")
+	}
+	meta, err := r.canonicalConversationMeta(instanceID, messageResource, MessagesProjectionSchemaVersion, ErrMessagesProjectionNotReady)
+	if err != nil {
+		return nil, nil, err
+	}
+	record, err := r.getCanonicalConversation(ctx, instanceID, conversationRef)
+	if err != nil {
+		return nil, meta, err
+	}
+	message, err := r.repository.GetMessage(ctx, instanceID, messageID)
+	if err != nil {
+		return nil, meta, err
+	}
+	if message.ConversationID == nil || *message.ConversationID != record.Conversation.ConversationID {
+		return nil, meta, gorm.ErrRecordNotFound
+	}
+	view, err := projectedCanonicalConversationMessageView(message, r.retention)
+	if err != nil {
+		return nil, meta, err
+	}
+	return &view, meta, nil
 }
 
 func (r *ChatMessageReader) canonicalConversationMeta(instanceID, resource string, version int64, notReady error) (*ProjectionReadMeta, error) {

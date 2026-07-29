@@ -37,9 +37,12 @@ type messageHandler struct {
 // @Param messageId path string true "Provider message ID"
 // @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ProjectedMessage} "success"
 // @Failure 404 {object} apidocs.ErrorResponse "Message not found"
+// @Failure 410 {object} apidocs.ErrorResponse "Legacy contract retired"
 // @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
+// @ID getProjectedMessage
+// @Deprecated
 // @Router /message/{messageId} [get]
 func (m *messageHandler) GetProjected(ctx *gin.Context) {
 	instance, ok := messageProjectionInstance(ctx)

@@ -10323,6 +10323,10 @@ paths:
           description: Invalid pagination
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "410":
+          description: Legacy contract retired
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
@@ -10439,6 +10443,10 @@ paths:
           description: Chat not found
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
+        "410":
+          description: Legacy contract retired
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
           description: Internal server error
           schema:
@@ -10485,6 +10493,10 @@ paths:
               type: object
         "400":
           description: Invalid pagination
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "410":
+          description: Legacy contract retired
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "500":
@@ -10929,6 +10941,52 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: List messages for a canonical conversation
+      tags:
+      - Conversation
+  /conversations/{conversationRef}/messages/{messageId}:
+    get:
+      description: Resolves conversationRef through the canonical instance-scoped
+        resolver and returns the message only when it belongs to that canonical conversation.
+        conversationId is required and providerChatId is provenance only.
+      operationId: getConversationMessage
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider Chat ID
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      - description: Provider message ID scoped to the canonical conversation
+        in: path
+        name: messageId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedConversationMessage'
+              type: object
+        "404":
+          description: Conversation or message not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Canonical conversation projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a message in a canonical conversation
       tags:
       - Conversation
   /events:
@@ -13220,6 +13278,8 @@ paths:
       - Media Assets
   /message/{messageId}:
     get:
+      deprecated: true
+      operationId: getProjectedMessage
       parameters:
       - description: Provider message ID
         in: path
@@ -13240,6 +13300,10 @@ paths:
               type: object
         "404":
           description: Message not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "410":
+          description: Legacy contract retired
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
         "500":

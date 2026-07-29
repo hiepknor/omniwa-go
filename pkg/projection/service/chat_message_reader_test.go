@@ -371,6 +371,50 @@ func TestConversationContractFailsClosedAndScopesCursors(t *testing.T) {
 	}
 }
 
+func TestConversationMessageDetailIsCanonicalAndConversationScoped(t *testing.T) {
+	conversationID := "43fa28fa-5412-5490-9879-f847dcfd1120"
+	otherConversationID := "6fe91b47-8b98-5b03-aedd-66cfc43a120e"
+	providerChatID := "36232981651679@lid"
+	providerTimestamp := time.Unix(900, 0).UTC()
+	repository := &chatMessageReadStub{
+		conversation: &projection_repository.ConversationRecord{Conversation: projection_model.Conversation{ConversationID: conversationID}},
+		message: &projection_model.ProjectedMessage{
+			MessageID: "message-a", ChatID: providerChatID, ConversationID: &conversationID,
+			Direction: projection_model.MessageDirectionIncoming, MessageType: "text", ProviderTimestamp: providerTimestamp,
+			Provenance: projection_model.MessageProvenanceLive,
+		},
+	}
+	reader := NewChatMessageReader(repository, readyChatMessageState(messageResource)).
+		EnableCanonicalConversations(func(string) (bool, error) { return true, nil })
+
+	message, _, err := reader.GetConversationMessage(context.Background(), "instance-a", providerChatID, "message-a")
+	if err != nil || message.ConversationID != conversationID || message.ProviderChatID != providerChatID || repository.conversationRef != providerChatID {
+		t.Fatalf("canonical message detail = %#v ref=%q err=%v", message, repository.conversationRef, err)
+	}
+	value, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := decoded["chatId"]; exists {
+		t.Fatalf("canonical detail exposed legacy identity: %s", value)
+	}
+
+	repository.conversation = &projection_repository.ConversationRecord{Conversation: projection_model.Conversation{ConversationID: otherConversationID}}
+	if _, _, err := reader.GetConversationMessage(context.Background(), "instance-a", otherConversationID, "message-a"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-conversation message detail error = %v", err)
+	}
+
+	legacyOnly := NewChatMessageReader(repository, readyChatMessageState(messageResource)).
+		EnableCanonicalConversations(func(string) (bool, error) { return false, nil })
+	if _, _, err := legacyOnly.GetConversationMessage(context.Background(), "instance-a", otherConversationID, "message-a"); !errors.Is(err, ErrMessagesProjectionNotReady) {
+		t.Fatalf("message detail without canonical readiness = %v", err)
+	}
+}
+
 func TestConversationTypePreservesProviderClassifications(t *testing.T) {
 	for providerType, canonicalType := range map[projection_model.ChatType]ConversationType{
 		projection_model.ChatTypeDirect: ConversationTypeDirect, projection_model.ChatTypeGroup: ConversationTypeGroup,
