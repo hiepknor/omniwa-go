@@ -138,6 +138,57 @@ func TestHistorySyncerDoesNotEmitCompletionForOnDemandChunks(t *testing.T) {
 	}
 }
 
+func TestHistorySyncerSkipsMetadataOnlyMessageStubsAndCompletes(t *testing.T) {
+	raw := testHistorySync(waHistorySync.HistorySync_RECENT, 100)
+	raw.Data.Conversations[0].Messages = append([]*waHistorySync.HistorySyncMsg{{
+		Message: &waWeb.WebMessageInfo{MessageStubType: waWeb.WebMessageInfo_UNKNOWN.Enum()},
+	}}, raw.Data.Conversations[0].Messages...)
+
+	eventsCapture := &captureHistoryEvents{}
+	parserCalls := 0
+	err := NewHistorySyncer(eventsCapture, newHistoryStateStub()).Sync(
+		context.Background(), "instance-a", raw,
+		func(chat types.JID, source *waWeb.WebMessageInfo) (*events.Message, error) {
+			parserCalls++
+			return testHistoryMessageParser(chat, source)
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parserCalls != 1 {
+		t.Fatalf("parser calls = %d, want only the payload-bearing message", parserCalls)
+	}
+	if len(eventsCapture.events) != 3 || eventsCapture.events[0].EventType != "history_chat" ||
+		eventsCapture.events[1].EventType != "history_message" || eventsCapture.events[2].EventType != "history_sync_complete" {
+		t.Fatalf("history events = %#v", eventsCapture.events)
+	}
+}
+
+func TestHistorySyncerFailsClosedForPayloadBearingMessageWithoutIdentity(t *testing.T) {
+	raw := testHistorySync(waHistorySync.HistorySync_RECENT, 100)
+	raw.Data.Conversations[0].Messages[0].Message.Key.ID = nil
+
+	eventsCapture, state := &captureHistoryEvents{}, newHistoryStateStub()
+	err := NewHistorySyncer(eventsCapture, state).Sync(context.Background(), "instance-a", raw, testHistoryMessageParser)
+	if err == nil {
+		t.Fatal("payload-bearing message without identity unexpectedly completed")
+	}
+	details := DescribeHistorySyncFailure(err)
+	if details.Stage != "message_ingest" || details.Code != "history_sync_message_ingest_failed" ||
+		details.ConversationIndex != 0 || details.MessageIndex != 0 {
+		t.Fatalf("failure details = %#v", details)
+	}
+	if len(state.failed) != 2 {
+		t.Fatalf("failed resources = %#v", state.failed)
+	}
+	for _, event := range eventsCapture.events {
+		if event.EventType == "history_sync_complete" {
+			t.Fatal("malformed payload-bearing message emitted readiness completion")
+		}
+	}
+}
+
 func testHistorySync(syncType waHistorySync.HistorySync_HistorySyncType, progress uint32) *events.HistorySync {
 	chatID, messageID, participant := "group@g.us", "history-message", "sender@s.whatsapp.net"
 	timestamp := uint64(800)
