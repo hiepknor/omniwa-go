@@ -98,6 +98,13 @@ message IDs, never a sum or maximum of alias Chat counters. Insufficient history
 keeps the aggregate non-authoritative. Retention of an unread message also
 invalidates readiness instead of silently lowering the total.
 
+Provider HistorySync may also contain metadata-only `WebMessageInfo` stubs with
+no message payload. They do not represent projected messages and are excluded
+before parsing. A payload-bearing record that lacks a required message identity,
+chat, timestamp, or valid durable event still fails the sync and suppresses the
+completion barrier; the backend never converts malformed message data into a
+ready projection.
+
 Set `WA_CANONICAL_CHAT_IDENTITY_ENABLED=true` only after
 `WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED=true`. The worker scans active
 projected Chats in opaque provider-ID order, uses a two-minute lease, persists

@@ -157,11 +157,20 @@ func (s *HistorySyncer) ingestConversation(ctx context.Context, instanceID, sync
 		if historyMessage == nil || historyMessage.GetMessage() == nil {
 			return newHistorySyncFailure("message", "history_sync_message_missing", conversationIndex, messageIndex, nil)
 		}
-		parsed, err := parser(chatJID, historyMessage.GetMessage())
+		source := historyMessage.GetMessage()
+		// History sync conversations may contain metadata-only WebMessageInfo
+		// stubs. They have no WhatsApp message payload to project and must not
+		// prevent an otherwise complete authoritative snapshot from reaching its
+		// completion barrier. Records that do carry a payload remain fail-closed
+		// through parsing, normalization, and durable ingestion below.
+		if source.GetMessage() == nil {
+			continue
+		}
+		parsed, err := parser(chatJID, source)
 		if err != nil {
 			return newHistorySyncFailure("message_parse", "history_sync_message_parse_failed", conversationIndex, messageIndex, err)
 		}
-		if err := s.ingestMessage(ctx, instanceID, syncID, parsed, historyMessage.GetMessage()); err != nil {
+		if err := s.ingestMessage(ctx, instanceID, syncID, parsed, source); err != nil {
 			return newHistorySyncFailure("message_ingest", "history_sync_message_ingest_failed", conversationIndex, messageIndex, err)
 		}
 	}
