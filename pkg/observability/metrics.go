@@ -22,6 +22,13 @@ const (
 	EligibilityStateEligible    = "eligible"
 	EligibilityStateUnavailable = "unavailable"
 	EligibilityStateUnknown     = "unknown"
+
+	ConversationContractCanonical  = "conversation"
+	ConversationContractLegacyChat = "legacy_chat"
+	ConversationOperationList      = "list"
+	ConversationOperationGet       = "get"
+	ConversationOperationMessages  = "messages"
+	ConversationOperationMessage   = "message"
 )
 
 var eligibilityBatchSizeBuckets = []float64{1, 10, 25, 50, 100, 500, 1_000, 2_500, 5_000, 10_000}
@@ -42,6 +49,12 @@ type GroupListEligibilityObserver interface {
 	ObserveMutationRejection(operation, code string)
 }
 
+// ConversationAPIObserver records bounded migration telemetry. Implementations
+// must never label metrics with instance, Conversation, Chat, or provider IDs.
+type ConversationAPIObserver interface {
+	ObserveConversationRequest(contract, operation string, status int, duration time.Duration)
+}
+
 // Registry owns the process collectors and bounded OmniWA domain metrics.
 type Registry struct {
 	registry                   *prometheus.Registry
@@ -49,6 +62,8 @@ type Registry struct {
 	eligibilityRequestedGroups *prometheus.HistogramVec
 	eligibilityResults         *prometheus.CounterVec
 	mutationRejections         *prometheus.CounterVec
+	conversationRequests       *prometheus.CounterVec
+	conversationDuration       *prometheus.HistogramVec
 }
 
 // NewRegistry constructs an isolated registry. Registration failures are
@@ -73,17 +88,34 @@ func NewRegistry() (*Registry, error) {
 			Namespace: "omniwa", Subsystem: "group_list", Name: "mutation_rejections_total",
 			Help: "Group List and group-target Campaign mutation rejections by stable public code.",
 		}, []string{"operation", "code"}),
+		conversationRequests: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "omniwa", Subsystem: "conversation_api", Name: "requests_total",
+			Help: "Canonical Conversation and deprecated Chat read requests by bounded operation and HTTP status class.",
+		}, []string{"contract", "operation", "status"}),
+		conversationDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "omniwa", Subsystem: "conversation_api", Name: "request_duration_seconds",
+			Help: "Canonical Conversation and deprecated Chat read latency by bounded operation.",
+		}, []string{"contract", "operation"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		result.eligibilityRequestDuration, result.eligibilityRequestedGroups,
 		result.eligibilityResults, result.mutationRejections,
+		result.conversationRequests, result.conversationDuration,
 	} {
 		if err := result.registry.Register(collector); err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
+}
+
+// ConversationAPI returns the bounded canonical-contract migration observer.
+func (r *Registry) ConversationAPI() ConversationAPIObserver {
+	if r == nil {
+		return noopConversationAPIObserver{}
+	}
+	return r
 }
 
 // Handler returns the Prometheus exposition handler for this registry.
@@ -123,6 +155,15 @@ func (r *Registry) ObserveMutationRejection(operation, code string) {
 	r.mutationRejections.WithLabelValues(operation, code).Inc()
 }
 
+func (r *Registry) ObserveConversationRequest(contract, operation string, status int, duration time.Duration) {
+	statusLabel := conversationStatusClass(status)
+	if r == nil || !conversationContract(contract) || !conversationOperation(operation) || statusLabel == "" || duration < 0 {
+		return
+	}
+	r.conversationRequests.WithLabelValues(contract, operation, statusLabel).Inc()
+	r.conversationDuration.WithLabelValues(contract, operation).Observe(duration.Seconds())
+}
+
 func requestOperation(value string) bool {
 	return value == EligibilityOperationBatch || value == EligibilityOperationAggregate
 }
@@ -141,6 +182,34 @@ func mutationRejectionCode(value string) bool {
 	}
 }
 
+func conversationContract(value string) bool {
+	return value == ConversationContractCanonical || value == ConversationContractLegacyChat
+}
+
+func conversationOperation(value string) bool {
+	switch value {
+	case ConversationOperationList, ConversationOperationGet, ConversationOperationMessages, ConversationOperationMessage:
+		return true
+	default:
+		return false
+	}
+}
+
+func conversationStatusClass(status int) string {
+	switch {
+	case status >= 200 && status < 300:
+		return "2xx"
+	case status >= 300 && status < 400:
+		return "3xx"
+	case status >= 400 && status < 500:
+		return "4xx"
+	case status >= 500 && status < 600:
+		return "5xx"
+	default:
+		return ""
+	}
+}
+
 func invalidCounts(counts EligibilityCounts) bool {
 	return counts.Eligible < 0 || counts.Unavailable < 0 || counts.Unknown < 0
 }
@@ -151,5 +220,11 @@ func (noopGroupListEligibilityObserver) ObserveRequest(string, time.Duration, in
 }
 func (noopGroupListEligibilityObserver) ObserveMutationRejection(string, string) {}
 
+type noopConversationAPIObserver struct{}
+
+func (noopConversationAPIObserver) ObserveConversationRequest(string, string, int, time.Duration) {}
+
 var _ GroupListEligibilityObserver = (*Registry)(nil)
 var _ GroupListEligibilityObserver = noopGroupListEligibilityObserver{}
+var _ ConversationAPIObserver = (*Registry)(nil)
+var _ ConversationAPIObserver = noopConversationAPIObserver{}

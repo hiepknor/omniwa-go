@@ -157,6 +157,15 @@ func TestContactMergeKeepsPermanentFlattenedRedirectsAndChatReferences(t *testin
 		canonicalConversation.ContactID == nil || *canonicalConversation.ContactID != current.ContactID || canonicalConversation.TombstonedAt != nil {
 		t.Fatalf("canonical conversation = %#v, %v", canonicalConversation, err)
 	}
+	for _, conversationRef := range []string{initialConversationID, chat.ChatID, *chat.ConversationID} {
+		resolved, getErr := chatRepository.GetConversation(context.Background(), instances[0].Id, conversationRef)
+		if getErr != nil || resolved.Conversation.ConversationID != *chat.ConversationID {
+			t.Fatalf("conversation reference %q = %#v, %v", conversationRef, resolved, getErr)
+		}
+	}
+	if _, getErr := chatRepository.GetConversation(context.Background(), instances[1].Id, initialConversationID); !errors.Is(getErr, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-instance absorbed conversation lookup error = %v", getErr)
+	}
 	var conversationRedirects int64
 	if err = db.Model(&projection_model.ConversationRedirect{}).
 		Where("instance_id = ? AND canonical_conversation_id = ?", instances[0].Id, *chat.ConversationID).Count(&conversationRedirects).Error; err != nil || conversationRedirects < 1 {

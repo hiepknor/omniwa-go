@@ -73,6 +73,20 @@ message-level unread snapshot.
 Do not accept process liveness as readiness. Verify migrations 34 through 38,
 the Contact and conversation backfill checkpoints, Chats/Contacts/Messages
 projection states, and an instance-targeted `/server/capabilities` response.
-Only the presence of `canonical_chat_identity` permits canonical Chat reads.
+New binaries advertise `canonical_conversation_identity` and the legacy
+`canonical_chat_identity` alias from the same readiness decision. Both must be
+present or absent together. Clients use `canonical_conversation_identity` for
+the `/conversations` contract and keep `canonical_chat_identity` only for mixed
+rollout compatibility. Do not derive either capability from the version string.
 Disable `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restart to return to legacy
 provider-Chat reads without deleting additive data.
+
+Do not set `WA_LEGACY_CHAT_READS_ENABLED=false` during the mixed-client phase.
+First confirm that `omniwa_conversation_api_requests_total` has no successful
+`contract="legacy_chat"` traffic for the agreed deprecation window, every
+supported instance advertises `canonical_conversation_identity`, and consumers
+have migrated stored URLs and cursors. The flag retires the deprecated Chat
+reads and legacy projected-message detail with HTTP 410, and removes their
+capability alias; provider commands and message receipts remain. Continue
+watching legacy 4xx traffic before physical route deletion. Roll back by setting
+it to `true` and restarting.
