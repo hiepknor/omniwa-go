@@ -75,13 +75,12 @@ Chats are ready at their current schema versions and the instance's local LID
 reconciliation checkpoint is complete. Clients must not infer canonical
 identity support from `contacts_projection` alone.
 
-## Canonical conversation shadow rollout
+## Canonical conversations
 
-Migration 37 adds an internal canonical-conversation identity, provider-chat
-alias mapping, redirects, nullable Chat/Message associations, and a resumable
-backfill checkpoint. Projection writes maintain these rows transactionally,
-but the foundation does not change the public Chat DTO, legacy list total, or
-legacy cursor scope.
+Migration 37 adds canonical-conversation identity, provider-chat alias mapping,
+redirects, nullable Chat/Message associations, and a resumable backfill
+checkpoint. Migration 38 adds message-level unread state and the fail-closed
+snapshot evidence needed to serve the aggregate publicly.
 
 Only direct Chats that already reference the same canonical Contact may share
 the shadow conversation. Partial direct identities remain isolated. Group,
@@ -89,9 +88,15 @@ newsletter, broadcast, and unknown Chats remain isolated by type and provider
 chat ID. No name, phone-text, timestamp, or content heuristic participates in
 the mapping.
 
-The shadow aggregate marks unread state non-authoritative. Operators and
-clients must not expose it, group legacy Chat rows, or infer canonical Chat
-support from the presence of migration 37.
+Provider unread snapshots are converted to message-level state only when at
+least the reported number of incoming messages remains in the projection. The
+newest N messages are selected deterministically by `providerTimestamp` and
+`messageId`. Live incoming messages start unread, outgoing messages start read,
+and incoming read-self receipts plus successful local mark-read commands update
+the same rows idempotently. Canonical unread is a count of distinct projected
+message IDs, never a sum or maximum of alias Chat counters. Insufficient history
+keeps the aggregate non-authoritative. Retention of an unread message also
+invalidates readiness instead of silently lowering the total.
 
 Set `WA_CANONICAL_CHAT_IDENTITY_ENABLED=true` only after
 `WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED=true`. The worker scans active
@@ -104,21 +109,40 @@ and bounded work per connection cycle are controlled by
 
 Structural completion validates every active Chat alias and retained Message,
 redirect flattening, active-conversation ownership, and direct Contact
-agreement. It deliberately does not convert historical alias unread snapshots
-into an authoritative total. `canonical_chat_identity` is advertised per
-instance only when Contacts, Chats, and Messages are ready, both Contact and
-conversation checkpoints are complete, structural validation succeeds, and
-every active canonical conversation has authoritative unread state. Therefore
-the capability remains absent after structural backfill until the unread
-rollout establishes that invariant.
+agreement. `canonical_chat_identity` is advertised per instance only when
+Contacts, Chats, and Messages are ready at their current schemas, both Contact
+and conversation checkpoints are complete, structural validation succeeds,
+and every active canonical conversation has authoritative unread state.
+
+When the capability is present:
+
+- `ProjectedChat.conversationId` is the stable canonical UUID.
+- `chatAliases` lists every accepted historical/provider Chat ID.
+- `addressingJid` is the Contact-owned command recipient for direct chats.
+- `chatId` remains a compatibility/provider alias and must not be used as the
+  person identity.
+- `GET /chat/info/{chatId}` accepts a conversation UUID, current alias, absorbed
+  alias, or absorbed conversation UUID and always returns the canonical row.
+- `GET /chat/{chatId}/messages` returns retained messages across every alias.
+  The existing tenant-wide `(instance_id, message_id)` key deduplicates provider
+  message identity.
+- `GET /chat/list` returns one row per canonical conversation and `meta.total`
+  counts those rows. Group, newsletter, broadcast, and unknown chats remain
+  isolated.
+- Version-2 canonical cursors are opaque and conversation-scoped. Legacy,
+  cross-conversation, or otherwise mismatched cursors return `invalid_cursor`.
+
+When the capability is absent, all three endpoints preserve the historical
+provider-Chat behavior and version-1 cursor scope. Clients must never infer the
+new mode from a version string or from `canonical_contact_identity`.
 
 Do not add or maximize unread counts from PN/LID alias rows: either operation
 can double-count or discard unread messages. Capability absence is the
 machine-readable mixed-rollout signal; clients must retain legacy Chat behavior.
 
-Rollback before that capability is advertised uses the previous binary and
-leaves the additive nullable columns/tables unused. Do not drop the shadow
-schema while any new binary may write it.
+Rollback disables `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restarts the binary.
+This removes the capability and restores legacy reads without deleting the
+additive schema.
 
 ## Projected message field contract
 
@@ -135,6 +159,11 @@ source can legitimately omit them. For display ordering, clients use
 `providerTimestamp`, then `sentAt`, then `deliveredAt`; if none is reported by
 an older unsupported record, display an unreported timestamp rather than
 inventing one. Current-schema responses always include `providerTimestamp`.
+
+`conversationId` is optional across mixed deployments and is present on
+message responses when `canonical_chat_identity` is serving. `chatId` continues
+to report the provider alias on which the message arrived; clients must use
+`conversationId` for canonical navigation and cursor scope.
 
 `mediaAssetId` is an opaque reference to shared private media, not proof that
 bytes are ready. The projected message remains authoritative when media is

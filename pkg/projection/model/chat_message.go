@@ -44,6 +44,8 @@ type Chat struct {
 	LastMessageAt        *time.Time      `json:"lastMessageAt,omitempty" gorm:"column:last_message_at"`
 	LastActivityAt       *time.Time      `json:"lastActivityAt,omitempty" gorm:"column:last_activity_at"`
 	UnreadCount          int             `json:"unreadCount" gorm:"column:unread_count;not null"`
+	UnreadAuthoritative  bool            `json:"-" gorm:"column:unread_authoritative;not null"`
+	UnreadSnapshotSyncID *string         `json:"-" gorm:"column:unread_snapshot_sync_id;size:255"`
 	Archived             *bool           `json:"archived,omitempty" gorm:"column:archived"`
 	Pinned               *bool           `json:"pinned,omitempty" gorm:"column:pinned"`
 	MutedUntil           *time.Time      `json:"mutedUntil,omitempty" gorm:"column:muted_until"`
@@ -90,6 +92,7 @@ type ProjectedMessage struct {
 	PlayedAt           *time.Time        `json:"playedAt,omitempty" gorm:"column:played_at"`
 	Provenance         MessageProvenance `json:"provenance" gorm:"column:provenance;size:32;not null"`
 	HistorySyncID      *string           `json:"historySyncId,omitempty" gorm:"column:history_sync_id;size:255"`
+	IsUnread           *bool             `json:"-" gorm:"column:is_unread"`
 	RetentionExpiresAt *time.Time        `json:"retentionExpiresAt,omitempty" gorm:"column:retention_expires_at"`
 	DeletedAt          *time.Time        `json:"deletedAt,omitempty" gorm:"column:deleted_at"`
 	SourceOccurredAt   time.Time         `json:"sourceOccurredAt" gorm:"column:source_occurred_at;not null"`

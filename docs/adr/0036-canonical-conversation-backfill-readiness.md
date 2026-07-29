@@ -1,6 +1,6 @@
 # ADR 0036: Fail-closed canonical conversation backfill readiness
 
-- Status: Accepted
+- Status: Superseded by ADR 0037
 - Date: 2026-07-29
 
 ## Context

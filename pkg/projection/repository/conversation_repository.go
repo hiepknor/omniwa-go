@@ -145,10 +145,8 @@ func recomputeConversationSummary(tx *gorm.DB, instanceID, conversationID string
 		return errors.New("canonical conversation has no active chat aliases")
 	}
 	primary := chats[0]
-	unreadCount := 0
 	lastSyncedAt := primary.LastSyncedAt
 	for index := range chats {
-		unreadCount += chats[index].UnreadCount
 		if chats[index].LastSyncedAt.After(lastSyncedAt) {
 			lastSyncedAt = chats[index].LastSyncedAt
 		}
@@ -157,9 +155,8 @@ func recomputeConversationSummary(tx *gorm.DB, instanceID, conversationID string
 		"contact_id": primary.ContactID, "conversation_type": primary.Type, "addressing_jid": addressingJID(&primary),
 		"display_name": primary.DisplayName, "display_name_source": primary.DisplayNameSource,
 		"display_name_updated_at": primary.DisplayNameUpdatedAt, "last_message_id": primary.LastMessageID,
-		"last_message_at": primary.LastMessageAt, "last_activity_at": primary.LastActivityAt, "unread_count": unreadCount,
-		"unread_authoritative": false,
-		"archived":             primary.Archived, "pinned": primary.Pinned, "muted_until": primary.MutedUntil,
+		"last_message_at": primary.LastMessageAt, "last_activity_at": primary.LastActivityAt,
+		"archived": primary.Archived, "pinned": primary.Pinned, "muted_until": primary.MutedUntil,
 		"disappearing_timer": primary.DisappearingTimer, "field_versions": primary.FieldVersions,
 		"last_synced_at": lastSyncedAt.UTC(), "tombstoned_at": nil, "updated_at": now.UTC(),
 	}
@@ -174,8 +171,42 @@ func recomputeConversationSummary(tx *gorm.DB, instanceID, conversationID string
 			updates["display_name"], updates["display_name_source"], updates["display_name_updated_at"] = name, source, updatedAt
 		}
 	}
+	if err := tx.Model(&projection_model.Conversation{}).
+		Where("instance_id = ? AND conversation_id = ?", instanceID, conversationID).Updates(updates).Error; err != nil {
+		return err
+	}
+	return recomputeConversationUnread(tx, instanceID, conversationID, now)
+}
+
+func recomputeConversationUnread(tx *gorm.DB, instanceID, conversationID string, now time.Time) error {
+	if tx == nil || instanceID == "" || conversationID == "" || now.IsZero() {
+		return errors.New("canonical conversation unread identity is required")
+	}
+	var unreadCount int64
+	if err := tx.Model(&projection_model.ProjectedMessage{}).
+		Where("instance_id = ? AND conversation_id = ? AND deleted_at IS NULL AND is_unread = TRUE", instanceID, conversationID).
+		Count(&unreadCount).Error; err != nil {
+		return err
+	}
+	var incompleteMessages int64
+	if err := tx.Model(&projection_model.ProjectedMessage{}).
+		Where("instance_id = ? AND conversation_id = ? AND deleted_at IS NULL AND direction = ? AND is_unread IS NULL",
+			instanceID, conversationID, projection_model.MessageDirectionIncoming).Count(&incompleteMessages).Error; err != nil {
+		return err
+	}
+	var incompleteChats int64
+	if err := tx.Table("projected_chat_aliases AS aliases").
+		Joins("JOIN projected_chats AS chats ON chats.instance_id = aliases.instance_id AND chats.chat_id = aliases.chat_id").
+		Where("aliases.instance_id = ? AND aliases.conversation_id = ? AND chats.tombstoned_at IS NULL AND chats.unread_authoritative = FALSE",
+			instanceID, conversationID).Count(&incompleteChats).Error; err != nil {
+		return err
+	}
 	return tx.Model(&projection_model.Conversation{}).
-		Where("instance_id = ? AND conversation_id = ?", instanceID, conversationID).Updates(updates).Error
+		Where("instance_id = ? AND conversation_id = ?", instanceID, conversationID).
+		Updates(map[string]any{
+			"unread_count": unreadCount, "unread_authoritative": incompleteMessages == 0 && incompleteChats == 0,
+			"updated_at": now.UTC(),
+		}).Error
 }
 
 func addressingJID(chat *projection_model.Chat) *string {

@@ -864,7 +864,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Return a projected chat with locally denormalized contact or type-specific display-name metadata.",
+                "description": "Return a projected chat with locally denormalized contact or type-specific display-name metadata. With canonical_chat_identity, chatId accepts a canonical conversation UUID or any absorbed provider Chat ID and the response contains the canonical conversationId.",
                 "produces": [
                     "application/json"
                 ],
@@ -875,7 +875,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Chat JID",
+                        "description": "Canonical conversation UUID or provider Chat ID",
                         "name": "chatId",
                         "in": "path",
                         "required": true
@@ -928,7 +928,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Cursor-page projected chats without live reads. meta.total is the exact active projected-chat count at request time, not a cross-page snapshot.",
+                "description": "Cursor-page projected chats without live reads. With canonical_chat_identity, direct aliases collapse to one conversation, meta.total counts canonical conversations, and cursors are conversation-scoped. Without it, legacy provider-chat rows and cursors are preserved.",
                 "produces": [
                     "application/json"
                 ],
@@ -1315,6 +1315,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
+                "description": "With canonical_chat_identity, resolves canonical or absorbed Chat IDs and returns deduplicated provider-message history across all aliases. Cursors are opaque and scoped to the canonical conversation.",
                 "produces": [
                     "application/json"
                 ],
@@ -1325,7 +1326,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Chat JID",
+                        "description": "Canonical conversation UUID or provider Chat ID",
                         "name": "chatId",
                         "in": "path",
                         "required": true
@@ -11670,13 +11671,25 @@ const docTemplate = `{
                 "unreadCount"
             ],
             "properties": {
+                "addressingJid": {
+                    "type": "string"
+                },
                 "archived": {
                     "type": "boolean"
+                },
+                "chatAliases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "chatId": {
                     "type": "string"
                 },
                 "contactId": {
+                    "type": "string"
+                },
+                "conversationId": {
                     "type": "string"
                 },
                 "disappearingTimer": {
@@ -11746,6 +11759,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "contentText": {
+                    "type": "string"
+                },
+                "conversationId": {
                     "type": "string"
                 },
                 "deliveredAt": {

@@ -51,3 +51,18 @@ lock, which can create a restart loop and a misleading failed rollout.
 Rollback uses the same stop-first sequence: stop the current application, deploy
 the previous immutable image digest, and verify ownership acquisition and health.
 Never bypass the lock to restore a multi-replica topology.
+
+## Canonical conversation rollout
+
+Canonical conversation serving is a staged, per-instance rollout. Apply
+migration 38 before enabling `WA_CANONICAL_CHAT_IDENTITY_ENABLED`. Keep
+`WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED=true`, use bounded
+`CONVERSATION_BACKFILL_BATCH` and `CONVERSATION_BACKFILL_MAX_BATCHES`, and obtain
+a valid RECENT or FULL HistorySync after deploying Messages schema version 3.
+
+Do not accept process liveness as readiness. Verify migrations 34 through 38,
+the Contact and conversation backfill checkpoints, Chats/Contacts/Messages
+projection states, and an instance-targeted `/server/capabilities` response.
+Only the presence of `canonical_chat_identity` permits canonical Chat reads.
+Disable `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restart to return to legacy
+provider-Chat reads without deleting additive data.

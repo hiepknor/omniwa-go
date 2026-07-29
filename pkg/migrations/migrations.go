@@ -1668,6 +1668,91 @@ CREATE INDEX projected_conversation_backfills_work_idx
 ON projected_conversation_backfills (status, lease_expires_at, instance_id)
 WHERE status <> 'complete';`,
 	},
+	{
+		Version: 38,
+		Name:    "add_authoritative_conversation_unread",
+		SQL: `ALTER TABLE projected_chats
+    ADD COLUMN unread_authoritative BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN unread_snapshot_sync_id VARCHAR(255) NULL;
+
+ALTER TABLE projected_messages
+    ADD COLUMN is_unread BOOLEAN NULL;
+
+CREATE INDEX projected_messages_conversation_unread_idx
+ON projected_messages (instance_id, conversation_id, message_id)
+WHERE deleted_at IS NULL AND is_unread = TRUE;
+
+UPDATE projected_messages
+SET is_unread = FALSE, updated_at = NOW()
+WHERE direction = 'outgoing' AND deleted_at IS NULL;
+
+WITH ranked AS (
+    SELECT messages.instance_id, messages.message_id, messages.chat_id,
+           ROW_NUMBER() OVER (
+               PARTITION BY messages.instance_id, messages.chat_id
+               ORDER BY messages.provider_timestamp DESC, messages.message_id DESC
+           ) AS unread_rank
+    FROM projected_messages AS messages
+    JOIN projected_chats AS chats
+      ON chats.instance_id = messages.instance_id AND chats.chat_id = messages.chat_id
+    WHERE messages.direction = 'incoming' AND messages.deleted_at IS NULL
+      AND chats.tombstoned_at IS NULL
+      AND (chats.last_activity_at IS NULL OR messages.provider_timestamp <= chats.last_activity_at)
+), eligible AS (
+    SELECT chats.instance_id, chats.chat_id, chats.unread_count,
+           COALESCE(chats.last_activity_at, NOW()) AS version_at
+    FROM projected_chats AS chats
+    WHERE chats.tombstoned_at IS NULL
+      AND (SELECT COUNT(*) FROM ranked
+           WHERE ranked.instance_id = chats.instance_id AND ranked.chat_id = chats.chat_id) >= chats.unread_count
+)
+UPDATE projected_messages AS messages
+SET is_unread = ranked.unread_rank <= eligible.unread_count,
+    field_versions = jsonb_set(COALESCE(messages.field_versions, '{}'::jsonb), '{unread}',
+        jsonb_build_object('occurredAt', eligible.version_at, 'eventKey', 'zz:migration:38'), TRUE),
+    updated_at = NOW()
+FROM ranked
+JOIN eligible ON eligible.instance_id = ranked.instance_id AND eligible.chat_id = ranked.chat_id
+WHERE messages.instance_id = ranked.instance_id AND messages.message_id = ranked.message_id;
+
+UPDATE projected_chats AS chats
+SET unread_authoritative = (
+    SELECT COUNT(*) FROM projected_messages AS messages
+    WHERE messages.instance_id = chats.instance_id AND messages.chat_id = chats.chat_id
+      AND messages.direction = 'incoming' AND messages.deleted_at IS NULL
+      AND (chats.last_activity_at IS NULL OR messages.provider_timestamp <= chats.last_activity_at)
+) >= chats.unread_count,
+updated_at = NOW()
+WHERE chats.tombstoned_at IS NULL;
+
+UPDATE projected_conversations AS conversations
+SET unread_count = unread.count,
+    unread_authoritative = unread.incomplete_messages = 0 AND unread.incomplete_chats = 0,
+    updated_at = NOW()
+FROM (
+    SELECT conversations.instance_id, conversations.conversation_id,
+           COUNT(DISTINCT messages.message_id) FILTER (WHERE messages.is_unread = TRUE) AS count,
+           COUNT(DISTINCT messages.message_id) FILTER (
+               WHERE messages.direction = 'incoming' AND messages.is_unread IS NULL
+           ) AS incomplete_messages,
+           COUNT(DISTINCT chats.chat_id) FILTER (WHERE chats.unread_authoritative = FALSE) AS incomplete_chats
+    FROM projected_conversations AS conversations
+    LEFT JOIN projected_messages AS messages
+      ON messages.instance_id = conversations.instance_id
+     AND messages.conversation_id = conversations.conversation_id
+     AND messages.deleted_at IS NULL
+    LEFT JOIN projected_chat_aliases AS aliases
+      ON aliases.instance_id = conversations.instance_id
+     AND aliases.conversation_id = conversations.conversation_id
+    LEFT JOIN projected_chats AS chats
+      ON chats.instance_id = aliases.instance_id AND chats.chat_id = aliases.chat_id
+     AND chats.tombstoned_at IS NULL
+    WHERE conversations.tombstoned_at IS NULL
+    GROUP BY conversations.instance_id, conversations.conversation_id
+) AS unread
+WHERE conversations.instance_id = unread.instance_id
+  AND conversations.conversation_id = unread.conversation_id;`,
+	},
 }
 
 func Run(db *gorm.DB) error {

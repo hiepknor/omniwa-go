@@ -26,18 +26,25 @@ type chatMessageReadRepository interface {
 	GetMessage(context.Context, string, string) (*projection_model.ProjectedMessage, error)
 	ListMessages(context.Context, string, string, int, *projection_repository.MessageCursor) (*projection_repository.MessagePage, error)
 	ListReceipts(context.Context, string, string) ([]projection_model.MessageReceipt, error)
+	GetConversation(context.Context, string, string) (*projection_repository.ConversationRecord, error)
+	ListConversations(context.Context, string, int, *projection_repository.ConversationCursor) (*projection_repository.ConversationPage, error)
+	ListConversationMessages(context.Context, string, string, int, *projection_repository.MessageCursor) (*projection_repository.MessagePage, error)
 }
 
 type ChatMessageReader struct {
-	repository chatMessageReadRepository
-	state      groupReadState
-	retention  time.Duration
+	repository     chatMessageReadRepository
+	state          groupReadState
+	retention      time.Duration
+	canonicalReady func(string) (bool, error)
 }
 
 // ProjectedChat is the stable public chat representation. Storage coordination
 // fields are intentionally excluded from the API contract.
 type ProjectedChat struct {
 	ChatID               string                    `json:"chatId" binding:"required"`
+	ConversationID       *string                   `json:"conversationId,omitempty"`
+	ChatAliases          []string                  `json:"chatAliases,omitempty"`
+	AddressingJID        *string                   `json:"addressingJid,omitempty"`
 	ContactID            *string                   `json:"contactId,omitempty"`
 	Type                 projection_model.ChatType `json:"type" binding:"required"`
 	DisplayName          *string                   `json:"displayName,omitempty"`
@@ -58,6 +65,7 @@ type ProjectedChat struct {
 type ProjectedMessage struct {
 	MessageID          string                             `json:"messageId" binding:"required"`
 	ChatID             string                             `json:"chatId" binding:"required"`
+	ConversationID     *string                            `json:"conversationId,omitempty"`
 	SenderJID          *string                            `json:"senderJid,omitempty"`
 	RecipientJID       *string                            `json:"recipientJid,omitempty"`
 	ParticipantJID     *string                            `json:"participantJid,omitempty"`
@@ -97,6 +105,7 @@ type projectionCursor struct {
 	Version           int        `json:"v"`
 	Kind              string     `json:"kind"`
 	ChatID            string     `json:"chatId,omitempty"`
+	ConversationID    string     `json:"conversationId,omitempty"`
 	LastActivityAt    *time.Time `json:"lastActivityAt,omitempty"`
 	MessageID         string     `json:"messageId,omitempty"`
 	ProviderTimestamp *time.Time `json:"providerTimestamp,omitempty"`
@@ -110,10 +119,22 @@ func NewChatMessageReader(repository chatMessageReadRepository, state groupReadS
 	return &ChatMessageReader{repository: repository, state: state, retention: policy}
 }
 
+func (r *ChatMessageReader) EnableCanonicalConversations(readiness func(string) (bool, error)) *ChatMessageReader {
+	r.canonicalReady = readiness
+	return r
+}
+
 func (r *ChatMessageReader) ListChats(ctx context.Context, instanceID string, limit int, cursor string) ([]ProjectedChat, *ProjectionReadMeta, error) {
 	meta, err := r.readMeta(instanceID, "chats", ChatsProjectionSchemaVersion, ErrChatsProjectionNotReady)
 	if err != nil {
 		return nil, nil, err
+	}
+	canonical, err := r.canonicalServing(instanceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if canonical {
+		return r.listCanonicalChats(ctx, instanceID, limit, cursor, meta)
 	}
 	decoded, err := decodeChatCursor(cursor)
 	if err != nil {
@@ -147,6 +168,18 @@ func (r *ChatMessageReader) GetChat(ctx context.Context, instanceID, chatID stri
 	if err != nil {
 		return nil, nil, err
 	}
+	canonical, err := r.canonicalServing(instanceID)
+	if err != nil {
+		return nil, meta, err
+	}
+	if canonical {
+		record, err := r.repository.GetConversation(ctx, instanceID, chatID)
+		if err != nil {
+			return nil, meta, err
+		}
+		view := projectedConversationView(record)
+		return &view, meta, nil
+	}
 	chat, err := r.repository.GetChat(ctx, instanceID, chatID)
 	if err != nil {
 		return nil, meta, err
@@ -163,6 +196,37 @@ func (r *ChatMessageReader) ListMessages(ctx context.Context, instanceID, chatID
 	if err != nil {
 		return nil, nil, err
 	}
+	canonical, err := r.canonicalServing(instanceID)
+	if err != nil {
+		return nil, meta, err
+	}
+	if canonical {
+		record, err := r.repository.GetConversation(ctx, instanceID, chatID)
+		if err != nil {
+			return nil, meta, err
+		}
+		conversationID := record.Conversation.ConversationID
+		decoded, err := decodeConversationMessageCursor(cursor, conversationID)
+		if err != nil {
+			return nil, nil, err
+		}
+		page, err := r.repository.ListConversationMessages(ctx, instanceID, conversationID, limit, decoded)
+		if err != nil {
+			return nil, nil, err
+		}
+		items := make([]ProjectedMessage, len(page.Items))
+		for index := range page.Items {
+			items[index] = projectedMessageView(&page.Items[index], r.retention, true)
+		}
+		if page.NextCursor != nil {
+			at := page.NextCursor.ProviderTimestamp.UTC()
+			meta.NextCursor, err = encodeProjectionCursor(projectionCursor{Version: 2, Kind: "conversation_messages", ConversationID: conversationID, MessageID: page.NextCursor.MessageID, ProviderTimestamp: &at})
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		return items, meta, nil
+	}
 	decoded, err := decodeMessageCursor(cursor, chatID)
 	if err != nil {
 		return nil, nil, err
@@ -173,7 +237,7 @@ func (r *ChatMessageReader) ListMessages(ctx context.Context, instanceID, chatID
 	}
 	items := make([]ProjectedMessage, len(page.Items))
 	for index := range page.Items {
-		items[index] = projectedMessageView(&page.Items[index], r.retention)
+		items[index] = projectedMessageView(&page.Items[index], r.retention, false)
 	}
 	if page.NextCursor != nil {
 		at := page.NextCursor.ProviderTimestamp.UTC()
@@ -199,7 +263,11 @@ func (r *ChatMessageReader) GetMessage(ctx context.Context, instanceID, messageI
 	if err != nil {
 		return nil, meta, err
 	}
-	view := projectedMessageView(message, r.retention)
+	canonical, readyErr := r.canonicalServing(instanceID)
+	if readyErr != nil {
+		return nil, meta, readyErr
+	}
+	view := projectedMessageView(message, r.retention, canonical)
 	return &view, meta, nil
 }
 
@@ -238,9 +306,60 @@ func projectedChatView(chat *projection_model.Chat) ProjectedChat {
 	}
 }
 
-func projectedMessageView(message *projection_model.ProjectedMessage, retention time.Duration) ProjectedMessage {
+func (r *ChatMessageReader) listCanonicalChats(ctx context.Context, instanceID string, limit int, cursor string, meta *ProjectionReadMeta) ([]ProjectedChat, *ProjectionReadMeta, error) {
+	decoded, err := decodeConversationCursor(cursor)
+	if err != nil {
+		return nil, nil, err
+	}
+	page, err := r.repository.ListConversations(ctx, instanceID, limit, decoded)
+	if err != nil {
+		return nil, nil, err
+	}
+	items := make([]ProjectedChat, len(page.Items))
+	for index := range page.Items {
+		items[index] = projectedConversationView(&page.Items[index])
+	}
+	if page.NextCursor != nil {
+		meta.NextCursor, err = encodeProjectionCursor(projectionCursor{
+			Version: 2, Kind: "conversations", ConversationID: page.NextCursor.ConversationID,
+			LastActivityAt: page.NextCursor.LastActivityAt,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	meta.Total = &page.Total
+	return items, meta, nil
+}
+
+func projectedConversationView(record *projection_repository.ConversationRecord) ProjectedChat {
+	conversation := &record.Conversation
+	aliases := make([]string, 0, len(record.Aliases))
+	primaryChatID := ""
+	for _, alias := range record.Aliases {
+		aliases = append(aliases, alias.ChatID)
+		if conversation.AddressingJID != nil && alias.ChatID == *conversation.AddressingJID {
+			primaryChatID = alias.ChatID
+		}
+	}
+	if primaryChatID == "" && len(aliases) > 0 {
+		primaryChatID = aliases[0]
+	}
+	conversationID := conversation.ConversationID
+	return ProjectedChat{
+		ChatID: primaryChatID, ConversationID: &conversationID, ChatAliases: aliases, AddressingJID: conversation.AddressingJID,
+		ContactID: conversation.ContactID, Type: conversation.Type, DisplayName: conversation.DisplayName,
+		DisplayNameSource: conversation.DisplayNameSource, DisplayNameUpdatedAt: conversation.DisplayNameUpdatedAt,
+		LastMessageID: conversation.LastMessageID, LastMessageAt: conversation.LastMessageAt, LastActivityAt: conversation.LastActivityAt,
+		UnreadCount: conversation.UnreadCount, Archived: conversation.Archived, Pinned: conversation.Pinned,
+		MutedUntil: conversation.MutedUntil, DisappearingTimer: conversation.DisappearingTimer,
+	}
+}
+
+func projectedMessageView(message *projection_model.ProjectedMessage, retention time.Duration, canonicalMode ...bool) ProjectedMessage {
+	canonical := len(canonicalMode) == 1 && canonicalMode[0]
 	retentionExpiresAt := message.ProviderTimestamp.UTC().Add(retention)
-	return ProjectedMessage{
+	view := ProjectedMessage{
 		MessageID: message.MessageID, ChatID: message.ChatID, SenderJID: message.SenderJID, RecipientJID: message.RecipientJID,
 		ParticipantJID: message.ParticipantJID, Direction: message.Direction, MessageType: message.MessageType,
 		ContentText: message.ContentText, Caption: message.Caption, ContentSummary: message.ContentSummary,
@@ -251,6 +370,17 @@ func projectedMessageView(message *projection_model.ProjectedMessage, retention 
 		ReadAt: message.ReadAt, PlayedAt: message.PlayedAt, Provenance: message.Provenance,
 		HistorySyncID: message.HistorySyncID, RetentionExpiresAt: &retentionExpiresAt,
 	}
+	if canonical {
+		view.ConversationID = message.ConversationID
+	}
+	return view
+}
+
+func (r *ChatMessageReader) canonicalServing(instanceID string) (bool, error) {
+	if r == nil || r.canonicalReady == nil {
+		return false, nil
+	}
+	return r.canonicalReady(instanceID)
 }
 
 func (r *ChatMessageReader) readMeta(instanceID, resource string, version int64, notReady error) (*ProjectionReadMeta, error) {
@@ -305,13 +435,39 @@ func decodeMessageCursor(value, chatID string) (*projection_repository.MessageCu
 	return &projection_repository.MessageCursor{MessageID: cursor.MessageID, ProviderTimestamp: cursor.ProviderTimestamp.UTC()}, nil
 }
 
+func decodeConversationCursor(value string) (*projection_repository.ConversationCursor, error) {
+	if value == "" {
+		return nil, nil
+	}
+	cursor, err := decodeProjectionCursorVersion(value, "conversations", 2)
+	if err != nil || cursor.ConversationID == "" {
+		return nil, ErrInvalidProjectionCursor
+	}
+	return &projection_repository.ConversationCursor{ConversationID: cursor.ConversationID, LastActivityAt: cursor.LastActivityAt}, nil
+}
+
+func decodeConversationMessageCursor(value, conversationID string) (*projection_repository.MessageCursor, error) {
+	if value == "" {
+		return nil, nil
+	}
+	cursor, err := decodeProjectionCursorVersion(value, "conversation_messages", 2)
+	if err != nil || cursor.ConversationID != conversationID || cursor.MessageID == "" || cursor.ProviderTimestamp == nil || cursor.ProviderTimestamp.IsZero() {
+		return nil, ErrInvalidProjectionCursor
+	}
+	return &projection_repository.MessageCursor{MessageID: cursor.MessageID, ProviderTimestamp: cursor.ProviderTimestamp.UTC()}, nil
+}
+
 func decodeProjectionCursor(value, kind string) (*projectionCursor, error) {
+	return decodeProjectionCursorVersion(value, kind, projectionCursorVersion)
+}
+
+func decodeProjectionCursorVersion(value, kind string, version int) (*projectionCursor, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
 		return nil, ErrInvalidProjectionCursor
 	}
 	var cursor projectionCursor
-	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != projectionCursorVersion || cursor.Kind != kind {
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != version || cursor.Kind != kind {
 		return nil, ErrInvalidProjectionCursor
 	}
 	return &cursor, nil

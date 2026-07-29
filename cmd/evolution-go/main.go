@@ -445,8 +445,25 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	chatMessageProjectionRepository := projection_repository.NewChatMessageRepository(db)
 	chatMessageProjector := projection_service.NewChatMessageProjector(chatMessageProjectionRepository, projectionStateService, config.MessageRetention)
 	chatMessageReader := projection_service.NewChatMessageReader(chatMessageProjectionRepository, projectionStateService, config.MessageRetention)
+	if config.CanonicalChatIdentityEnabled {
+		chatMessageReader.EnableCanonicalConversations(func(instanceID string) (bool, error) {
+			capabilities, err := projectionStateService.Capabilities(instanceID)
+			if err != nil {
+				return false, err
+			}
+			for _, capability := range capabilities {
+				if capability == projection_service.CapabilityCanonicalChatIdentity {
+					return true, nil
+				}
+			}
+			return false, nil
+		})
+	}
 	historySyncer := projection_service.NewHistorySyncer(projectionEventService, projectionStateService)
 	historyReadinessProjector := projection_service.NewHistoryReadinessProjector(projectionStateService, projectionReadinessRepository)
+	if config.CanonicalChatIdentityEnabled {
+		historyReadinessProjector.WithCanonicalUnread(chatMessageProjectionRepository)
+	}
 	durableEventRepository := projection_repository.NewDurableEventRepository(db)
 	durableEventService := projection_service.NewDurableEventService(durableEventRepository, config.EventRetention)
 	durableEventReader := projection_service.NewDurableEventReader(durableEventRepository, config.EventRetention)
@@ -832,10 +849,14 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	)
 	startBackground(backgroundWorkers, "campaign.delivery", campaignWorker.Run)
 	userService := user_service.NewUserService(runtimeRegistry, whatsmeowService, queryGuard, identityResolver, contactReader, remoteMediaFetcher, loggerWrapper)
+	messageServiceOptions := []message_service.MessageServiceOption{}
+	if config.CanonicalChatIdentityEnabled {
+		messageServiceOptions = append(messageServiceOptions, message_service.WithProjectedUnread(chatMessageProjectionRepository, projectionStateService))
+	}
 	messageService := message_service.NewMessageService(runtimeRegistry, messageRepository, whatsmeowService, message_service.LegacyMediaSettings{
 		MaxBytes: config.RemoteMedia.MaxBytes,
 		Timeout:  config.MediaDownloadTimeout,
-	}, loggerWrapper)
+	}, loggerWrapper, messageServiceOptions...)
 	chatService := chat_service.NewChatService(runtimeRegistry, whatsmeowService, loggerWrapper)
 	groupManagementCommandRepository := group_repository.NewManagementCommandRepository(db)
 	var groupPhotoAssets *group_service.GroupPhotoAssetService
