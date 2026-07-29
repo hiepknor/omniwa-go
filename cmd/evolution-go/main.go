@@ -333,6 +333,17 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	var projectionStateOptions []projection_service.StateServiceOption
 	contactIdentityBackfillRepository := projection_repository.NewContactIdentityBackfillRepository(db)
+	var contactIdentityResolver projection_service.ContactLIDResolver
+	if config.ContactIdentityReconciliationEnabled {
+		mappingDB := authDB
+		if mappingDB == nil {
+			mappingDB = sqliteDB
+		}
+		if mappingDB == nil {
+			logger.LogFatal("component=projection action=initialize resource=contact_identity result=failed error_code=mapping_store_required")
+		}
+		contactIdentityResolver = projection_repository.NewContactLIDMappingResolver(mappingDB)
+	}
 	conversationBackfillRepository := projection_repository.NewConversationBackfillRepository(db)
 	canonicalChatReadiness := projection_service.NewCanonicalChatReadiness(contactIdentityBackfillRepository, conversationBackfillRepository)
 	groupCampaignsEnabled := config.GroupListsEnabled && config.CampaignGroupTargetsEnabled
@@ -578,6 +589,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		labelSyncer,
 		contactSyncer,
 		contactIdentityReconciler,
+		contactIdentityResolver,
 		conversationReconciler,
 		historySyncer,
 		durableEventService,

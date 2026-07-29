@@ -26,6 +26,16 @@ instance scoped, and an absorbed ID permanently redirects to its canonical
 contact. `GET /user/contact/{contactId}` accepts a current UUID, an absorbed
 UUID, or a contact JID alias and always returns the canonical ID.
 
+The bounded local-mapping pass is resumable and is reopened on every successful
+connection. A HistorySync carrying PN/LID mappings also triggers a serialized
+refresh after its projection events are durably ingested. This closes the race
+where the connection pass completes before Whatsmeow persists a newly learned
+mapping. Resolution reads the parameterized local SQL mapping table directly
+instead of the live client's in-memory cache, so a prior negative cache entry
+cannot mask persisted authority. During an incomplete or failed refresh,
+canonical identity readiness fails closed rather than presenting partial
+reconciliation as ready.
+
 Search applies Unicode NFKC normalization, collapses whitespace, and compares
 case-insensitively across canonical/absorbed IDs, aliases, username, and names.
 Pagination is over canonical contacts. Version-2 cursors are opaque and bound

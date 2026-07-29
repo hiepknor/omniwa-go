@@ -133,6 +133,25 @@ func (r *ContactIdentityReconciler) RunBounded(
 	return result, nil
 }
 
+// RefreshBounded reopens a completed verification pass before scanning. This
+// is used only after Whatsmeow has persisted new authoritative PN/LID mappings.
+// A pending or running pass is left intact and remains protected by its lease.
+func (r *ContactIdentityReconciler) RefreshBounded(
+	ctx context.Context,
+	instanceID string,
+	resolver ContactLIDResolver,
+	batchSize int,
+	maxBatches int,
+) (ContactIdentityBackfillResult, error) {
+	if r == nil || r.backfill == nil || r.now == nil || ctx == nil || instanceID == "" {
+		return ContactIdentityBackfillResult{}, errors.New("contact identity refresh dependencies are required")
+	}
+	if _, err := r.backfill.RestartCompleted(ctx, instanceID, ContactIdentityBackfillVersion, r.now().UTC()); err != nil {
+		return ContactIdentityBackfillResult{}, fmt.Errorf("restart contact identity verification: %w", err)
+	}
+	return r.RunBounded(ctx, instanceID, resolver, batchSize, maxBatches)
+}
+
 // EnrichContactEventWithLIDMapping adds authoritative aliases from the local
 // whatsmeow mapping store. It never performs a provider network request.
 func EnrichContactEventWithLIDMapping(ctx context.Context, event *projection_model.Event, resolver ContactLIDResolver) (*projection_model.Event, error) {

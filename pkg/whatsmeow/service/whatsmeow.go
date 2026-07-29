@@ -116,6 +116,7 @@ type whatsmeowService struct {
 	labelSyncer        *projection_service.LabelSyncer
 	contactSyncer      *projection_service.ContactSyncer
 	identityReconciler *projection_service.ContactIdentityReconciler
+	identityResolver   projection_service.ContactLIDResolver
 	chatReconciler     *projection_service.ConversationReconciler
 	historySyncer      *projection_service.HistorySyncer
 	durableEvents      *projection_service.DurableEventService
@@ -130,52 +131,54 @@ func (w *whatsmeowService) WaitOutbound(ctx context.Context, instanceID string, 
 }
 
 type MyClient struct {
-	service            WhatsmeowService
-	WAClient           *whatsmeow.Client
-	eventHandlerID     uint32
-	userID             string
-	Instance           *instance_model.Instance
-	token              string
-	subscriptions      []string
-	webhookUrl         string
-	rabbitmqEnable     string
-	natsEnable         string
-	websocketEnable    string
-	instanceRepository instance_repository.InstanceRepository
-	messageRepository  message_repository.MessageRepository
-	labelRepository    label_repository.LabelRepository
-	pollService        poll_service.PollService // NOVO: Serviço de enquetes
-	runtimeRegistry    *instance_runtime.Registry[*MyClient]
-	stateMu            sync.RWMutex
-	tokenMu            sync.RWMutex
-	qrMu               sync.Mutex
-	userInfoCache      *cache.Cache
-	config             *config.Config
-	historySyncID      int32
-	rabbitmqProducer   producer_interfaces.Producer
-	webhookProducer    producer_interfaces.Producer
-	websocketProducer  producer_interfaces.Producer
-	mediaStorage       storage_interfaces.MediaStorage
-	processedMessages  *cache.Cache
-	natsProducer       producer_interfaces.Producer
-	loggerWrapper      *logger_wrapper.LoggerManager
-	qrcodeCount        int
-	passkeyCeremony    *ceremony.Store
-	queryGuard         waquery.Guard
-	projectionEvents   projection_service.EventService
-	inboundMedia       inboundMediaCapture
-	groupReconciler    *projection_service.GroupReconciler
-	labelSyncer        *projection_service.LabelSyncer
-	contactSyncer      *projection_service.ContactSyncer
-	identityReconciler *projection_service.ContactIdentityReconciler
-	chatReconciler     *projection_service.ConversationReconciler
-	historySyncer      *projection_service.HistorySyncer
-	appCtx             context.Context
-	reconcileMu        sync.Mutex
-	reconcileRunning   bool
-	runtimeGeneration  uint64
-	loopCancel         context.CancelFunc
-	loopDone           chan struct{}
+	service             WhatsmeowService
+	WAClient            *whatsmeow.Client
+	eventHandlerID      uint32
+	userID              string
+	Instance            *instance_model.Instance
+	token               string
+	subscriptions       []string
+	webhookUrl          string
+	rabbitmqEnable      string
+	natsEnable          string
+	websocketEnable     string
+	instanceRepository  instance_repository.InstanceRepository
+	messageRepository   message_repository.MessageRepository
+	labelRepository     label_repository.LabelRepository
+	pollService         poll_service.PollService // NOVO: Serviço de enquetes
+	runtimeRegistry     *instance_runtime.Registry[*MyClient]
+	stateMu             sync.RWMutex
+	tokenMu             sync.RWMutex
+	qrMu                sync.Mutex
+	userInfoCache       *cache.Cache
+	config              *config.Config
+	historySyncID       int32
+	rabbitmqProducer    producer_interfaces.Producer
+	webhookProducer     producer_interfaces.Producer
+	websocketProducer   producer_interfaces.Producer
+	mediaStorage        storage_interfaces.MediaStorage
+	processedMessages   *cache.Cache
+	natsProducer        producer_interfaces.Producer
+	loggerWrapper       *logger_wrapper.LoggerManager
+	qrcodeCount         int
+	passkeyCeremony     *ceremony.Store
+	queryGuard          waquery.Guard
+	projectionEvents    projection_service.EventService
+	inboundMedia        inboundMediaCapture
+	groupReconciler     *projection_service.GroupReconciler
+	labelSyncer         *projection_service.LabelSyncer
+	contactSyncer       *projection_service.ContactSyncer
+	identityReconciler  *projection_service.ContactIdentityReconciler
+	identityResolver    projection_service.ContactLIDResolver
+	chatReconciler      *projection_service.ConversationReconciler
+	historySyncer       *projection_service.HistorySyncer
+	appCtx              context.Context
+	reconcileMu         sync.Mutex
+	identityReconcileMu sync.Mutex
+	reconcileRunning    bool
+	runtimeGeneration   uint64
+	loopCancel          context.CancelFunc
+	loopDone            chan struct{}
 }
 
 func (m *MyClient) currentToken() string {
@@ -296,11 +299,11 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 		ctx, cancel := context.WithTimeout(parent, contactProjectionSyncTimeout)
 		defer cancel()
 		var resolver projection_service.ContactLIDResolver
-		if mycli.identityReconciler != nil && mycli.WAClient.Store.LIDs != nil {
-			resolver = mycli.WAClient.Store.LIDs
-			result, reconcileErr := mycli.identityReconciler.RunBounded(
-				ctx, mycli.userID, resolver, mycli.config.ContactIdentityBackfillBatch, mycli.config.ContactIdentityBackfillMaxBatches,
-			)
+		if mycli.identityReconciler != nil && mycli.identityResolver != nil {
+			resolver = mycli.identityResolver
+			// Reopen a completed pass on every connection so mappings learned while
+			// the instance was offline are not hidden behind a one-time checkpoint.
+			result, reconcileErr := mycli.runContactIdentityReconciliation(ctx, resolver, true)
 			if reconcileErr != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=backfill instance_id=%s resource=contact_identity result=failed error_code=local_mapping_failed", mycli.userID)
 			} else {
@@ -352,6 +355,19 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 		}
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=reconcile instance_id=%s resource=contacts result=queued", mycli.userID)
 	}()
+}
+
+func (mycli *MyClient) runContactIdentityReconciliation(ctx context.Context, resolver projection_service.ContactLIDResolver, refresh bool) (projection_service.ContactIdentityBackfillResult, error) {
+	mycli.identityReconcileMu.Lock()
+	defer mycli.identityReconcileMu.Unlock()
+	if refresh {
+		return mycli.identityReconciler.RefreshBounded(
+			ctx, mycli.userID, resolver, mycli.config.ContactIdentityBackfillBatch, mycli.config.ContactIdentityBackfillMaxBatches,
+		)
+	}
+	return mycli.identityReconciler.RunBounded(
+		ctx, mycli.userID, resolver, mycli.config.ContactIdentityBackfillBatch, mycli.config.ContactIdentityBackfillMaxBatches,
+	)
 }
 
 func (mycli *MyClient) stopGroupReconciliationLoop() {
@@ -422,9 +438,9 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) (assetID string) {
 	if !relevant {
 		return
 	}
-	if mycli.identityReconciler != nil && mycli.WAClient != nil && mycli.WAClient.Store != nil && mycli.WAClient.Store.LIDs != nil {
+	if mycli.identityReconciler != nil && mycli.identityResolver != nil {
 		mappingCtx, mappingCancel := context.WithTimeout(context.Background(), projectionIngestTimeout)
-		enriched, mappingErr := projection_service.EnrichContactEventWithLIDMapping(mappingCtx, event, mycli.WAClient.Store.LIDs)
+		enriched, mappingErr := projection_service.EnrichContactEventWithLIDMapping(mappingCtx, event, mycli.identityResolver)
 		mappingCancel()
 		if mappingErr != nil {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=projection action=resolve_identity instance_id=%s result=deferred error_code=local_mapping_unavailable", mycli.userID)
@@ -475,6 +491,19 @@ func (mycli *MyClient) triggerHistoryProjectionSync(event *events.HistorySync) {
 			return
 		}
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=history_sync instance_id=%s result=ingested", mycli.userID)
+		if len(event.Data.GetPhoneNumberToLidMappings()) > 0 && mycli.identityReconciler != nil && mycli.identityResolver != nil {
+			refreshCtx, refreshCancel := context.WithTimeout(parent, contactProjectionSyncTimeout)
+			defer refreshCancel()
+			result, refreshErr := mycli.runContactIdentityReconciliation(refreshCtx, mycli.identityResolver, true)
+			if refreshErr != nil {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=refresh instance_id=%s resource=contact_identity result=failed error_code=late_mapping_reconciliation_failed", mycli.userID)
+				return
+			}
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo(
+				"component=projection action=refresh instance_id=%s resource=contact_identity result=success batches=%d scanned=%d mapped=%d merged=%d unchanged=%d complete=%t lease_held=%t",
+				mycli.userID, result.Batches, result.Scanned, result.Mapped, result.Merged, result.Unchanged, result.Complete, result.LeaseHeld,
+			)
+		}
 	}()
 }
 
@@ -889,6 +918,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		labelSyncer:        w.labelSyncer,
 		contactSyncer:      w.contactSyncer,
 		identityReconciler: w.identityReconciler,
+		identityResolver:   w.identityResolver,
 		chatReconciler:     w.chatReconciler,
 		historySyncer:      w.historySyncer,
 		appCtx:             w.appCtx,
@@ -3254,6 +3284,7 @@ func NewWhatsmeowService(
 	labelSyncer *projection_service.LabelSyncer,
 	contactSyncer *projection_service.ContactSyncer,
 	contactIdentityReconciler *projection_service.ContactIdentityReconciler,
+	contactIdentityResolver projection_service.ContactLIDResolver,
 	conversationReconciler *projection_service.ConversationReconciler,
 	historySyncer *projection_service.HistorySyncer,
 	durableEvents *projection_service.DurableEventService,
@@ -3288,6 +3319,7 @@ func NewWhatsmeowService(
 		labelSyncer:        labelSyncer,
 		contactSyncer:      contactSyncer,
 		identityReconciler: contactIdentityReconciler,
+		identityResolver:   contactIdentityResolver,
 		chatReconciler:     conversationReconciler,
 		historySyncer:      historySyncer,
 		durableEvents:      durableEvents,

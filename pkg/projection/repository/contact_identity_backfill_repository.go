@@ -17,10 +17,10 @@ var (
 )
 
 type ContactIdentityCandidate struct {
-	ContactID    string
-	PreferredJID string
-	PhoneJID     *string
-	LID          *string
+	ContactID    string  `gorm:"column:contact_id"`
+	PreferredJID string  `gorm:"column:preferred_jid"`
+	PhoneJID     *string `gorm:"column:phone_jid"`
+	LID          *string `gorm:"column:lid"`
 }
 
 type ContactIdentityBackfillBatch struct {
@@ -47,10 +47,32 @@ func (v ContactIdentityValidation) Valid() bool {
 
 type ContactIdentityBackfillRepository interface {
 	ClaimBatch(context.Context, string, int, string, int, time.Time, time.Time) (*ContactIdentityBackfillBatch, error)
+	RestartCompleted(context.Context, string, int, time.Time) (bool, error)
 	CommitBatch(context.Context, string, int, string, *string, ContactIdentityBackfillCounts, bool, time.Time) error
 	FailBatch(context.Context, string, int, string, string, time.Time) error
 	GetState(context.Context, string) (*projection_model.ContactIdentityBackfill, error)
 	Validate(context.Context, string) (ContactIdentityValidation, error)
+}
+
+// RestartCompleted opens a new bounded verification pass after the local
+// Whatsmeow store reports additional authoritative PN/LID mappings. It only
+// transitions a completed pass, so it cannot steal an active lease.
+func (r *contactIdentityBackfillRepository) RestartCompleted(ctx context.Context, instanceID string, version int, now time.Time) (bool, error) {
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" || version < 1 || now.IsZero() {
+		return false, errors.New("valid contact identity backfill restart is required")
+	}
+	result := r.db.WithContext(ctx).Model(&projection_model.ContactIdentityBackfill{}).
+		Where("instance_id = ? AND version = ? AND status = ?", instanceID, version, projection_model.ContactIdentityBackfillComplete).
+		Updates(map[string]any{
+			"status":            projection_model.ContactIdentityBackfillPending,
+			"cursor_contact_id": nil,
+			"lease_owner":       nil,
+			"lease_expires_at":  nil,
+			"completed_at":      nil,
+			"last_error_code":   nil,
+			"updated_at":        now.UTC(),
+		})
+	return result.RowsAffected == 1, result.Error
 }
 
 type contactIdentityBackfillRepository struct {
