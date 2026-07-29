@@ -58,7 +58,8 @@ a phone number or other sensitive identifier.
 
 ## Totals and readiness
 
-`GET /chat/list` returns the exact active projected-chat count in `meta.total`.
+`GET /conversations` returns the exact active canonical-conversation count in
+`meta.total`.
 `GET /user/contacts` returns the exact active canonical-contact count, and
 `GET /user/contacts/search` returns the exact canonical count matching the
 normalized query. Totals are recomputed for each request and remain stable
@@ -116,40 +117,18 @@ and bounded work per connection cycle are controlled by
 
 Structural completion validates every active Chat alias and retained Message,
 redirect flattening, active-conversation ownership, and direct Contact
-agreement. `canonical_chat_identity` is advertised per instance only when
+agreement. `canonical_conversation_identity` is advertised per instance only when
 Contacts, Chats, and Messages are ready at their current schemas, both Contact
 and conversation checkpoints are complete, structural validation succeeds,
 and every active canonical conversation has authoritative unread state.
 
-When the capability is present:
-
-- `ProjectedChat.conversationId` is the stable canonical UUID.
-- `chatAliases` lists every accepted historical/provider Chat ID.
-- `addressingJid` is the Contact-owned command recipient for direct chats.
-- `chatId` remains a compatibility/provider alias and must not be used as the
-  person identity.
-- `GET /chat/info/{chatId}` accepts a conversation UUID, current alias, absorbed
-  alias, or absorbed conversation UUID and always returns the canonical row.
-- `GET /chat/{chatId}/messages` returns retained messages across every alias.
-  The existing tenant-wide `(instance_id, message_id)` key deduplicates provider
-  message identity.
-- `GET /chat/list` returns one row per canonical conversation and `meta.total`
-  counts those rows. Group, newsletter, broadcast, and unknown chats remain
-  isolated.
-- Version-2 canonical cursors are opaque and conversation-scoped. Legacy,
-  cross-conversation, or otherwise mismatched cursors return `invalid_cursor`.
-
-When the capability is absent, all three endpoints preserve the historical
-provider-Chat behavior and version-1 cursor scope. Clients must never infer the
-new mode from a version string or from `canonical_contact_identity`.
-
 Do not add or maximize unread counts from PN/LID alias rows: either operation
 can double-count or discard unread messages. Capability absence is the
-machine-readable mixed-rollout signal; clients must retain legacy Chat behavior.
+machine-readable readiness signal; clients must not treat it as an empty result.
 
 Rollback disables `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restarts the binary.
-This removes the capability and restores legacy reads without deleting the
-additive schema.
+This removes the capability without deleting the additive schema. Restoring the
+removed Chat reads requires redeploying a pre-removal binary; see ADR 0039.
 
 ### Canonical Conversation API
 
@@ -161,10 +140,7 @@ The preferred public read contract is:
 - `GET /conversations/{conversationRef}/messages/{messageId}`
 
 Use these endpoints only when `canonical_conversation_identity` is advertised.
-The legacy `canonical_chat_identity` capability is emitted by the same readiness
-decision for compatibility, and the existing Chat reads remain available during
-the deprecation window. A new canonical-ready backend emits both capabilities or
-neither; clients must not infer either capability from the server version.
+Clients must not infer the capability from the server version.
 
 `conversationRef` accepts a current canonical UUID, an absorbed Conversation
 UUID, or a current/absorbed provider Chat ID alias. Responses always contain the
@@ -183,31 +159,27 @@ They do not currently accept a canonical Conversation UUID. Resolve and use the
 published `addressingJid` only where the command contract explicitly accepts a
 provider JID.
 
-### Legacy-read retirement
+### Removed Chat-read contract
 
-Prometheus exposes `omniwa_conversation_api_requests_total` by the bounded
-`contract`, `operation`, and HTTP status-class labels, plus
-`omniwa_conversation_api_request_duration_seconds`. No identity is used as a
-label. Keep `WA_LEGACY_CHAT_READS_ENABLED=true` during mixed-client rollout.
+ADR 0039 physically removed `GET /chat/list`, `GET /chat/info/{chatId}`,
+`GET /chat/{chatId}/messages`, and `GET /message/{messageId}` together with the
+legacy DTOs and capability alias. Provider commands under `/chat/*` and
+`GET /message/{messageId}/delivery` remain. A removed path now receives the
+router's normal not-found response; there is no runtime compatibility flag or
+HTTP 410 tombstone in the current binary.
 
-After successful authenticated `legacy_chat` traffic has remained at zero for
-the agreed deprecation window and all supported instances advertise
-`canonical_conversation_identity`, set
-`WA_LEGACY_CHAT_READS_ENABLED=false`. This retires the three deprecated Chat
-read routes and `GET /message/{messageId}` with HTTP 410
-`legacy_contract_removed`, and stops advertising `canonical_chat_identity`;
-provider Chat commands and message receipts remain registered. Retired attempts
-remain visible in the legacy metric as 4xx traffic. The setting requires
-canonical identity to be enabled. Set it back to `true` and restart for
-immediate route/capability rollback.
+Prometheus exposes canonical `omniwa_conversation_api_requests_total` and
+`omniwa_conversation_api_request_duration_seconds` series with bounded labels.
+Historical `contract="legacy_chat"` series may remain in durable storage, but
+the current binary does not emit them.
 
 ## Projected message field contract
 
-Every message returned by `GET /chat/{chatId}/messages` and
-`GET /message/{messageId}` has these required fields: `messageId`, `chatId`,
-`direction`, `messageType`, `providerTimestamp`, and `provenance`. The live,
-history-sync, and synthetic historical ingestion paths all validate or provide
-these values before a row can enter the projection.
+Every canonical message returned under `/conversations/{conversationRef}` has
+required `messageId`, `conversationId`, `direction`, `messageType`,
+`providerTimestamp`, and `provenance` fields. The live, history-sync, and
+synthetic historical ingestion paths validate or provide these values before a
+row can enter the projection.
 
 Sender, recipient, participant, normalized content, media metadata, receipt
 timestamps, `historySyncId`, `mediaAssetId`, and `retentionExpiresAt` remain
@@ -217,10 +189,9 @@ source can legitimately omit them. For display ordering, clients use
 an older unsupported record, display an unreported timestamp rather than
 inventing one. Current-schema responses always include `providerTimestamp`.
 
-`conversationId` is optional across mixed deployments and is present on
-message responses when `canonical_chat_identity` is serving. `chatId` continues
-to report the provider alias on which the message arrived; clients must use
-`conversationId` for canonical navigation and cursor scope.
+`providerChatId` is optional provenance for the alias on which the message
+arrived. It is not an entity identity; clients use `conversationId` for
+navigation and cursor scope.
 
 `mediaAssetId` is an opaque reference to shared private media, not proof that
 bytes are ready. The projected message remains authoritative when media is

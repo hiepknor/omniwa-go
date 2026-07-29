@@ -54,7 +54,7 @@ Check scrape health and migration traffic:
 curl -fsS --get http://127.0.0.1:9090/api/v1/query \
   --data-urlencode 'query=up{job="omniwa-go"}'
 curl -fsS --get http://127.0.0.1:9090/api/v1/query \
-  --data-urlencode 'query=sum(increase(omniwa_conversation_api_requests_total{contract="legacy_chat",status="2xx"}[24h])) or vector(0)'
+  --data-urlencode 'query=sum(increase(omniwa_conversation_api_requests_total{contract="conversation",status=~"4xx|5xx"}[24h])) or vector(0)'
 ```
 
 Changing `GLOBAL_API_KEY` requires recreating both `omniwa-go` and

@@ -17,7 +17,7 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 	observer := registry.GroupListEligibility()
 	observer.ObserveRequest(EligibilityOperationBatch, 250*time.Millisecond, 4, EligibilityCounts{Eligible: 2, Unavailable: 1, Unknown: 1})
 	observer.ObserveMutationRejection(EligibilityOperationUpdate, "projection_not_ready")
-	registry.ConversationAPI().ObserveConversationRequest(ConversationContractLegacyChat, ConversationOperationList, 200, 25*time.Millisecond)
+	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, ConversationOperationList, 200, 25*time.Millisecond)
 	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, ConversationOperationMessages, 503, 50*time.Millisecond)
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
@@ -35,9 +35,9 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 		`omniwa_group_list_eligibility_results_total{eligibility="unavailable",operation="batch"} 1`,
 		`omniwa_group_list_eligibility_results_total{eligibility="unknown",operation="batch"} 1`,
 		`omniwa_group_list_mutation_rejections_total{code="projection_not_ready",operation="update"} 1`,
-		`omniwa_conversation_api_requests_total{contract="legacy_chat",operation="list",status="2xx"} 1`,
+		`omniwa_conversation_api_requests_total{contract="conversation",operation="list",status="2xx"} 1`,
 		`omniwa_conversation_api_requests_total{contract="conversation",operation="messages",status="5xx"} 1`,
-		`omniwa_conversation_api_request_duration_seconds_count{contract="legacy_chat",operation="list"} 1`,
+		`omniwa_conversation_api_request_duration_seconds_count{contract="conversation",operation="list"} 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q", expected)
@@ -55,6 +55,7 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	observer.ObserveRequest(EligibilityOperationBatch, time.Second, 2, EligibilityCounts{Eligible: 1})
 	observer.ObserveMutationRejection(EligibilityOperationCreate, "provider_120363@g.us")
 	registry.ConversationAPI().ObserveConversationRequest("instance-123", ConversationOperationList, 200, time.Second)
+	registry.ConversationAPI().ObserveConversationRequest("legacy_chat", ConversationOperationList, 200, time.Second)
 	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, "provider_120363@g.us", 200, time.Second)
 	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, ConversationOperationList, 999, time.Second)
 
@@ -65,7 +66,7 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"instance-123", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total"} {
+	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("invalid metric material was exposed: %q", forbidden)
 		}

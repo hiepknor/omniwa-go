@@ -3,6 +3,9 @@
 - Status: Accepted
 - Date: 2026-07-29
 
+> Superseded in part by ADR 0039, which removes the deprecated Chat read
+> compatibility contract after the canonical Conversation cutover.
+
 ## Context
 
 The canonical identity work in ADRs 0035 through 0037 made a Conversation the

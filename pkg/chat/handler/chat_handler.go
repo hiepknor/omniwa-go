@@ -21,9 +21,6 @@ type ChatHandler interface {
 	ChatMute(ctx *gin.Context)
 	ChatUnmute(ctx *gin.Context)
 	HistorySyncRequest(ctx *gin.Context)
-	List(ctx *gin.Context)
-	Get(ctx *gin.Context)
-	Messages(ctx *gin.Context)
 	ListConversations(ctx *gin.Context)
 	GetConversation(ctx *gin.Context)
 	ConversationMessages(ctx *gin.Context)
@@ -36,101 +33,6 @@ type chatHandler struct {
 }
 
 const defaultProjectionPageSize = 50
-
-// List returns projection-backed chats without querying WhatsApp.
-// @Summary List projected chats
-// @Description Cursor-page projected chats without live reads. With canonical_chat_identity, direct aliases collapse to one conversation, meta.total counts canonical conversations, and cursors are conversation-scoped. Without it, legacy provider-chat rows and cursors are preserved.
-// @Tags Chat
-// @Produce json
-// @Param limit query int false "Page size (1-200)"
-// @Param cursor query string false "Opaque pagination cursor"
-// @Success 200 {object} apidocs.SuccessResponse{data=[]projection_service.ProjectedChat} "success"
-// @Failure 400 {object} apidocs.ErrorResponse "Invalid pagination"
-// @Failure 410 {object} apidocs.ErrorResponse "Legacy contract retired"
-// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
-// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
-// @Security ApiKeyAuth
-// @ID listChats
-// @Deprecated
-// @Router /chat/list [get]
-func (c *chatHandler) List(ctx *gin.Context) {
-	instance, ok := projectionInstance(ctx)
-	if !ok {
-		return
-	}
-	limit, ok := projectionLimit(ctx)
-	if !ok {
-		return
-	}
-	items, meta, err := c.reader.ListChats(ctx.Request.Context(), instance.Id, limit, ctx.Query("cursor"))
-	if err != nil {
-		writeProjectionReadError(ctx, err)
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
-}
-
-// Get returns one projected chat without querying WhatsApp.
-// @Summary Get a projected chat
-// @Description Return a projected chat with locally denormalized contact or type-specific display-name metadata. With canonical_chat_identity, chatId accepts a canonical conversation UUID or any absorbed provider Chat ID and the response contains the canonical conversationId.
-// @Tags Chat
-// @Produce json
-// @Param chatId path string true "Canonical conversation UUID or provider Chat ID"
-// @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ProjectedChat} "success"
-// @Failure 404 {object} apidocs.ErrorResponse "Chat not found"
-// @Failure 410 {object} apidocs.ErrorResponse "Legacy contract retired"
-// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
-// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
-// @Security ApiKeyAuth
-// @ID getChat
-// @Deprecated
-// @Router /chat/info/{chatId} [get]
-func (c *chatHandler) Get(ctx *gin.Context) {
-	instance, ok := projectionInstance(ctx)
-	if !ok {
-		return
-	}
-	item, meta, err := c.reader.GetChat(ctx.Request.Context(), instance.Id, ctx.Param("chatId"))
-	if err != nil {
-		writeProjectionReadError(ctx, err)
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": item, "meta": meta})
-}
-
-// Messages returns stable, projection-backed message history for a chat.
-// @Summary List projected messages for a chat
-// @Description With canonical_chat_identity, resolves canonical or absorbed Chat IDs and returns deduplicated provider-message history across all aliases. Cursors are opaque and scoped to the canonical conversation.
-// @Tags Chat
-// @Produce json
-// @Param chatId path string true "Canonical conversation UUID or provider Chat ID"
-// @Param limit query int false "Page size (1-200)"
-// @Param cursor query string false "Opaque pagination cursor"
-// @Success 200 {object} apidocs.SuccessResponse{data=[]projection_service.ProjectedMessage} "success"
-// @Failure 400 {object} apidocs.ErrorResponse "Invalid pagination"
-// @Failure 410 {object} apidocs.ErrorResponse "Legacy contract retired"
-// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
-// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
-// @Security ApiKeyAuth
-// @ID listChatMessages
-// @Deprecated
-// @Router /chat/{chatId}/messages [get]
-func (c *chatHandler) Messages(ctx *gin.Context) {
-	instance, ok := projectionInstance(ctx)
-	if !ok {
-		return
-	}
-	limit, ok := projectionLimit(ctx)
-	if !ok {
-		return
-	}
-	items, meta, err := c.reader.ListMessages(ctx.Request.Context(), instance.Id, ctx.Param("chatId"), limit, ctx.Query("cursor"))
-	if err != nil {
-		writeProjectionReadError(ctx, err)
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": items, "meta": meta})
-}
 
 // ListConversations returns canonical projected conversations.
 // @Summary List canonical conversations

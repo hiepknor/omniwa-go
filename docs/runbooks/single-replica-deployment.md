@@ -73,36 +73,22 @@ message-level unread snapshot.
 Do not accept process liveness as readiness. Verify migrations 34 through 38,
 the Contact and conversation backfill checkpoints, Chats/Contacts/Messages
 projection states, and an instance-targeted `/server/capabilities` response.
-New binaries advertise `canonical_conversation_identity` and the legacy
-`canonical_chat_identity` alias from the same readiness decision. Both must be
-present or absent together. Clients use `canonical_conversation_identity` for
-the `/conversations` contract and keep `canonical_chat_identity` only for mixed
-rollout compatibility. Do not derive either capability from the version string.
-Disable `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restart to return to legacy
-provider-Chat reads without deleting additive data.
+New binaries advertise only `canonical_conversation_identity` from this
+readiness decision. Do not derive it from the version string. The deprecated
+Chat reads, projected-message detail, rollout flag, and capability alias were
+physically removed by ADR 0039; provider Chat commands and message receipts
+remain.
 
-Do not set `WA_LEGACY_CHAT_READS_ENABLED=false` during the mixed-client phase.
-First confirm that `omniwa_conversation_api_requests_total` has no successful
-`contract="legacy_chat"` traffic for the agreed deprecation window, every
-supported instance advertises `canonical_conversation_identity`, and consumers
-have migrated stored URLs and cursors. The flag retires the deprecated Chat
-reads and legacy projected-message detail with HTTP 410, and removes their
-capability alias; provider commands and message receipts remain. Continue
-watching legacy 4xx traffic before physical route deletion. Roll back by setting
-it to `true` and restarting.
-
-Use a durable Prometheus scraper rather than a process-local `/metrics`
-snapshot for this gate. Account for application counter resets with
-`increase()`, and treat an absent or unhealthy scrape target as missing
-evidence rather than zero legacy traffic:
+Verify the canonical API and its bounded metrics with a durable Prometheus
+scraper. Treat an absent or unhealthy scrape target as missing evidence:
 
 ```promql
 up{job="omniwa-go"} == 1
-sum(increase(omniwa_conversation_api_requests_total{contract="legacy_chat",status="2xx"}[24h])) or vector(0)
-sum(increase(omniwa_conversation_api_requests_total{contract="legacy_chat",status=~"4xx|5xx"}[24h])) or vector(0)
+sum(increase(omniwa_conversation_api_requests_total{contract="conversation",status=~"4xx|5xx"}[24h])) or vector(0)
 ```
 
-Retain the time series for the full agreed deprecation window and record the
-query interval and result in the retirement change. The local development
-stack provides a bounded persistent Prometheus service for rehearsal; deployed
+Rollback the public-contract removal by redeploying the previous immutable
+digest recorded in ADR 0039. That image must use
+`WA_LEGACY_CHAT_READS_ENABLED=true`. No data rollback is required. The local
+development stack provides persistent Prometheus for rehearsal; deployed
 environments must use their operator-owned metrics backend and secret manager.
