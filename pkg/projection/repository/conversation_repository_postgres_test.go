@@ -2,6 +2,7 @@ package projection_repository
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -116,6 +117,53 @@ func TestCanonicalConversationAssociatesAuthoritativeAliasesConcurrently(t *test
 	if err != nil || storedMessage.ConversationID == nil || *storedMessage.ConversationID != conversationID {
 		t.Fatalf("canonical message association = %#v, %v", storedMessage, err)
 	}
+	syncID := "canonical-unread-sync"
+	for _, snapshot := range []struct {
+		chatID string
+		unread int
+	}{{phoneJID, 0}, {lid, 1}} {
+		chat := projection_model.Chat{
+			InstanceID: instances[0].Id, ChatID: snapshot.chatID, Type: projection_model.ChatTypeDirect,
+			UnreadCount: snapshot.unread, UnreadSnapshotSyncID: &syncID, LastActivityAt: &messageAt,
+			SourceOccurredAt: messageAt.Add(time.Second), SourceEventKey: "snapshot:" + snapshot.chatID,
+		}
+		if _, err = chatRepository.ApplyChat(context.Background(), &chat, ChatAspectIdentity, ChatAspectActivity, ChatAspectSettings); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = chatRepository.ReconcileUnreadSnapshot(context.Background(), instances[0].Id, syncID); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Where("instance_id = ? AND conversation_id = ?", instances[0].Id, conversationID).First(&conversation).Error; err != nil ||
+		!conversation.UnreadAuthoritative || conversation.UnreadCount != 1 {
+		t.Fatalf("authoritative canonical unread = %#v, %v", conversation, err)
+	}
+	if err = chatRepository.ReconcileUnreadSnapshot(context.Background(), instances[0].Id, syncID); err != nil {
+		t.Fatal(err)
+	}
+	if changed, markErr := chatRepository.MarkMessageRead(context.Background(), instances[0].Id, message.MessageID, messageAt.Add(2*time.Second)); markErr != nil || !changed {
+		t.Fatalf("mark canonical message read: changed=%v err=%v", changed, markErr)
+	}
+	unread := true
+	lateLive := message
+	lateLive.Provenance = projection_model.MessageProvenanceLive
+	lateLive.IsUnread = &unread
+	lateLive.SourceEventKey = "late-live-message"
+	if _, err = chatRepository.ApplyMessage(context.Background(), &lateLive, MessageAspectEnvelope, MessageAspectUnread); err != nil {
+		t.Fatal(err)
+	}
+	storedMessage, err = chatRepository.GetMessage(context.Background(), instances[0].Id, message.MessageID)
+	if err != nil || storedMessage.IsUnread == nil || *storedMessage.IsUnread {
+		t.Fatalf("late live replay overwrote read receipt = %#v, %v", storedMessage, err)
+	}
+	if err = db.Where("instance_id = ? AND conversation_id = ?", instances[0].Id, conversationID).First(&conversation).Error; err != nil ||
+		!conversation.UnreadAuthoritative || conversation.UnreadCount != 0 {
+		t.Fatalf("canonical unread after read = %#v, %v", conversation, err)
+	}
+	record, err := chatRepository.GetConversation(context.Background(), instances[0].Id, lid)
+	if err != nil || record.Conversation.ConversationID != conversationID || len(record.Aliases) != 2 {
+		t.Fatalf("canonical alias lookup = %#v, %v", record, err)
+	}
 
 	group := projection_model.Chat{
 		InstanceID: instances[0].Id, ChatID: "canonical-group@g.us", ContactID: &contact.ContactID,
@@ -139,5 +187,12 @@ func TestCanonicalConversationAssociatesAuthoritativeAliasesConcurrently(t *test
 	storedCrossInstance, err := chatRepository.GetChat(context.Background(), instances[1].Id, phoneJID)
 	if err != nil || storedCrossInstance.ConversationID == nil || *storedCrossInstance.ConversationID == conversationID {
 		t.Fatalf("cross-instance conversation isolation = %#v, %v", storedCrossInstance, err)
+	}
+	crossRecord, err := chatRepository.GetConversation(context.Background(), instances[1].Id, phoneJID)
+	if err != nil || crossRecord.Conversation.ConversationID != *storedCrossInstance.ConversationID {
+		t.Fatalf("cross-instance alias lookup = %#v, %v", crossRecord, err)
+	}
+	if _, err = chatRepository.GetConversation(context.Background(), instances[1].Id, conversationID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("foreign canonical identity lookup error = %v", err)
 	}
 }

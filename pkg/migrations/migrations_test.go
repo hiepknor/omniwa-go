@@ -581,3 +581,25 @@ func TestCanonicalConversationFoundationMigrationIsAdditiveAndTenantScoped(t *te
 		}
 	}
 }
+
+func TestCanonicalConversationUnreadMigrationIsAdditiveAndFailClosed(t *testing.T) {
+	migration := registeredMigration(t, 38)
+	if migration.Name != "add_authoritative_conversation_unread" {
+		t.Fatalf("canonical unread migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"ADD COLUMN unread_authoritative BOOLEAN NOT NULL DEFAULT FALSE",
+		"ADD COLUMN unread_snapshot_sync_id VARCHAR(255) NULL", "ADD COLUMN is_unread BOOLEAN NULL",
+		"ROW_NUMBER() OVER", "messages.provider_timestamp DESC, messages.message_id DESC",
+		"COUNT(DISTINCT messages.message_id)", "unread.incomplete_messages = 0 AND unread.incomplete_chats = 0",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("canonical unread migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP COLUMN", "DROP TABLE", "TRUNCATE"} {
+		if strings.Contains(migration.SQL, forbidden) {
+			t.Fatalf("canonical unread migration contains unsafe SQL %q", forbidden)
+		}
+	}
+}

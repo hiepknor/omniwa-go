@@ -33,6 +33,19 @@ func (r *messageRetentionRepository) DeleteBefore(ctx context.Context, cutoff ti
     ORDER BY provider_timestamp ASC, instance_id ASC, message_id ASC
     LIMIT ?
     FOR UPDATE SKIP LOCKED
+), invalidated AS (
+    UPDATE projected_conversations AS conversations
+    SET unread_authoritative = FALSE, updated_at = NOW()
+    FROM (
+        SELECT DISTINCT messages.instance_id, messages.conversation_id
+        FROM projected_messages AS messages
+        JOIN expired
+          ON expired.instance_id = messages.instance_id AND expired.message_id = messages.message_id
+        WHERE messages.is_unread = TRUE AND messages.conversation_id IS NOT NULL
+    ) AS affected
+    WHERE conversations.instance_id = affected.instance_id
+      AND conversations.conversation_id = affected.conversation_id
+    RETURNING conversations.instance_id
 )
 DELETE FROM projected_messages AS messages
 USING expired

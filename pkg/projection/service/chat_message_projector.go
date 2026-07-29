@@ -13,7 +13,7 @@ import (
 
 const (
 	ChatsProjectionSchemaVersion    int64 = 2
-	MessagesProjectionSchemaVersion int64 = 2
+	MessagesProjectionSchemaVersion int64 = 3
 	DefaultMessageRetention               = 90 * 24 * time.Hour
 )
 
@@ -21,6 +21,7 @@ type chatMessageProjectionWriter interface {
 	ApplyChat(context.Context, *projection_model.Chat, ...projection_repository.ChatAspect) (bool, error)
 	ApplyMessage(context.Context, *projection_model.ProjectedMessage, ...projection_repository.MessageAspect) (bool, error)
 	ApplyReceipt(context.Context, *projection_model.MessageReceipt) (bool, error)
+	MarkMessageRead(context.Context, string, string, time.Time) (bool, error)
 }
 
 type ChatMessageProjector struct {
@@ -98,11 +99,17 @@ func (p *ChatMessageProjector) applyMessage(ctx context.Context, event *projecti
 		RetentionExpiresAt: &retentionExpiresAt,
 		SourceOccurredAt:   event.OccurredAt, SourceEventKey: event.EventKey,
 	}
-	_, err := p.repository.ApplyMessage(ctx, message,
+	messageAspects := []projection_repository.MessageAspect{
 		projection_repository.MessageAspectEnvelope, projection_repository.MessageAspectContent,
 		projection_repository.MessageAspectMedia, projection_repository.MessageAspectLifecycle,
 		projection_repository.MessageAspectRetention,
-	)
+	}
+	if payload.Direction == projection_model.MessageDirectionOutgoing || payload.Provenance == projection_model.MessageProvenanceLive {
+		unread := payload.Direction == projection_model.MessageDirectionIncoming
+		message.IsUnread = &unread
+		messageAspects = append(messageAspects, projection_repository.MessageAspectUnread)
+	}
+	_, err := p.repository.ApplyMessage(ctx, message, messageAspects...)
 	return err
 }
 
@@ -113,7 +120,8 @@ func (p *ChatMessageProjector) applyHistoryChat(ctx context.Context, event *proj
 	chat := &projection_model.Chat{
 		InstanceID: event.InstanceID, ChatID: payload.ChatID, Type: payload.ChatType, DisplayName: payload.DisplayName,
 		Archived: payload.Archived, Pinned: payload.Pinned, MutedUntil: payload.MutedUntil, DisappearingTimer: payload.DisappearingTimer,
-		SourceOccurredAt: event.OccurredAt, SourceEventKey: event.EventKey,
+		UnreadSnapshotSyncID: payload.HistorySyncID,
+		SourceOccurredAt:     event.OccurredAt, SourceEventKey: event.EventKey,
 	}
 	if payload.UnreadCount != nil {
 		chat.UnreadCount = *payload.UnreadCount
@@ -152,7 +160,13 @@ func (p *ChatMessageProjector) applyReceipts(ctx context.Context, event *project
 			RetentionExpiresAt: &retentionExpiresAt,
 			SourceOccurredAt:   time.Unix(0, 0).UTC(), SourceEventKey: projectionChildEventKey("placeholder", event.EventKey, messageID),
 		}
-		if _, err := p.repository.ApplyMessage(ctx, placeholder, projection_repository.MessageAspectEnvelope, projection_repository.MessageAspectRetention); err != nil {
+		messageAspects := []projection_repository.MessageAspect{projection_repository.MessageAspectEnvelope, projection_repository.MessageAspectRetention}
+		if payload.Direction == projection_model.MessageDirectionIncoming {
+			unread := false
+			placeholder.IsUnread = &unread
+			messageAspects = append(messageAspects, projection_repository.MessageAspectUnread)
+		}
+		if _, err := p.repository.ApplyMessage(ctx, placeholder, messageAspects...); err != nil {
 			return err
 		}
 		receipt := &projection_model.MessageReceipt{
@@ -162,6 +176,11 @@ func (p *ChatMessageProjector) applyReceipts(ctx context.Context, event *project
 		}
 		if _, err := p.repository.ApplyReceipt(ctx, receipt); err != nil {
 			return err
+		}
+		if payload.Direction == projection_model.MessageDirectionIncoming && (payload.ReceiptType == "read" || payload.ReceiptType == "played") {
+			if _, err := p.repository.MarkMessageRead(ctx, event.InstanceID, messageID, payload.ReceiptAt.UTC()); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

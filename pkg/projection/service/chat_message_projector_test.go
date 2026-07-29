@@ -19,6 +19,7 @@ type captureChatMessageWrites struct {
 	messages     []*projection_model.ProjectedMessage
 	messageParts [][]projection_repository.MessageAspect
 	receipts     []*projection_model.MessageReceipt
+	readMessages []string
 }
 
 func (c *captureChatMessageWrites) ApplyChat(_ context.Context, chat *projection_model.Chat, aspects ...projection_repository.ChatAspect) (bool, error) {
@@ -38,6 +39,11 @@ func (c *captureChatMessageWrites) ApplyMessage(_ context.Context, message *proj
 func (c *captureChatMessageWrites) ApplyReceipt(_ context.Context, receipt *projection_model.MessageReceipt) (bool, error) {
 	copy := *receipt
 	c.receipts = append(c.receipts, &copy)
+	return true, nil
+}
+
+func (c *captureChatMessageWrites) MarkMessageRead(_ context.Context, _, messageID string, _ time.Time) (bool, error) {
+	c.readMessages = append(c.readMessages, messageID)
 	return true, nil
 }
 
@@ -75,7 +81,8 @@ func TestChatMessageProjectorAppliesMessageAndBothResourceStates(t *testing.T) {
 		t.Fatalf("projected chat writes = %#v %#v", writes.chats, writes.chatAspects)
 	}
 	if len(writes.messages) != 1 || writes.messages[0].Direction != projection_model.MessageDirectionOutgoing ||
-		writes.messages[0].ContentText == nil || *writes.messages[0].ContentText != "Hello" || len(writes.messageParts[0]) != 5 ||
+		writes.messages[0].ContentText == nil || *writes.messages[0].ContentText != "Hello" || len(writes.messageParts[0]) != 6 ||
+		writes.messages[0].IsUnread == nil || *writes.messages[0].IsUnread ||
 		writes.messages[0].RetentionExpiresAt == nil || !writes.messages[0].RetentionExpiresAt.Equal(occurredAt.Add(retention)) {
 		t.Fatalf("projected message writes = %#v %#v", writes.messages, writes.messageParts)
 	}
@@ -108,5 +115,24 @@ func TestChatMessageProjectorCreatesIdempotentReceiptPlaceholders(t *testing.T) 
 			writes.messages[index].RetentionExpiresAt == nil || !writes.messages[index].RetentionExpiresAt.Equal(time.Unix(800, 0).Add(DefaultMessageRetention)) {
 			t.Fatalf("receipt placeholder %d = %#v receipt=%#v", index, writes.messages[index], writes.receipts[index])
 		}
+	}
+}
+
+func TestChatMessageProjectorMarksIncomingReadSelfReceiptsIdempotently(t *testing.T) {
+	raw := &events.Receipt{
+		MessageSource: types.MessageSource{Chat: types.NewJID("15550001", types.DefaultUserServer), Sender: types.NewJID("self", types.DefaultUserServer)},
+		MessageIDs:    []types.MessageID{"incoming-a"}, Timestamp: time.Unix(850, 0), Type: types.ReceiptTypeReadSelf,
+	}
+	event, _, err := NormalizeChatMessageEvent("instance-a", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writes := &captureChatMessageWrites{}
+	if err := NewChatMessageProjector(writes, &captureChatMessageState{}).Handle(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if len(writes.readMessages) != 1 || writes.readMessages[0] != "incoming-a" || len(writes.messages) != 1 ||
+		writes.messages[0].IsUnread == nil || *writes.messages[0].IsUnread {
+		t.Fatalf("incoming self receipt writes = messages=%#v reads=%#v", writes.messages, writes.readMessages)
 	}
 }

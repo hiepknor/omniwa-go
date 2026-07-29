@@ -40,6 +40,24 @@ type messageService struct {
 	whatsmeowService  whatsmeow_service.WhatsmeowService
 	loggerWrapper     *logger_wrapper.LoggerManager
 	legacyMedia       LegacyMediaSettings
+	projectedUnread   interface {
+		MarkMessageRead(context.Context, string, string, time.Time) (bool, error)
+	}
+	projectionState interface {
+		MarkStale(string, string, int64) error
+	}
+}
+
+type MessageServiceOption func(*messageService)
+
+func WithProjectedUnread(writer interface {
+	MarkMessageRead(context.Context, string, string, time.Time) (bool, error)
+}, state interface {
+	MarkStale(string, string, int64) error
+}) MessageServiceOption {
+	return func(service *messageService) {
+		service.projectedUnread, service.projectionState = writer, state
+	}
 }
 
 var (
@@ -329,7 +347,7 @@ func (m *messageService) MarkRead(data *MarkReadStruct, instance *instance_model
 		return "", err
 	}
 
-	var ts time.Time
+	ts := time.Now().UTC()
 
 	jid, ok := utils.ParseJID(data.Number)
 	if !ok {
@@ -341,10 +359,22 @@ func (m *messageService) MarkRead(data *MarkReadStruct, instance *instance_model
 	// reaches the recipient. Same root cause as the typing fix above.
 	jid = utils.CanonicalJID(jid)
 
-	err = client.MarkRead(context.Background(), data.Id, time.Now(), jid, jid)
+	err = client.MarkRead(context.Background(), data.Id, ts, jid, jid)
 	if err != nil {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error marking message as read: %v", instance.Id, err)
 		return "", errors.New("error marking message as read")
+	}
+
+	if m.projectedUnread != nil {
+		for _, messageID := range data.Id {
+			if _, projectionErr := m.projectedUnread.MarkMessageRead(context.Background(), instance.Id, messageID, ts); projectionErr != nil {
+				m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] projected unread write-through failed", instance.Id)
+				if m.projectionState != nil {
+					_ = m.projectionState.MarkStale(instance.Id, "messages", 3)
+				}
+				break
+			}
+		}
 	}
 
 	return ts.String(), nil
@@ -514,6 +544,7 @@ func NewMessageService(
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	legacyMedia LegacyMediaSettings,
 	loggerWrapper *logger_wrapper.LoggerManager,
+	options ...MessageServiceOption,
 ) MessageService {
 	if legacyMedia.MaxBytes <= 0 {
 		legacyMedia.MaxBytes = 32 * 1024 * 1024
@@ -524,13 +555,19 @@ func NewMessageService(
 	if legacyMedia.Timeout <= 0 {
 		legacyMedia.Timeout = 2 * time.Minute
 	}
-	return &messageService{
+	service := &messageService{
 		clients:           clients,
 		messageRepository: messageRepository,
 		whatsmeowService:  whatsmeowService,
 		legacyMedia:       legacyMedia,
 		loggerWrapper:     loggerWrapper,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service
 }
 
 func legacyDownloadable(msg *waE2E.Message) (whatsmeow.DownloadableMessage, string) {

@@ -35,7 +35,7 @@ const defaultProjectionPageSize = 50
 
 // List returns projection-backed chats without querying WhatsApp.
 // @Summary List projected chats
-// @Description Cursor-page projected chats without live reads. meta.total is the exact active projected-chat count at request time, not a cross-page snapshot.
+// @Description Cursor-page projected chats without live reads. With canonical_chat_identity, direct aliases collapse to one conversation, meta.total counts canonical conversations, and cursors are conversation-scoped. Without it, legacy provider-chat rows and cursors are preserved.
 // @Tags Chat
 // @Produce json
 // @Param limit query int false "Page size (1-200)"
@@ -65,10 +65,10 @@ func (c *chatHandler) List(ctx *gin.Context) {
 
 // Get returns one projected chat without querying WhatsApp.
 // @Summary Get a projected chat
-// @Description Return a projected chat with locally denormalized contact or type-specific display-name metadata.
+// @Description Return a projected chat with locally denormalized contact or type-specific display-name metadata. With canonical_chat_identity, chatId accepts a canonical conversation UUID or any absorbed provider Chat ID and the response contains the canonical conversationId.
 // @Tags Chat
 // @Produce json
-// @Param chatId path string true "Chat JID"
+// @Param chatId path string true "Canonical conversation UUID or provider Chat ID"
 // @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ProjectedChat} "success"
 // @Failure 404 {object} apidocs.ErrorResponse "Chat not found"
 // @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
@@ -90,9 +90,10 @@ func (c *chatHandler) Get(ctx *gin.Context) {
 
 // Messages returns stable, projection-backed message history for a chat.
 // @Summary List projected messages for a chat
+// @Description With canonical_chat_identity, resolves canonical or absorbed Chat IDs and returns deduplicated provider-message history across all aliases. Cursors are opaque and scoped to the canonical conversation.
 // @Tags Chat
 // @Produce json
-// @Param chatId path string true "Chat JID"
+// @Param chatId path string true "Canonical conversation UUID or provider Chat ID"
 // @Param limit query int false "Page size (1-200)"
 // @Param cursor query string false "Opaque pagination cursor"
 // @Success 200 {object} apidocs.SuccessResponse{data=[]projection_service.ProjectedMessage} "success"

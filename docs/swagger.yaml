@@ -2108,11 +2108,19 @@ definitions:
     type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedChat:
     properties:
+      addressingJid:
+        type: string
       archived:
         type: boolean
+      chatAliases:
+        items:
+          type: string
+        type: array
       chatId:
         type: string
       contactId:
+        type: string
+      conversationId:
         type: string
       disappearingTimer:
         type: integer
@@ -2160,6 +2168,8 @@ definitions:
       contentSummary:
         type: string
       contentText:
+        type: string
+      conversationId:
         type: string
       deliveredAt:
         type: string
@@ -10131,8 +10141,11 @@ paths:
       - Campaigns
   /chat/{chatId}/messages:
     get:
+      description: With canonical_chat_identity, resolves canonical or absorbed Chat
+        IDs and returns deduplicated provider-message history across all aliases.
+        Cursors are opaque and scoped to the canonical conversation.
       parameters:
-      - description: Chat JID
+      - description: Canonical conversation UUID or provider Chat ID
         in: path
         name: chatId
         required: true
@@ -10252,9 +10265,11 @@ paths:
   /chat/info/{chatId}:
     get:
       description: Return a projected chat with locally denormalized contact or type-specific
-        display-name metadata.
+        display-name metadata. With canonical_chat_identity, chatId accepts a canonical
+        conversation UUID or any absorbed provider Chat ID and the response contains
+        the canonical conversationId.
       parameters:
-      - description: Chat JID
+      - description: Canonical conversation UUID or provider Chat ID
         in: path
         name: chatId
         required: true
@@ -10290,8 +10305,10 @@ paths:
       - Chat
   /chat/list:
     get:
-      description: Cursor-page projected chats without live reads. meta.total is the
-        exact active projected-chat count at request time, not a cross-page snapshot.
+      description: Cursor-page projected chats without live reads. With canonical_chat_identity,
+        direct aliases collapse to one conversation, meta.total counts canonical conversations,
+        and cursors are conversation-scoped. Without it, legacy provider-chat rows
+        and cursors are preserved.
       parameters:
       - description: Page size (1-200)
         in: query
