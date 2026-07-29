@@ -103,6 +103,27 @@ func TestCanonicalConversationAssociatesAuthoritativeAliasesConcurrently(t *test
 		conversation.UnreadAuthoritative {
 		t.Fatalf("canonical conversation = %#v, %v", conversation, err)
 	}
+	if err = db.Model(&projection_model.Conversation{}).
+		Where("instance_id = ? AND conversation_id = ?", instances[0].Id, conversationID).
+		Update("addressing_jid", lid).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = contactRepository.Apply(context.Background(), ContactPatch{
+		InstanceID: instances[0].Id,
+		Identities: []ContactIdentityRef{
+			{Kind: projection_model.ContactIdentityKindJID, Value: phoneJID},
+			{Kind: projection_model.ContactIdentityKindJID, Value: lid},
+			{Kind: projection_model.ContactIdentityKindPhoneJID, Value: phoneJID},
+			{Kind: projection_model.ContactIdentityKindLID, Value: lid},
+		},
+		Aspect: ContactAspectIdentity, OccurredAt: time.Unix(100, 0).UTC(), EventKey: "authoritative-pn-lid-map",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Where("instance_id = ? AND conversation_id = ?", instances[0].Id, conversationID).First(&conversation).Error; err != nil ||
+		conversation.AddressingJID == nil || *conversation.AddressingJID != phoneJID {
+		t.Fatalf("replayed contact did not refresh conversation addressing = %#v, %v", conversation, err)
+	}
 
 	messageAt := time.Unix(300, 0).UTC()
 	message := projection_model.ProjectedMessage{
