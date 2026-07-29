@@ -194,47 +194,11 @@ func TestConditionalCapabilityRequiresAllResourcesAndDurableReadiness(t *testing
 	}
 }
 
-func TestCanonicalConversationCapabilityRollsOutWithLegacyAlias(t *testing.T) {
+func TestCanonicalConversationCapabilityFollowsAuthoritativeReadiness(t *testing.T) {
 	ready := false
-	options := []StateServiceOption{}
-	for _, capability := range []string{CapabilityCanonicalChatIdentity, CapabilityCanonicalConversationIdentity} {
-		options = append(options, WithConditionalCapability(
-			capability, []string{"contacts", "chats", "messages"},
-			func(instanceID string) (bool, error) { return instanceID == "instance-a" && ready, nil },
-		))
-	}
-	service := NewStateService(newMemoryRepository(), options...)
-	for resource, version := range map[string]int64{
-		"contacts": ContactsProjectionSchemaVersion,
-		"chats":    ChatsProjectionSchemaVersion,
-		"messages": MessagesProjectionSchemaVersion,
-	} {
-		if err := service.MarkReady("instance-a", resource, version, time.Unix(100, 0)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	capabilities, err := service.Capabilities("instance-a")
-	if err != nil || containsCapability(capabilities, CapabilityCanonicalChatIdentity) || containsCapability(capabilities, CapabilityCanonicalConversationIdentity) {
-		t.Fatalf("canonical aliases advertised before durable readiness: %v, %v", capabilities, err)
-	}
-	ready = true
-	capabilities, err = service.Capabilities("instance-a")
-	if err != nil || !containsCapability(capabilities, CapabilityCanonicalChatIdentity) || !containsCapability(capabilities, CapabilityCanonicalConversationIdentity) {
-		t.Fatalf("canonical aliases did not roll out together: %v, %v", capabilities, err)
-	}
-	if err := service.MarkFailed("instance-a", "messages", MessagesProjectionSchemaVersion); err != nil {
-		t.Fatal(err)
-	}
-	capabilities, err = service.Capabilities("instance-a")
-	if err != nil || containsCapability(capabilities, CapabilityCanonicalChatIdentity) || containsCapability(capabilities, CapabilityCanonicalConversationIdentity) {
-		t.Fatalf("canonical aliases survived failed readiness: %v, %v", capabilities, err)
-	}
-}
-
-func TestCanonicalConversationCapabilityCanOutliveLegacyAlias(t *testing.T) {
 	service := NewStateService(newMemoryRepository(), WithConditionalCapability(
 		CapabilityCanonicalConversationIdentity, []string{"contacts", "chats", "messages"},
-		func(instanceID string) (bool, error) { return instanceID == "instance-a", nil },
+		func(instanceID string) (bool, error) { return instanceID == "instance-a" && ready, nil },
 	))
 	for resource, version := range map[string]int64{
 		"contacts": ContactsProjectionSchemaVersion,
@@ -246,8 +210,20 @@ func TestCanonicalConversationCapabilityCanOutliveLegacyAlias(t *testing.T) {
 		}
 	}
 	capabilities, err := service.Capabilities("instance-a")
-	if err != nil || !containsCapability(capabilities, CapabilityCanonicalConversationIdentity) || containsCapability(capabilities, CapabilityCanonicalChatIdentity) {
-		t.Fatalf("post-deprecation capabilities = %v, %v", capabilities, err)
+	if err != nil || containsCapability(capabilities, CapabilityCanonicalConversationIdentity) {
+		t.Fatalf("canonical capability advertised before durable readiness: %v, %v", capabilities, err)
+	}
+	ready = true
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, CapabilityCanonicalConversationIdentity) || containsCapability(capabilities, "canonical_chat_identity") {
+		t.Fatalf("canonical capability did not roll out alone: %v, %v", capabilities, err)
+	}
+	if err := service.MarkFailed("instance-a", "messages", MessagesProjectionSchemaVersion); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityCanonicalConversationIdentity) {
+		t.Fatalf("canonical capability survived failed readiness: %v, %v", capabilities, err)
 	}
 }
 

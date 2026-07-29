@@ -21,40 +21,12 @@ type MessageHandler interface {
 	GetMessageStatus(ctx *gin.Context)
 	DeleteMessageEveryone(ctx *gin.Context)
 	EditMessage(ctx *gin.Context)
-	GetProjected(ctx *gin.Context)
 	Receipts(ctx *gin.Context)
 }
 
 type messageHandler struct {
 	messageService message_service.MessageService
 	reader         *projection_service.ChatMessageReader
-}
-
-// GetProjected returns one persisted message without querying WhatsApp.
-// @Summary Get a projected message
-// @Tags Message
-// @Produce json
-// @Param messageId path string true "Provider message ID"
-// @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ProjectedMessage} "success"
-// @Failure 404 {object} apidocs.ErrorResponse "Message not found"
-// @Failure 410 {object} apidocs.ErrorResponse "Legacy contract retired"
-// @Failure 503 {object} apidocs.ErrorResponse "Projection not ready"
-// @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
-// @Security ApiKeyAuth
-// @ID getProjectedMessage
-// @Deprecated
-// @Router /message/{messageId} [get]
-func (m *messageHandler) GetProjected(ctx *gin.Context) {
-	instance, ok := messageProjectionInstance(ctx)
-	if !ok {
-		return
-	}
-	item, meta, err := m.reader.GetMessage(ctx.Request.Context(), instance.Id, ctx.Param("messageId"))
-	if err != nil {
-		writeMessageProjectionReadError(ctx, err)
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": item, "meta": meta})
 }
 
 // Receipts returns persisted delivery history without querying WhatsApp.

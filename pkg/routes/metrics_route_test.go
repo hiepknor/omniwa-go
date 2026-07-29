@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -96,38 +95,5 @@ func TestConversationAPIMiddlewareRecordsBoundedRouteOutcome(t *testing.T) {
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/conversations", nil))
 	if observation.contract != "conversation" || observation.operation != "list" || observation.status != http.StatusServiceUnavailable || observation.duration < 0 {
 		t.Fatalf("observation=%+v", observation)
-	}
-}
-
-func TestLegacyChatReadOptionDefaultsOnAndCanBeDisabled(t *testing.T) {
-	defaults := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	if !defaults.legacyChatReadsEnabled {
-		t.Fatal("legacy Chat reads must remain enabled by default")
-	}
-	disabled := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, WithLegacyChatReadsEnabled(false))
-	if disabled.legacyChatReadsEnabled {
-		t.Fatal("legacy Chat reads were not disabled")
-	}
-
-	for _, test := range []struct {
-		name   string
-		routes *Routes
-		status int
-	}{
-		{name: "compatibility", routes: defaults, status: http.StatusNoContent},
-		{name: "retired", routes: disabled, status: http.StatusGone},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			router := gin.New()
-			router.GET("/legacy", test.routes.legacyProjectionRead(func(ctx *gin.Context) { ctx.Status(http.StatusNoContent) }))
-			response := httptest.NewRecorder()
-			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/legacy", nil))
-			if response.Code != test.status {
-				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
-			}
-			if test.status == http.StatusGone && !strings.Contains(response.Body.String(), "legacy_contract_removed") {
-				t.Fatalf("retirement response=%s", response.Body.String())
-			}
-		})
 	}
 }

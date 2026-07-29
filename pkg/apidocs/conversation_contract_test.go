@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestGeneratedOpenAPIContainsAdditiveConversationContract(t *testing.T) {
+func TestGeneratedOpenAPIContainsCanonicalConversationContract(t *testing.T) {
 	path := filepath.Join("..", "..", "docs", "swagger.json")
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -72,13 +72,12 @@ func TestGeneratedOpenAPIContainsAdditiveConversationContract(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"/chat/list", "/chat/info/{chatId}", "/chat/{chatId}/messages", "/message/{messageId}"} {
-		operation := object(t, object(t, paths, path), "get")
-		if operation["deprecated"] != true {
-			t.Fatalf("legacy Chat read %s is not deprecated", path)
+		if _, ok := paths[path]; ok {
+			t.Fatalf("retired legacy read remains in OpenAPI: %s", path)
 		}
-		if _, ok := object(t, operation, "responses")["410"]; !ok {
-			t.Fatalf("legacy Chat read %s is missing retirement response", path)
-		}
+	}
+	if _, ok := object(t, paths, "/message/{messageId}/delivery")["get"]; !ok {
+		t.Fatal("message delivery receipt read was removed")
 	}
 	for _, path := range []string{"/chat/archive", "/chat/unarchive", "/chat/mute", "/chat/unmute", "/chat/pin", "/chat/unpin", "/chat/history-sync"} {
 		if _, ok := object(t, paths, path)["post"]; !ok {
@@ -121,10 +120,11 @@ func TestGeneratedOpenAPIContainsAdditiveConversationContract(t *testing.T) {
 		t.Fatal("ProjectedConversationMessage exposes legacy chatId identity")
 	}
 
-	legacyChat := definitionWithSuffix(t, definitions, ".ProjectedChat")
-	assertRequired(t, legacyChat, "chatId", "type", "unreadCount")
-	legacyMessage := definitionWithSuffix(t, definitions, ".ProjectedMessage")
-	assertRequired(t, legacyMessage, "chatId", "messageId", "direction", "messageType", "providerTimestamp", "provenance")
+	for name := range definitions {
+		if strings.HasSuffix(name, ".ProjectedChat") || strings.HasSuffix(name, ".ProjectedMessage") {
+			t.Fatalf("retired legacy schema remains in OpenAPI: %s", name)
+		}
+	}
 
 	capabilities := definitionWithSuffix(t, definitions, ".CapabilitiesData")
 	capabilityItems := object(t, object(t, capabilities, "properties"), "capabilities")
@@ -138,10 +138,11 @@ func TestGeneratedOpenAPIContainsAdditiveConversationContract(t *testing.T) {
 			seen[capability] = true
 		}
 	}
-	for _, capability := range []string{"canonical_chat_identity", "canonical_conversation_identity"} {
-		if !seen[capability] {
-			t.Fatalf("capability example missing %q", capability)
-		}
+	if !seen["canonical_conversation_identity"] {
+		t.Fatal("capability example missing canonical_conversation_identity")
+	}
+	if seen["canonical_chat_identity"] {
+		t.Fatal("retired canonical_chat_identity remains in capability example")
 	}
 }
 

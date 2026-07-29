@@ -23,12 +23,11 @@ const (
 	EligibilityStateUnavailable = "unavailable"
 	EligibilityStateUnknown     = "unknown"
 
-	ConversationContractCanonical  = "conversation"
-	ConversationContractLegacyChat = "legacy_chat"
-	ConversationOperationList      = "list"
-	ConversationOperationGet       = "get"
-	ConversationOperationMessages  = "messages"
-	ConversationOperationMessage   = "message"
+	ConversationContractCanonical = "conversation"
+	ConversationOperationList     = "list"
+	ConversationOperationGet      = "get"
+	ConversationOperationMessages = "messages"
+	ConversationOperationMessage  = "message"
 )
 
 var eligibilityBatchSizeBuckets = []float64{1, 10, 25, 50, 100, 500, 1_000, 2_500, 5_000, 10_000}
@@ -90,11 +89,11 @@ func NewRegistry() (*Registry, error) {
 		}, []string{"operation", "code"}),
 		conversationRequests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "omniwa", Subsystem: "conversation_api", Name: "requests_total",
-			Help: "Canonical Conversation and deprecated Chat read requests by bounded operation and HTTP status class.",
+			Help: "Canonical Conversation read requests by bounded operation and HTTP status class.",
 		}, []string{"contract", "operation", "status"}),
 		conversationDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "omniwa", Subsystem: "conversation_api", Name: "request_duration_seconds",
-			Help: "Canonical Conversation and deprecated Chat read latency by bounded operation.",
+			Help: "Canonical Conversation read latency by bounded operation.",
 		}, []string{"contract", "operation"}),
 	}
 	for _, collector := range []prometheus.Collector{
@@ -183,7 +182,7 @@ func mutationRejectionCode(value string) bool {
 }
 
 func conversationContract(value string) bool {
-	return value == ConversationContractCanonical || value == ConversationContractLegacyChat
+	return value == ConversationContractCanonical
 }
 
 func conversationOperation(value string) bool {

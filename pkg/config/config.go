@@ -129,7 +129,6 @@ type Config struct {
 	ContactIdentityBackfillBatch         int
 	ContactIdentityBackfillMaxBatches    int
 	CanonicalChatIdentityEnabled         bool
-	LegacyChatReadsEnabled               bool
 	ConversationBackfillBatch            int
 	ConversationBackfillMaxBatches       int
 }
@@ -343,7 +342,6 @@ func Load() *Config {
 		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES)
 	}
 	canonicalChatIdentityEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED)), "true")
-	legacyChatReadsEnabled := !strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_LEGACY_CHAT_READS_ENABLED)), "false")
 	conversationBackfillBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.CONVERSATION_BACKFILL_BATCH), "100"))
 	if err != nil || conversationBackfillBatch > 1000 {
 		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.CONVERSATION_BACKFILL_BATCH)
@@ -355,10 +353,6 @@ func Load() *Config {
 	if canonicalChatIdentityEnabled && !contactIdentityReconciliationEnabled {
 		logger.LogFatal("[CONFIG] %s requires %s=true", config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED)
 	}
-	if !legacyChatReadsEnabled && !canonicalChatIdentityEnabled {
-		logger.LogFatal("[CONFIG] %s=false requires %s=true", config_env.WA_LEGACY_CHAT_READS_ENABLED, config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED)
-	}
-
 	clientName := os.Getenv(config_env.CLIENT_NAME)
 
 	waDebug := os.Getenv(config_env.WA_DEBUG)
@@ -888,7 +882,6 @@ func Load() *Config {
 		ContactIdentityBackfillBatch:         contactIdentityBackfillBatch,
 		ContactIdentityBackfillMaxBatches:    contactIdentityBackfillMaxBatches,
 		CanonicalChatIdentityEnabled:         canonicalChatIdentityEnabled,
-		LegacyChatReadsEnabled:               legacyChatReadsEnabled,
 		ConversationBackfillBatch:            conversationBackfillBatch,
 		ConversationBackfillMaxBatches:       conversationBackfillMaxBatches,
 	}
