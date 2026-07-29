@@ -98,7 +98,7 @@ func TestChatMessageRepositoryPostgresOrderingPaginationAndConcurrency(t *testin
 		t.Fatal(err)
 	}
 	storedChat, err = repository.GetChat(context.Background(), instance.Id, chat.ChatID)
-	if err != nil || storedChat.DisplayName == nil || *storedChat.DisplayName != renamed {
+	if err != nil || storedChat.DisplayName == nil || *storedChat.DisplayName != renamed || storedChat.ConversationID == nil {
 		t.Fatalf("contact rename or replayed chat identity lost = %#v, %v", storedChat, err)
 	}
 	groupName := "Group Subject"
@@ -145,7 +145,8 @@ func TestChatMessageRepositoryPostgresOrderingPaginationAndConcurrency(t *testin
 		t.Fatalf("apply independently ordered message content = %v, %v", applied, err)
 	}
 	storedMessage, err := repository.GetMessage(context.Background(), instance.Id, message.MessageID)
-	if err != nil || storedMessage.ContentText == nil || *storedMessage.ContentText != lateContentValue || storedMessage.Status == nil || *storedMessage.Status != status || !storedMessage.SourceOccurredAt.Equal(settingsTime) {
+	if err != nil || storedMessage.ContentText == nil || *storedMessage.ContentText != lateContentValue || storedMessage.Status == nil || *storedMessage.Status != status ||
+		!storedMessage.SourceOccurredAt.Equal(settingsTime) || storedMessage.ConversationID == nil || *storedMessage.ConversationID != *storedChat.ConversationID {
 		t.Fatalf("stored message = %#v, %v", storedMessage, err)
 	}
 

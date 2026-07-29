@@ -554,3 +554,30 @@ func TestConversationContactContractMigrationIsAdditiveAndBackfillsNames(t *test
 		}
 	}
 }
+
+func TestCanonicalConversationFoundationMigrationIsAdditiveAndTenantScoped(t *testing.T) {
+	migration := registeredMigration(t, 37)
+	if migration.Name != "add_canonical_conversation_foundation" {
+		t.Fatalf("canonical conversation migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"CREATE TABLE projected_conversations", "PRIMARY KEY (instance_id, conversation_id)",
+		"unread_authoritative BOOLEAN NOT NULL DEFAULT FALSE",
+		"projected_conversations_direct_contact_idx", "conversation_type = 'direct'", "contact_id IS NOT NULL",
+		"ALTER TABLE projected_chats", "ADD COLUMN conversation_id UUID NULL", "projected_chats_conversation_fk",
+		"ALTER TABLE projected_messages", "projected_messages_conversation_history_idx",
+		"CREATE TABLE projected_chat_aliases", "PRIMARY KEY (instance_id, chat_id)", "projected_chat_aliases_conversation_fk",
+		"CREATE TABLE projected_conversation_redirects", "absorbed_conversation_id <> canonical_conversation_id",
+		"CREATE TABLE projected_conversation_backfills", "cursor_chat_id VARCHAR(255) NULL",
+		"status IN ('pending', 'running', 'failed', 'complete')", "projected_conversation_backfills_work_idx",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("canonical conversation migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP COLUMN", "DROP TABLE", "DELETE FROM"} {
+		if strings.Contains(migration.SQL, forbidden) {
+			t.Fatalf("canonical conversation migration contains unsafe SQL %q", forbidden)
+		}
+	}
+}
