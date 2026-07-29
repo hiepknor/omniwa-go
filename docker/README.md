@@ -7,7 +7,7 @@ commands **from this `docker/` directory**.
 
 | File | Use case |
 |---|---|
-| `docker-compose.dev.yml` | **Local development.** Self-contained: app + Postgres + RabbitMQ + MinIO, license gate **off**, values inlined — no `.env` needed. |
+| `docker-compose.dev.yml` | **Local development.** Self-contained: app + Postgres + RabbitMQ + MinIO + Prometheus, license gate **off**, values inlined — no `.env` needed. |
 | `docker-compose.yml` | **Production base.** App + Postgres only. Reads config from `.env`. |
 | `docker-compose.full.yml` | **Production override** adding RabbitMQ + MinIO. Layer on top of the base. |
 | `docker-compose.smoke.yml` | **CI only.** Builds and verifies the production Dockerfile against isolated Postgres. |
@@ -37,6 +37,30 @@ curl -s -H "apikey: $GLOBAL_API_KEY" \
 
 The expected commit, OCI revision label, and `data.revision` response must be
 identical before the deployment is accepted.
+
+### Development metrics
+
+The development stack persists Prometheus data in the `prometheus_data` named
+volume for 30 days, bounded to 1 GB. Its UI and API listen only on
+`http://127.0.0.1:9090`; the scraper reaches the authenticated application
+`/metrics` endpoint over the internal Compose network. Both services receive
+the same `GLOBAL_API_KEY` value. Prometheus writes that value to a private
+runtime file and uses it as the custom `apikey` request header, so the scrape
+configuration contains no credential.
+
+Check scrape health and migration traffic:
+
+```bash
+curl -fsS --get http://127.0.0.1:9090/api/v1/query \
+  --data-urlencode 'query=up{job="omniwa-go"}'
+curl -fsS --get http://127.0.0.1:9090/api/v1/query \
+  --data-urlencode 'query=sum(increase(omniwa_conversation_api_requests_total{contract="legacy_chat",status="2xx"}[24h])) or vector(0)'
+```
+
+Changing `GLOBAL_API_KEY` requires recreating both `omniwa-go` and
+`prometheus`. Removing the Prometheus service leaves application behavior and
+data unchanged. Delete `prometheus_data` only when its monitoring history is
+intentionally no longer needed.
 
 Images run as the non-root user `10001:10001`. Before upgrading an existing
 installation that has root-owned application volumes, follow the
@@ -94,4 +118,4 @@ Use stop-first/Recreate upgrades, not start-first or surge rollouts. See the
 
 - Databases (`omniwa_auth`, `omniwa_users`) are created automatically on startup.
 - Set `LICENSE_GATE_ENABLED=false` in `.env` to run without the activation gate.
-- Ports: API `4000`, Postgres `5432`, RabbitMQ `5672` (+UI `15672`), MinIO `9000` (+console `9001`).
+- Ports: API `4000`, Prometheus `127.0.0.1:9090`, Postgres `5432`, RabbitMQ `5672` (+UI `15672`), MinIO `9000` (+console `9001`).

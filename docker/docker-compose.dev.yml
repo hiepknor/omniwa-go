@@ -38,7 +38,7 @@ services:
       WA_CAMPAIGN_DIRECT_CREATE_ENABLED: "false"
 
       # Security — change this for anything beyond local dev.
-      GLOBAL_API_KEY: "dev-global-api-key-change-me"
+      GLOBAL_API_KEY: "${GLOBAL_API_KEY:-dev-global-api-key-change-me}"
 
       # Optional token lookup digest. Supply a base64-encoded 32-byte secret
       # from the shell/secret manager to exercise the staged credential rollout.
@@ -112,6 +112,38 @@ services:
       minio:
         condition: service_started
 
+  prometheus:
+    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    container_name: omniwa-prometheus
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        umask 077
+        printf '%s' "$${OMNIWA_METRICS_API_KEY}" > /tmp/omniwa-metrics-api-key
+        exec /bin/prometheus \
+          --config.file=/etc/prometheus/prometheus.yml \
+          --storage.tsdb.path=/prometheus \
+          --storage.tsdb.retention.time=30d \
+          --storage.tsdb.retention.size=1GB
+    environment:
+      OMNIWA_METRICS_API_KEY: "${GLOBAL_API_KEY:-dev-global-api-key-change-me}"
+    ports:
+      - "127.0.0.1:9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - omniwa_network
+    depends_on:
+      omniwa-go:
+        condition: service_started
+
   postgres:
     image: postgres:15-alpine
     container_name: omniwa-postgres
@@ -179,6 +211,8 @@ volumes:
   rabbitmq_data:
     driver: local
   minio_data:
+    driver: local
+  prometheus_data:
     driver: local
 
 networks:
