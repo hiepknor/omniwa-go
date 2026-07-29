@@ -170,6 +170,13 @@ func (r *contactRepository) Apply(ctx context.Context, patch ContactPatch) (*pro
 		if err := updateDirectChatsForContact(tx, &stored, now); err != nil {
 			return err
 		}
+		// Conversation summaries denormalize the Contact-owned addressing JID and
+		// display name. Refresh even when this Contact event is a replay: a prior
+		// Chat/conversation backfill may have completed before PN/LID address
+		// reconciliation and must converge without requiring a new Chat event.
+		if err := reconcileDirectConversationsForContact(tx, stored.InstanceID, stored.ContactID, now); err != nil {
+			return err
+		}
 		applied = applied || created || aliasesChanged || addressesChanged
 		return nil
 	})
