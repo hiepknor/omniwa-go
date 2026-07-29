@@ -7171,7 +7171,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Authenticates either the global admin key or an instance token and returns an explicit credentialScope. instanceId is present only for an instance credential.\nCredential scope is independent of capabilities and projection readiness. A missing or invalid credential returns 401; projection infrastructure failures may return 500.",
+                "description": "Authenticates either the global admin key or an instance token and returns an explicit credentialScope. Admin credentials may target one instance with instanceId; instance credentials are always scoped to their own instance.\nCredential scope is independent of capabilities and projection readiness. A missing or invalid credential returns 401; projection infrastructure failures may return 500.",
                 "produces": [
                     "application/json"
                 ],
@@ -7179,6 +7179,14 @@ const docTemplate = `{
                     "Server"
                 ],
                 "summary": "Get server capabilities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Target instance UUID (admin credentials only)",
+                        "name": "instanceId",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "success",
@@ -7186,8 +7194,26 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.CapabilitiesResponse"
                         }
                     },
+                    "400": {
+                        "description": "Invalid target instance",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "401": {
                         "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Instance scope mismatch",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Target instance not found",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }

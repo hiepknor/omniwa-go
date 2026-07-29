@@ -905,6 +905,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			server_handler.WithHealthService(healthService),
 			server_handler.WithFailureService(projectionFailureService),
 			server_handler.WithAdminCapabilities(credentialCapabilities...),
+			server_handler.WithCapabilityInstanceReader(instanceRepository),
 		),
 	).AssignRoutes(r)
 

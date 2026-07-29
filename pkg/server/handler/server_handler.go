@@ -12,6 +12,8 @@ import (
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type ServerHandler interface {
@@ -59,6 +61,11 @@ type serverHandler struct {
 	health            *projection_service.ServerHealthService
 	failures          *projection_service.FailureService
 	adminCapabilities []string
+	instances         capabilityInstanceReader
+}
+
+type capabilityInstanceReader interface {
+	GetInstanceByID(string) (*instance_model.Instance, error)
 }
 
 // Health returns independent API, connection, projection, and throttling dimensions.
@@ -187,12 +194,16 @@ func (s *serverHandler) ServerOk(ctx *gin.Context) {
 
 // Capabilities returns non-sensitive server and instance capability metadata.
 // @Summary Get server capabilities
-// @Description Authenticates either the global admin key or an instance token and returns an explicit credentialScope. instanceId is present only for an instance credential.
+// @Description Authenticates either the global admin key or an instance token and returns an explicit credentialScope. Admin credentials may target one instance with instanceId; instance credentials are always scoped to their own instance.
 // @Description Credential scope is independent of capabilities and projection readiness. A missing or invalid credential returns 401; projection infrastructure failures may return 500.
 // @Tags Server
 // @Produce json
+// @Param instanceId query string false "Target instance UUID (admin credentials only)"
 // @Success 200 {object} apidocs.CapabilitiesResponse "success"
+// @Failure 400 {object} apidocs.ErrorResponse "Invalid target instance"
 // @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
+// @Failure 403 {object} apidocs.ErrorResponse "Instance scope mismatch"
+// @Failure 404 {object} apidocs.ErrorResponse "Target instance not found"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /server/capabilities [get]
@@ -202,7 +213,10 @@ func (s *serverHandler) Capabilities(ctx *gin.Context) {
 		httpapi.WriteInternal(ctx, errors.New("capabilities handler missing authentication principal"))
 		return
 	}
-	instanceID := principal.InstanceID
+	instanceID, err := s.capabilityTarget(ctx, principal)
+	if err != nil {
+		return
+	}
 	capabilities, err := s.projectionState.Capabilities(instanceID)
 	if err != nil {
 		httpapi.WriteInternal(ctx, err)
@@ -213,18 +227,68 @@ func (s *serverHandler) Capabilities(ctx *gin.Context) {
 	}
 	if principal.Scope == httpapi.CredentialScopeAdmin {
 		capabilities = append(capabilities, s.adminCapabilities...)
-		sort.Strings(capabilities)
 	}
+	capabilities = uniqueSortedStrings(capabilities)
 	data := gin.H{
 		"version":         s.version,
 		"revision":        s.revision,
 		"capabilities":    capabilities,
 		"credentialScope": principal.Scope,
 	}
-	if principal.Scope == httpapi.CredentialScopeInstance {
-		data["instanceId"] = principal.InstanceID
+	if instanceID != "" {
+		data["instanceId"] = instanceID
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": data})
+}
+
+func (s *serverHandler) capabilityTarget(ctx *gin.Context, principal httpapi.AuthPrincipal) (string, error) {
+	requested := strings.TrimSpace(ctx.Query("instanceId"))
+	if principal.Scope == httpapi.CredentialScopeInstance {
+		if requested != "" && requested != principal.InstanceID {
+			httpapi.WriteError(ctx, http.StatusForbidden, "instance_scope_mismatch", "instance credentials cannot target another instance")
+			return "", errors.New("instance capability target does not match credential scope")
+		}
+		return principal.InstanceID, nil
+	}
+	if requested == "" {
+		return "", nil
+	}
+	if _, err := uuid.Parse(requested); err != nil {
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_instance_id", "instanceId must be a valid UUID")
+		return "", err
+	}
+	if s.instances == nil {
+		err := errors.New("capability instance reader is not configured")
+		httpapi.WriteInternal(ctx, err)
+		return "", err
+	}
+	instance, err := s.instances.GetInstanceByID(requested)
+	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && (instance == nil || instance.Id == "")) {
+		httpapi.WriteError(ctx, http.StatusNotFound, "instance_not_found", "instance not found")
+		return "", gorm.ErrRecordNotFound
+	}
+	if err != nil {
+		httpapi.WriteInternal(ctx, err)
+		return "", err
+	}
+	return instance.Id, nil
+}
+
+func uniqueSortedStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 type ServerOption func(*serverHandler)
@@ -239,6 +303,10 @@ func WithFailureService(failures *projection_service.FailureService) ServerOptio
 
 func WithAdminCapabilities(capabilities ...string) ServerOption {
 	return func(handler *serverHandler) { handler.adminCapabilities = append([]string(nil), capabilities...) }
+}
+
+func WithCapabilityInstanceReader(instances capabilityInstanceReader) ServerOption {
+	return func(handler *serverHandler) { handler.instances = instances }
 }
 
 func NewServerHandler(version, revision string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overview *projection_service.OverviewService, options ...ServerOption) ServerHandler {

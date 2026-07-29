@@ -29,7 +29,7 @@ authenticated tier explicitly. Clients must use this response instead of
 probing an admin-only route or inferring authority from the key format or the
 capability list.
 
-An admin credential receives:
+An admin credential without a target receives server-scoped capabilities:
 
 ```json
 {
@@ -60,13 +60,30 @@ WhatsApp JID/LID, or provider identifier:
 }
 ```
 
+An admin credential may request the readiness-dependent capabilities of one
+instance without possessing or exposing its bearer token:
+
+```http
+GET /server/capabilities?instanceId=0bca2c34-ef2a-463c-98fd-e2afb6978457
+apikey: <GLOBAL_API_KEY>
+```
+
+The targeted response keeps `credentialScope: "admin"` and includes the target
+`instanceId`. It contains the target's ready projection capabilities together
+with admin-scoped capabilities. An invalid UUID returns `invalid_instance_id`
+(HTTP 400), and an unknown UUID returns `instance_not_found` (HTTP 404).
+Instance credentials cannot target another UUID; attempts return
+`instance_scope_mismatch` (HTTP 403). Supplying their own UUID is accepted but
+does not change their scope.
+
 `credentialScope` is always either `admin` or `instance` after successful
-authentication. `instanceId` is present only for `instance`. Capability
-entries may change with feature configuration and projection readiness; they
-never determine credential scope. A projection that is syncing, stale, or not
-yet ready can therefore produce an empty or reduced capability list while the
-request remains HTTP 200. A projection storage failure may still return HTTP
-500 because the server cannot safely report the current capability set.
+authentication. `instanceId` is present for an instance credential and for a
+targeted admin request. Capability entries may change with feature
+configuration and projection readiness; they never determine credential
+scope. A projection that is syncing, stale, or not yet ready can therefore
+produce an empty or reduced capability list while the request remains HTTP 200.
+A projection storage failure may still return HTTP 500 because the server
+cannot safely report the current capability set.
 
 HTTP 401 means only that the `apikey` header is missing or does not identify a
 valid credential. Clients must not use 401 to distinguish admin and instance

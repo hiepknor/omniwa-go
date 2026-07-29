@@ -4,6 +4,14 @@ Projection workers use bounded retries and move poison events to a dead-letter
 state. Administrators can inspect and resolve those failures without reading
 raw event payloads or querying WhatsApp.
 
+A history-sync normalization failure can happen before the durable completion
+barrier exists and therefore may not create a dead-letter item. Instance logs
+record a bounded `stage`, machine-readable `error_code`, and zero-based
+`conversation_index`/`message_index`. They intentionally omit the underlying
+provider error, identities, message content, and raw payload. A failed history
+sync must be retried from a valid provider chunk or a supported reconciliation
+flow; operators must never mark Messages ready manually.
+
 The feature is available when the admin-scoped `GET /server/capabilities`
 response includes `projection_failure_operations`. All endpoints below require
 the global admin key in the `apikey` header; instance tokens are not accepted
