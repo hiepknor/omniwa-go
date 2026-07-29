@@ -574,6 +574,9 @@ func mergeContacts(tx *gorm.DB, contacts []projection_model.Contact, now time.Ti
 		if err := tx.Table("projected_chats").Where("instance_id = ? AND contact_id IN ?", target.InstanceID, losingIDs).Update("contact_id", target.ContactID).Error; err != nil {
 			return target, err
 		}
+		if err := reconcileDirectConversationsForContact(tx, target.InstanceID, target.ContactID, now); err != nil {
+			return target, err
+		}
 		if err := tx.Model(&projection_model.ContactRedirect{}).
 			Where("instance_id = ? AND canonical_contact_id IN ?", target.InstanceID, losingIDs).
 			Updates(map[string]any{"canonical_contact_id": target.ContactID, "updated_at": now}).Error; err != nil {

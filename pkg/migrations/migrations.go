@@ -1530,6 +1530,144 @@ UPDATE projection_states
 SET schema_version = 2, updated_at = NOW()
 WHERE resource = 'chats' AND schema_version < 2;`,
 	},
+	{
+		Version: 37,
+		Name:    "add_canonical_conversation_foundation",
+		SQL: `CREATE TABLE projected_conversations (
+    instance_id UUID NOT NULL,
+    conversation_id UUID NOT NULL,
+    contact_id UUID NULL,
+    conversation_type VARCHAR(32) NOT NULL,
+    addressing_jid VARCHAR(255) NULL,
+    display_name TEXT NULL,
+    display_name_source VARCHAR(32) NULL,
+    display_name_updated_at TIMESTAMPTZ NULL,
+    last_message_id VARCHAR(255) NULL,
+    last_message_at TIMESTAMPTZ NULL,
+    last_activity_at TIMESTAMPTZ NULL,
+    unread_count INTEGER NOT NULL DEFAULT 0,
+    unread_authoritative BOOLEAN NOT NULL DEFAULT FALSE,
+    archived BOOLEAN NULL,
+    pinned BOOLEAN NULL,
+    muted_until TIMESTAMPTZ NULL,
+    disappearing_timer BIGINT NULL,
+    field_versions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    tombstoned_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, conversation_id),
+    CONSTRAINT projected_conversations_instance_fk
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT projected_conversations_contact_fk
+        FOREIGN KEY (instance_id, contact_id)
+        REFERENCES projected_contacts(instance_id, contact_id) ON DELETE RESTRICT,
+    CONSTRAINT projected_conversations_type_check
+        CHECK (conversation_type IN ('direct', 'group', 'newsletter', 'broadcast', 'unknown')),
+    CONSTRAINT projected_conversations_unread_count_check CHECK (unread_count >= 0),
+    CONSTRAINT projected_conversations_timer_check
+        CHECK (disappearing_timer IS NULL OR disappearing_timer >= 0)
+);
+
+CREATE UNIQUE INDEX projected_conversations_direct_contact_idx
+ON projected_conversations (instance_id, contact_id)
+WHERE conversation_type = 'direct' AND contact_id IS NOT NULL AND tombstoned_at IS NULL;
+CREATE INDEX projected_conversations_list_idx
+ON projected_conversations (instance_id, last_activity_at DESC NULLS LAST, conversation_id DESC)
+WHERE tombstoned_at IS NULL;
+
+ALTER TABLE projected_chats
+    ADD COLUMN conversation_id UUID NULL,
+    ADD CONSTRAINT projected_chats_conversation_fk
+        FOREIGN KEY (instance_id, conversation_id)
+        REFERENCES projected_conversations(instance_id, conversation_id) ON DELETE RESTRICT;
+
+ALTER TABLE projected_messages
+    ADD COLUMN conversation_id UUID NULL,
+    ADD CONSTRAINT projected_messages_conversation_fk
+        FOREIGN KEY (instance_id, conversation_id)
+        REFERENCES projected_conversations(instance_id, conversation_id) ON DELETE RESTRICT;
+
+CREATE INDEX projected_messages_conversation_history_idx
+ON projected_messages (instance_id, conversation_id, provider_timestamp DESC, message_id DESC)
+WHERE conversation_id IS NOT NULL AND deleted_at IS NULL;
+
+CREATE TABLE projected_chat_aliases (
+    instance_id UUID NOT NULL,
+    chat_id VARCHAR(255) NOT NULL,
+    conversation_id UUID NOT NULL,
+    alias_kind VARCHAR(32) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, chat_id),
+    CONSTRAINT projected_chat_aliases_chat_fk
+        FOREIGN KEY (instance_id, chat_id)
+        REFERENCES projected_chats(instance_id, chat_id) ON DELETE CASCADE,
+    CONSTRAINT projected_chat_aliases_conversation_fk
+        FOREIGN KEY (instance_id, conversation_id)
+        REFERENCES projected_conversations(instance_id, conversation_id) ON DELETE RESTRICT,
+    CONSTRAINT projected_chat_aliases_kind_check
+        CHECK (alias_kind IN ('phone_jid', 'lid', 'group', 'newsletter', 'broadcast', 'unknown'))
+);
+
+CREATE INDEX projected_chat_aliases_conversation_idx
+ON projected_chat_aliases (instance_id, conversation_id, chat_id);
+
+CREATE TABLE projected_conversation_redirects (
+    instance_id UUID NOT NULL,
+    absorbed_conversation_id UUID NOT NULL,
+    canonical_conversation_id UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, absorbed_conversation_id),
+    CONSTRAINT projected_conversation_redirects_distinct_check
+        CHECK (absorbed_conversation_id <> canonical_conversation_id),
+    CONSTRAINT projected_conversation_redirects_instance_fk
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT projected_conversation_redirects_canonical_fk
+        FOREIGN KEY (instance_id, canonical_conversation_id)
+        REFERENCES projected_conversations(instance_id, conversation_id) ON DELETE RESTRICT
+);
+
+CREATE INDEX projected_conversation_redirects_canonical_idx
+ON projected_conversation_redirects (instance_id, canonical_conversation_id);
+
+CREATE TABLE projected_conversation_backfills (
+    instance_id UUID PRIMARY KEY,
+    version SMALLINT NOT NULL DEFAULT 1,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    cursor_chat_id VARCHAR(255) NULL,
+    lease_owner UUID NULL,
+    lease_expires_at TIMESTAMPTZ NULL,
+    scanned_count BIGINT NOT NULL DEFAULT 0,
+    associated_count BIGINT NOT NULL DEFAULT 0,
+    absorbed_count BIGINT NOT NULL DEFAULT 0,
+    message_count BIGINT NOT NULL DEFAULT 0,
+    conflict_count BIGINT NOT NULL DEFAULT 0,
+    failure_count BIGINT NOT NULL DEFAULT 0,
+    last_error_code VARCHAR(64) NULL,
+    completed_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT projected_conversation_backfills_instance_fk
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT projected_conversation_backfills_status_check
+        CHECK (status IN ('pending', 'running', 'failed', 'complete')),
+    CONSTRAINT projected_conversation_backfills_version_check CHECK (version > 0),
+    CONSTRAINT projected_conversation_backfills_counts_check CHECK (
+        scanned_count >= 0 AND associated_count >= 0 AND absorbed_count >= 0
+        AND message_count >= 0 AND conflict_count >= 0 AND failure_count >= 0
+    ),
+    CONSTRAINT projected_conversation_backfills_lease_check CHECK (
+        (lease_owner IS NULL AND lease_expires_at IS NULL)
+        OR (lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL)
+    )
+);
+
+CREATE INDEX projected_conversation_backfills_work_idx
+ON projected_conversation_backfills (status, lease_expires_at, instance_id)
+WHERE status <> 'complete';`,
+	},
 }
 
 func Run(db *gorm.DB) error {

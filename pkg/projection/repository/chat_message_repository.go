@@ -127,7 +127,7 @@ func (r *chatMessageRepository) ApplyChat(ctx context.Context, incoming *project
 			applied = true
 		}
 		if !applied {
-			return nil
+			return ensureChatConversation(tx, &stored, now)
 		}
 		if projectionVersionLess(projectionFieldVersion{OccurredAt: stored.SourceOccurredAt, EventKey: stored.SourceEventKey}, version) {
 			stored.SourceOccurredAt = incoming.SourceOccurredAt
@@ -139,9 +139,13 @@ func (r *chatMessageRepository) ApplyChat(ctx context.Context, incoming *project
 			return fmt.Errorf("encode chat field versions: %w", err)
 		}
 		if created {
-			return tx.Create(&stored).Error
+			if err := tx.Create(&stored).Error; err != nil {
+				return err
+			}
+		} else if err := tx.Save(&stored).Error; err != nil {
+			return err
 		}
-		return tx.Save(&stored).Error
+		return ensureChatConversation(tx, &stored, now)
 	})
 	if err != nil {
 		return false, fmt.Errorf("apply chat projection: %w", err)
@@ -250,6 +254,9 @@ func (r *chatMessageRepository) ApplyMessage(ctx context.Context, incoming *proj
 		}
 		if !applied {
 			return nil
+		}
+		if err := associateMessageConversation(tx, &stored); err != nil {
+			return err
 		}
 		if projectionVersionLess(projectionFieldVersion{OccurredAt: stored.SourceOccurredAt, EventKey: stored.SourceEventKey}, version) {
 			stored.SourceOccurredAt = incoming.SourceOccurredAt

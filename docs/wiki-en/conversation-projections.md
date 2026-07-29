@@ -65,6 +65,31 @@ Chats are ready at their current schema versions and the instance's local LID
 reconciliation checkpoint is complete. Clients must not infer canonical
 identity support from `contacts_projection` alone.
 
+## Canonical conversation shadow rollout
+
+Migration 37 adds an internal canonical-conversation identity, provider-chat
+alias mapping, redirects, nullable Chat/Message associations, and a resumable
+backfill checkpoint. Projection writes maintain these rows transactionally,
+but the foundation does not change the public Chat DTO, legacy list total, or
+legacy cursor scope.
+
+Only direct Chats that already reference the same canonical Contact may share
+the shadow conversation. Partial direct identities remain isolated. Group,
+newsletter, broadcast, and unknown Chats remain isolated by type and provider
+chat ID. No name, phone-text, timestamp, or content heuristic participates in
+the mapping.
+
+The shadow aggregate marks unread state non-authoritative. Operators and
+clients must not expose it, group legacy Chat rows, or infer canonical Chat
+support from the presence of migration 37. The follow-up backfill/readiness
+rollout will advertise a separate `canonical_chat_identity` capability only
+after all aliases and retained messages are associated, unread is
+authoritative, redirects validate, and Contacts/Chats/Messages are ready.
+
+Rollback before that capability is advertised uses the previous binary and
+leaves the additive nullable columns/tables unused. Do not drop the shadow
+schema while any new binary may write it.
+
 ## Projected message field contract
 
 Every message returned by `GET /chat/{chatId}/messages` and

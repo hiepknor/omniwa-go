@@ -84,6 +84,11 @@ func TestContactMergeKeepsPermanentFlattenedRedirectsAndChatReferences(t *testin
 	}, ChatAspectIdentity); err != nil {
 		t.Fatal(err)
 	}
+	initialChat, err := chatRepository.GetChat(context.Background(), instances[0].Id, "direct-chat")
+	if err != nil || initialChat.ConversationID == nil {
+		t.Fatalf("initial canonical conversation = %#v, %v", initialChat, err)
+	}
+	initialConversationID := *initialChat.ConversationID
 
 	if _, _, err = repository.Apply(context.Background(), ContactPatch{
 		InstanceID: instances[0].Id,
@@ -140,8 +145,22 @@ func TestContactMergeKeepsPermanentFlattenedRedirectsAndChatReferences(t *testin
 		}
 	}
 	chat, err := chatRepository.GetChat(context.Background(), instances[0].Id, "direct-chat")
-	if err != nil || chat.ContactID == nil || *chat.ContactID != current.ContactID {
+	if err != nil || chat.ContactID == nil || *chat.ContactID != current.ContactID || chat.ConversationID == nil || *chat.ConversationID == initialConversationID {
 		t.Fatalf("chat contact reference = %#v, %v", chat, err)
+	}
+	var alias projection_model.ChatAlias
+	if err = db.Where("instance_id = ? AND chat_id = ?", instances[0].Id, chat.ChatID).First(&alias).Error; err != nil || alias.ConversationID != *chat.ConversationID {
+		t.Fatalf("canonical chat alias = %#v, %v", alias, err)
+	}
+	var canonicalConversation projection_model.Conversation
+	if err = db.Where("instance_id = ? AND conversation_id = ?", instances[0].Id, *chat.ConversationID).First(&canonicalConversation).Error; err != nil ||
+		canonicalConversation.ContactID == nil || *canonicalConversation.ContactID != current.ContactID || canonicalConversation.TombstonedAt != nil {
+		t.Fatalf("canonical conversation = %#v, %v", canonicalConversation, err)
+	}
+	var conversationRedirects int64
+	if err = db.Model(&projection_model.ConversationRedirect{}).
+		Where("instance_id = ? AND canonical_conversation_id = ?", instances[0].Id, *chat.ConversationID).Count(&conversationRedirects).Error; err != nil || conversationRedirects < 1 {
+		t.Fatalf("conversation redirects = %d, %v", conversationRedirects, err)
 	}
 	validationRepository := NewContactIdentityBackfillRepository(db)
 	if validation, validateErr := validationRepository.Validate(context.Background(), instances[0].Id); validateErr != nil || !validation.Valid() {

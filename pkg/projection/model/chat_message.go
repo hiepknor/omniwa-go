@@ -34,6 +34,7 @@ const (
 type Chat struct {
 	InstanceID           string          `json:"instanceId" gorm:"column:instance_id;type:uuid;primaryKey"`
 	ChatID               string          `json:"chatId" gorm:"column:chat_id;size:255;primaryKey"`
+	ConversationID       *string         `json:"-" gorm:"column:conversation_id;type:uuid"`
 	ContactID            *string         `json:"contactId,omitempty" gorm:"column:contact_id;type:uuid"`
 	Type                 ChatType        `json:"type" gorm:"column:chat_type;size:32;not null"`
 	DisplayName          *string         `json:"displayName,omitempty" gorm:"column:display_name"`
@@ -62,6 +63,7 @@ type ProjectedMessage struct {
 	InstanceID         string            `json:"instanceId" gorm:"column:instance_id;type:uuid;primaryKey"`
 	MessageID          string            `json:"messageId" gorm:"column:message_id;size:255;primaryKey"`
 	ChatID             string            `json:"chatId" gorm:"column:chat_id;size:255;not null"`
+	ConversationID     *string           `json:"-" gorm:"column:conversation_id;type:uuid"`
 	SenderJID          *string           `json:"senderJid,omitempty" gorm:"column:sender_jid;size:255"`
 	RecipientJID       *string           `json:"recipientJid,omitempty" gorm:"column:recipient_jid;size:255"`
 	ParticipantJID     *string           `json:"participantJid,omitempty" gorm:"column:participant_jid;size:255"`
