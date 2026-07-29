@@ -60,6 +60,16 @@ migration 38 before enabling `WA_CANONICAL_CHAT_IDENTITY_ENABLED`. Keep
 `CONVERSATION_BACKFILL_BATCH` and `CONVERSATION_BACKFILL_MAX_BATCHES`, and obtain
 a valid RECENT or FULL HistorySync after deploying Messages schema version 3.
 
+HistorySync unread snapshots are chunk-scoped: each chunk has its own internal
+sync identity. A RECENT/FULL completion barrier reconciles every outstanding
+snapshot for the instance, not only the final chunk. Snapshot metadata uses
+durable ingestion ordering while message classification is fenced by provider
+activity time, so later live messages and read receipts cannot be overwritten by
+an older provider snapshot. Completed conversation backfills repeat this
+idempotent reconciliation on reconnect to recover instances upgraded from older
+binaries. INITIAL_BOOTSTRAP chat metadata is not treated as an authoritative
+message-level unread snapshot.
+
 Do not accept process liveness as readiness. Verify migrations 34 through 38,
 the Contact and conversation backfill checkpoints, Chats/Contacts/Messages
 projection states, and an instance-targeted `/server/capabilities` response.

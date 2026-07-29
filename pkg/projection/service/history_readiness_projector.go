@@ -18,7 +18,7 @@ type HistoryReadinessProjector struct {
 	state     historyReadinessState
 	readiness projectionReadinessBarrier
 	unread    interface {
-		ReconcileUnreadSnapshot(context.Context, string, string) error
+		ReconcileUnreadSnapshots(context.Context, string) error
 	}
 }
 
@@ -27,7 +27,7 @@ func NewHistoryReadinessProjector(state historyReadinessState, readiness project
 }
 
 func (p *HistoryReadinessProjector) WithCanonicalUnread(repository interface {
-	ReconcileUnreadSnapshot(context.Context, string, string) error
+	ReconcileUnreadSnapshots(context.Context, string) error
 }) *HistoryReadinessProjector {
 	p.unread = repository
 	return p
@@ -62,7 +62,7 @@ func (p *HistoryReadinessProjector) Handle(ctx context.Context, event *projectio
 	}
 	if payload.MessagesReady {
 		if p.unread != nil {
-			if err := p.unread.ReconcileUnreadSnapshot(ctx, event.InstanceID, *payload.HistorySyncID); err != nil {
+			if err := p.unread.ReconcileUnreadSnapshots(ctx, event.InstanceID); err != nil {
 				return err
 			}
 		}

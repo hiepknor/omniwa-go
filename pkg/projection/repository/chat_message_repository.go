@@ -19,10 +19,11 @@ const maxProjectionPageSize = 200
 type ChatAspect string
 
 const (
-	ChatAspectIdentity ChatAspect = "identity"
-	ChatAspectActivity ChatAspect = "activity"
-	ChatAspectSettings ChatAspect = "settings"
-	ChatAspectDeletion ChatAspect = "deletion"
+	ChatAspectIdentity       ChatAspect = "identity"
+	ChatAspectActivity       ChatAspect = "activity"
+	ChatAspectSettings       ChatAspect = "settings"
+	ChatAspectUnreadSnapshot ChatAspect = "unreadSnapshot"
+	ChatAspectDeletion       ChatAspect = "deletion"
 )
 
 type MessageAspect string
@@ -78,7 +79,7 @@ type ChatMessageRepository interface {
 	ApplyMessage(context.Context, *projection_model.ProjectedMessage, ...MessageAspect) (bool, error)
 	ApplyReceipt(context.Context, *projection_model.MessageReceipt) (bool, error)
 	MarkMessageRead(context.Context, string, string, time.Time) (bool, error)
-	ReconcileUnreadSnapshot(context.Context, string, string) error
+	ReconcileUnreadSnapshots(context.Context, string) error
 	GetChat(context.Context, string, string) (*projection_model.Chat, error)
 	ListChats(context.Context, string, int, *ChatCursor) (*ChatPage, error)
 	GetMessage(context.Context, string, string) (*projection_model.ProjectedMessage, error)
@@ -400,12 +401,14 @@ func (r *chatMessageRepository) MarkMessageRead(ctx context.Context, instanceID,
 	return changed, err
 }
 
-// ReconcileUnreadSnapshot converts provider chat unread snapshots into
-// message-level state only when every unread message is retained locally.
-// Insufficient history is recorded as non-authoritative and never guessed.
-func (r *chatMessageRepository) ReconcileUnreadSnapshot(ctx context.Context, instanceID, syncID string) error {
-	if r == nil || r.db == nil || ctx == nil || instanceID == "" || syncID == "" {
-		return errors.New("unread snapshot instance and sync identity are required")
+// ReconcileUnreadSnapshots converts every retained provider chat snapshot into
+// message-level state after a RECENT/FULL completion barrier. History sync IDs
+// identify individual chunks, so limiting reconciliation to the final chunk
+// would leave earlier chunks permanently non-authoritative. Newer live/receipt
+// unread versions always win over an older snapshot.
+func (r *chatMessageRepository) ReconcileUnreadSnapshots(ctx context.Context, instanceID string) error {
+	if r == nil || r.db == nil || ctx == nil || instanceID == "" {
+		return errors.New("unread snapshot instance identity is required")
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`WITH ranked AS (
@@ -415,29 +418,39 @@ func (r *chatMessageRepository) ReconcileUnreadSnapshot(ctx context.Context, ins
     JOIN projected_chats AS chats
       ON chats.instance_id = messages.instance_id AND chats.chat_id = messages.chat_id
     WHERE messages.instance_id = ? AND messages.deleted_at IS NULL
-      AND messages.direction = 'incoming' AND chats.unread_snapshot_sync_id = ?
+      AND messages.direction = 'incoming' AND chats.unread_snapshot_sync_id IS NOT NULL
+      AND chats.unread_authoritative = FALSE
       AND (chats.last_activity_at IS NULL OR messages.provider_timestamp <= chats.last_activity_at)
 ), eligible AS (
-    SELECT chats.chat_id, chats.unread_count, COALESCE(chats.last_activity_at, NOW()) AS version_at
+    SELECT chats.chat_id, chats.unread_count, chats.unread_snapshot_sync_id,
+           COALESCE(chats.last_activity_at, to_timestamp(0)) AS version_at
     FROM projected_chats AS chats
-    WHERE chats.instance_id = ? AND chats.unread_snapshot_sync_id = ?
+    WHERE chats.instance_id = ? AND chats.unread_snapshot_sync_id IS NOT NULL
+      AND chats.unread_authoritative = FALSE
       AND (SELECT COUNT(*) FROM ranked WHERE ranked.chat_id = chats.chat_id) >= chats.unread_count
 )
 UPDATE projected_messages AS messages
 SET is_unread = ranked.unread_rank <= eligible.unread_count,
     field_versions = jsonb_set(COALESCE(messages.field_versions, '{}'::jsonb), '{unread}',
-        jsonb_build_object('occurredAt', eligible.version_at, 'eventKey', 'zz:snapshot:' || ?), TRUE),
+        jsonb_build_object('occurredAt', eligible.version_at, 'eventKey', 'zz:snapshot:' || eligible.unread_snapshot_sync_id), TRUE),
     updated_at = NOW()
 FROM ranked JOIN eligible ON eligible.chat_id = ranked.chat_id
-WHERE messages.instance_id = ranked.instance_id AND messages.message_id = ranked.message_id`, instanceID, syncID, instanceID, syncID, syncID).Error; err != nil {
+WHERE messages.instance_id = ranked.instance_id AND messages.message_id = ranked.message_id
+  AND (
+    messages.field_versions->'unread' IS NULL
+    OR (messages.field_versions->'unread'->>'occurredAt')::timestamptz < eligible.version_at
+    OR ((messages.field_versions->'unread'->>'occurredAt')::timestamptz = eligible.version_at
+        AND COALESCE(messages.field_versions->'unread'->>'eventKey', '') < ('zz:snapshot:' || eligible.unread_snapshot_sync_id))
+  )`, instanceID, instanceID).Error; err != nil {
 			return err
 		}
 		if err := tx.Exec(`UPDATE projected_messages AS messages
 SET is_unread = FALSE, updated_at = NOW()
 FROM projected_chats AS chats
 WHERE messages.instance_id = ? AND chats.instance_id = messages.instance_id
-  AND chats.chat_id = messages.chat_id AND chats.unread_snapshot_sync_id = ?
-  AND messages.direction = 'outgoing' AND messages.deleted_at IS NULL`, instanceID, syncID).Error; err != nil {
+  AND chats.chat_id = messages.chat_id AND chats.unread_snapshot_sync_id IS NOT NULL
+  AND chats.unread_authoritative = FALSE
+  AND messages.direction = 'outgoing' AND messages.deleted_at IS NULL`, instanceID).Error; err != nil {
 			return err
 		}
 		if err := tx.Exec(`UPDATE projected_chats AS chats
@@ -447,13 +460,14 @@ SET unread_authoritative = (
       AND messages.direction = 'incoming' AND messages.deleted_at IS NULL
       AND (chats.last_activity_at IS NULL OR messages.provider_timestamp <= chats.last_activity_at)
 ) >= chats.unread_count, updated_at = NOW()
-WHERE chats.instance_id = ? AND chats.unread_snapshot_sync_id = ?`, instanceID, syncID).Error; err != nil {
+WHERE chats.instance_id = ? AND chats.unread_snapshot_sync_id IS NOT NULL
+  AND chats.unread_authoritative = FALSE`, instanceID).Error; err != nil {
 			return err
 		}
 		var conversationIDs []string
 		if err := tx.Table("projected_chat_aliases AS aliases").Distinct("aliases.conversation_id").
 			Joins("JOIN projected_chats AS chats ON chats.instance_id = aliases.instance_id AND chats.chat_id = aliases.chat_id").
-			Where("aliases.instance_id = ? AND chats.unread_snapshot_sync_id = ?", instanceID, syncID).Pluck("aliases.conversation_id", &conversationIDs).Error; err != nil {
+			Where("aliases.instance_id = ? AND chats.unread_snapshot_sync_id IS NOT NULL", instanceID).Pluck("aliases.conversation_id", &conversationIDs).Error; err != nil {
 			return err
 		}
 		for _, conversationID := range conversationIDs {
@@ -739,6 +753,7 @@ func applyChatAspect(stored, incoming *projection_model.Chat, aspect ChatAspect)
 	case ChatAspectSettings:
 		stored.UnreadCount, stored.Archived, stored.Pinned = incoming.UnreadCount, incoming.Archived, incoming.Pinned
 		stored.MutedUntil, stored.DisappearingTimer = incoming.MutedUntil, incoming.DisappearingTimer
+	case ChatAspectUnreadSnapshot:
 		stored.UnreadAuthoritative, stored.UnreadSnapshotSyncID = incoming.UnreadAuthoritative, incoming.UnreadSnapshotSyncID
 	case ChatAspectDeletion:
 		stored.TombstonedAt = incoming.TombstonedAt
@@ -810,7 +825,8 @@ func containsMessageAspect(aspects []MessageAspect, wanted MessageAspect) bool {
 func hasDuplicateOrInvalidChatAspects(aspects []ChatAspect) bool {
 	seen := make(map[ChatAspect]struct{}, len(aspects))
 	for _, aspect := range aspects {
-		if aspect != ChatAspectIdentity && aspect != ChatAspectActivity && aspect != ChatAspectSettings && aspect != ChatAspectDeletion {
+		if aspect != ChatAspectIdentity && aspect != ChatAspectActivity && aspect != ChatAspectSettings &&
+			aspect != ChatAspectUnreadSnapshot && aspect != ChatAspectDeletion {
 			return true
 		}
 		if _, exists := seen[aspect]; exists {

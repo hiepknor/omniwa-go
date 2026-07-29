@@ -479,7 +479,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	var conversationReconciler *projection_service.ConversationReconciler
 	if config.CanonicalChatIdentityEnabled {
-		conversationReconciler = projection_service.NewConversationReconciler(conversationBackfillRepository)
+		conversationReconciler = projection_service.NewConversationReconciler(conversationBackfillRepository).WithUnreadSnapshots(chatMessageProjectionRepository)
 	}
 	contactReader := projection_service.NewContactReader(contactProjectionRepository, projectionStateService)
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)

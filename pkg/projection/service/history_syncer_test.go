@@ -106,6 +106,13 @@ func TestHistorySyncerUsesConservativeReadinessAndMarksFailure(t *testing.T) {
 	if !completion.ChatsReady || completion.MessagesReady || state.states[messageResource] != nil {
 		t.Fatalf("bootstrap readiness = %#v states=%#v", completion, state.states)
 	}
+	var bootstrapChat messageEventPayload
+	if err := json.Unmarshal(bootstrapEvents.events[0].Payload, &bootstrapChat); err != nil {
+		t.Fatal(err)
+	}
+	if bootstrapChat.HistorySyncID != nil {
+		t.Fatalf("bootstrap chat unexpectedly carries authoritative unread snapshot: %#v", bootstrapChat)
+	}
 
 	failedState := newHistoryStateStub()
 	err := NewHistorySyncer(&captureHistoryEvents{}, failedState).Sync(context.Background(), "instance-a", testHistorySync(waHistorySync.HistorySync_RECENT, 50), func(types.JID, *waWeb.WebMessageInfo) (*events.Message, error) {

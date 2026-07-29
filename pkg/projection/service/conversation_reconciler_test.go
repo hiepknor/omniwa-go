@@ -23,6 +23,16 @@ type conversationBackfillStub struct {
 	failedCode   string
 }
 
+type unreadSnapshotStub struct {
+	instances []string
+	err       error
+}
+
+func (s *unreadSnapshotStub) ReconcileUnreadSnapshots(_ context.Context, instanceID string) error {
+	s.instances = append(s.instances, instanceID)
+	return s.err
+}
+
 func (s *conversationBackfillStub) ClaimBatch(context.Context, string, int, string, int, time.Time, time.Time) (*projection_repository.ConversationBackfillBatch, error) {
 	if s.claimError != nil {
 		return nil, s.claimError
@@ -88,6 +98,23 @@ func TestConversationReconcilerTreatsCompetingLeaseAsNoop(t *testing.T) {
 	result, err := NewConversationReconciler(repository).RunBounded(context.Background(), "instance-a", 10, 1)
 	if err != nil || !result.LeaseHeld || result.Complete || len(repository.commits) != 0 {
 		t.Fatalf("RunBounded() = %#v, %v", result, err)
+	}
+}
+
+func TestConversationReconcilerRecoversUnreadAfterCompletedBackfill(t *testing.T) {
+	repository := &conversationBackfillStub{}
+	unread := &unreadSnapshotStub{}
+	result, err := NewConversationReconciler(repository).WithUnreadSnapshots(unread).
+		RunBounded(context.Background(), "instance-a", 10, 1)
+	if err != nil || !result.Complete || len(unread.instances) != 1 || unread.instances[0] != "instance-a" {
+		t.Fatalf("RunBounded() = %#v, %v, unread=%#v", result, err, unread.instances)
+	}
+
+	unread.err = errors.New("snapshot unavailable")
+	result, err = NewConversationReconciler(repository).WithUnreadSnapshots(unread).
+		RunBounded(context.Background(), "instance-a", 10, 1)
+	if err == nil || result.Complete {
+		t.Fatalf("snapshot failure = %#v, %v", result, err)
 	}
 }
 

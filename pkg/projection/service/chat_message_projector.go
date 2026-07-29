@@ -117,23 +117,39 @@ func (p *ChatMessageProjector) applyHistoryChat(ctx context.Context, event *proj
 	if payload.ChatID == "" || payload.ChatID != event.EntityKey || payload.ChatType == "" {
 		return permanentProjectionFailure(errorCodeIncompletePayload)
 	}
+	observedAt := event.IngestedAt.UTC()
+	if observedAt.IsZero() {
+		observedAt = event.OccurredAt.UTC()
+	}
 	chat := &projection_model.Chat{
 		InstanceID: event.InstanceID, ChatID: payload.ChatID, Type: payload.ChatType, DisplayName: payload.DisplayName,
 		Archived: payload.Archived, Pinned: payload.Pinned, MutedUntil: payload.MutedUntil, DisappearingTimer: payload.DisappearingTimer,
 		UnreadSnapshotSyncID: payload.HistorySyncID,
-		SourceOccurredAt:     event.OccurredAt, SourceEventKey: event.EventKey,
+		SourceOccurredAt:     observedAt, SourceEventKey: event.EventKey,
 	}
 	if payload.UnreadCount != nil {
 		chat.UnreadCount = *payload.UnreadCount
 	}
-	aspects := []projection_repository.ChatAspect{projection_repository.ChatAspectIdentity, projection_repository.ChatAspectSettings}
+	aspects := []projection_repository.ChatAspect{
+		projection_repository.ChatAspectIdentity,
+		projection_repository.ChatAspectSettings,
+	}
+	if payload.HistorySyncID != nil {
+		aspects = append(aspects, projection_repository.ChatAspectUnreadSnapshot)
+	}
+	if _, err := p.repository.ApplyChat(ctx, chat, aspects...); err != nil {
+		return err
+	}
 	if payload.LastActivityAt != nil {
 		activityAt := payload.LastActivityAt.UTC()
-		chat.LastActivityAt = &activityAt
-		aspects = append(aspects, projection_repository.ChatAspectActivity)
+		activity := &projection_model.Chat{
+			InstanceID: event.InstanceID, ChatID: payload.ChatID, LastActivityAt: &activityAt,
+			SourceOccurredAt: event.OccurredAt, SourceEventKey: event.EventKey,
+		}
+		_, err := p.repository.ApplyChat(ctx, activity, projection_repository.ChatAspectActivity)
+		return err
 	}
-	_, err := p.repository.ApplyChat(ctx, chat, aspects...)
-	return err
+	return nil
 }
 
 func (p *ChatMessageProjector) applyReceipts(ctx context.Context, event *projection_model.Event, payload *messageEventPayload) error {
