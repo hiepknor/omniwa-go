@@ -2,6 +2,7 @@ package projection_service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -57,6 +58,35 @@ type captureChatMessageState struct{ records []projectionStateRecord }
 func (c *captureChatMessageState) RecordEvent(_ string, resource string, version int64, _ time.Time) error {
 	c.records = append(c.records, projectionStateRecord{resource: resource, version: version})
 	return nil
+}
+
+func TestChatMessageProjectorVersionsHistorySnapshotSeparatelyFromActivity(t *testing.T) {
+	activityAt := time.Unix(700, 0).UTC()
+	ingestedAt := time.Unix(900, 0).UTC()
+	syncID := "chunk-a"
+	unread := 1
+	payload, err := json.Marshal(messageEventPayload{
+		ChatID: "group@g.us", ChatType: projection_model.ChatTypeGroup,
+		UnreadCount: &unread, LastActivityAt: &activityAt, HistorySyncID: &syncID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := &projection_model.Event{
+		InstanceID: "instance-a", Resource: messageResource, EventType: "history_chat",
+		EventKey: "history-chat-a", EntityKey: "group@g.us", OccurredAt: activityAt, IngestedAt: ingestedAt, Payload: payload,
+	}
+	writes, state := &captureChatMessageWrites{}, &captureChatMessageState{}
+	if err := NewChatMessageProjector(writes, state).Handle(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if len(writes.chats) != 2 || len(writes.chatAspects[0]) != 3 ||
+		writes.chatAspects[0][2] != projection_repository.ChatAspectUnreadSnapshot ||
+		!writes.chats[0].SourceOccurredAt.Equal(ingestedAt) ||
+		len(writes.chatAspects[1]) != 1 || writes.chatAspects[1][0] != projection_repository.ChatAspectActivity ||
+		!writes.chats[1].SourceOccurredAt.Equal(activityAt) {
+		t.Fatalf("history chat writes = %#v aspects=%#v", writes.chats, writes.chatAspects)
+	}
 }
 
 func TestChatMessageProjectorAppliesMessageAndBothResourceStates(t *testing.T) {

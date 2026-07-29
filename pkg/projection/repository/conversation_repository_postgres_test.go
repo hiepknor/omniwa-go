@@ -3,6 +3,7 @@ package projection_repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -138,32 +139,35 @@ func TestCanonicalConversationAssociatesAuthoritativeAliasesConcurrently(t *test
 	if err != nil || storedMessage.ConversationID == nil || *storedMessage.ConversationID != conversationID {
 		t.Fatalf("canonical message association = %#v, %v", storedMessage, err)
 	}
-	syncID := "canonical-unread-sync"
-	for _, snapshot := range []struct {
+	for index, snapshot := range []struct {
 		chatID string
 		unread int
 	}{{phoneJID, 0}, {lid, 1}} {
+		syncID := fmt.Sprintf("canonical-unread-sync-%d", index)
 		chat := projection_model.Chat{
 			InstanceID: instances[0].Id, ChatID: snapshot.chatID, Type: projection_model.ChatTypeDirect,
 			UnreadCount: snapshot.unread, UnreadSnapshotSyncID: &syncID, LastActivityAt: &messageAt,
 			SourceOccurredAt: messageAt.Add(time.Second), SourceEventKey: "snapshot:" + snapshot.chatID,
 		}
-		if _, err = chatRepository.ApplyChat(context.Background(), &chat, ChatAspectIdentity, ChatAspectActivity, ChatAspectSettings); err != nil {
+		if _, err = chatRepository.ApplyChat(context.Background(), &chat, ChatAspectIdentity, ChatAspectActivity, ChatAspectSettings, ChatAspectUnreadSnapshot); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err = chatRepository.ReconcileUnreadSnapshot(context.Background(), instances[0].Id, syncID); err != nil {
+	if err = chatRepository.ReconcileUnreadSnapshots(context.Background(), instances[0].Id); err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Where("instance_id = ? AND conversation_id = ?", instances[0].Id, conversationID).First(&conversation).Error; err != nil ||
 		!conversation.UnreadAuthoritative || conversation.UnreadCount != 1 {
 		t.Fatalf("authoritative canonical unread = %#v, %v", conversation, err)
 	}
-	if err = chatRepository.ReconcileUnreadSnapshot(context.Background(), instances[0].Id, syncID); err != nil {
+	if err = chatRepository.ReconcileUnreadSnapshots(context.Background(), instances[0].Id); err != nil {
 		t.Fatal(err)
 	}
 	if changed, markErr := chatRepository.MarkMessageRead(context.Background(), instances[0].Id, message.MessageID, messageAt.Add(2*time.Second)); markErr != nil || !changed {
 		t.Fatalf("mark canonical message read: changed=%v err=%v", changed, markErr)
+	}
+	if err = chatRepository.ReconcileUnreadSnapshots(context.Background(), instances[0].Id); err != nil {
+		t.Fatal(err)
 	}
 	unread := true
 	lateLive := message

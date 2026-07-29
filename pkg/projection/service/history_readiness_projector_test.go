@@ -19,12 +19,11 @@ func (c *captureHistoryReadyState) MarkReady(_ string, resource string, _ int64,
 
 type captureUnreadSnapshot struct {
 	instanceID string
-	syncID     string
 	err        error
 }
 
-func (c *captureUnreadSnapshot) ReconcileUnreadSnapshot(_ context.Context, instanceID, syncID string) error {
-	c.instanceID, c.syncID = instanceID, syncID
+func (c *captureUnreadSnapshot) ReconcileUnreadSnapshots(_ context.Context, instanceID string) error {
+	c.instanceID = instanceID
 	return c.err
 }
 
@@ -54,7 +53,7 @@ func TestHistoryReadinessWaitsForFanoutAndMarksResourcesIndependently(t *testing
 	if len(state.resources) != 2 || state.resources[0] != "chats" || state.resources[1] != messageResource {
 		t.Fatalf("ready resources = %#v", state.resources)
 	}
-	if unread.instanceID != "instance-a" || unread.syncID != syncID {
+	if unread.instanceID != "instance-a" {
 		t.Fatalf("unread snapshot = %#v", unread)
 	}
 	state.resources = nil

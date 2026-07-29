@@ -30,7 +30,10 @@ type ConversationBackfillResult struct {
 
 type ConversationReconciler struct {
 	backfill projection_repository.ConversationBackfillRepository
-	now      func() time.Time
+	unread   interface {
+		ReconcileUnreadSnapshots(context.Context, string) error
+	}
+	now func() time.Time
 }
 
 type contactBackfillStateReader interface {
@@ -79,6 +82,22 @@ func NewConversationReconciler(backfill projection_repository.ConversationBackfi
 	return &ConversationReconciler{backfill: backfill, now: time.Now}
 }
 
+// WithUnreadSnapshots adds an idempotent recovery pass for instances whose
+// structural backfill completed before all history sync chunks were reconciled.
+func (r *ConversationReconciler) WithUnreadSnapshots(repository interface {
+	ReconcileUnreadSnapshots(context.Context, string) error
+}) *ConversationReconciler {
+	r.unread = repository
+	return r
+}
+
+func (r *ConversationReconciler) reconcileUnread(ctx context.Context, instanceID string) error {
+	if r.unread == nil {
+		return nil
+	}
+	return r.unread.ReconcileUnreadSnapshots(ctx, instanceID)
+}
+
 func (r *ConversationReconciler) RunBounded(
 	ctx context.Context,
 	instanceID string,
@@ -101,6 +120,9 @@ func (r *ConversationReconciler) RunBounded(
 			return result, err
 		}
 		if batch.AlreadyComplete {
+			if err := r.reconcileUnread(ctx, instanceID); err != nil {
+				return result, fmt.Errorf("reconcile canonical conversation unread snapshots: %w", err)
+			}
 			result.Complete = true
 			return result, nil
 		}
@@ -136,6 +158,9 @@ func (r *ConversationReconciler) RunBounded(
 		result.Messages += counts.Messages
 		result.Conflicts += counts.Conflicts
 		if batch.Complete {
+			if err := r.reconcileUnread(ctx, instanceID); err != nil {
+				return result, fmt.Errorf("reconcile canonical conversation unread snapshots: %w", err)
+			}
 			result.Complete = true
 			return result, nil
 		}

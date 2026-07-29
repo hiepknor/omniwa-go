@@ -101,7 +101,7 @@ func (s *HistorySyncer) Sync(ctx context.Context, instanceID string, raw *events
 	}
 	syncID := historySyncIdentity(raw.Data)
 	for conversationIndex, conversation := range raw.Data.GetConversations() {
-		if err := s.ingestConversation(ctx, instanceID, syncID, conversationIndex, conversation, parser); err != nil {
+		if err := s.ingestConversation(ctx, instanceID, syncID, syncType, conversationIndex, conversation, parser); err != nil {
 			return s.fail(instanceID, resources, err)
 		}
 	}
@@ -114,7 +114,7 @@ func (s *HistorySyncer) Sync(ctx context.Context, instanceID string, raw *events
 	return nil
 }
 
-func (s *HistorySyncer) ingestConversation(ctx context.Context, instanceID, syncID string, conversationIndex int, conversation *waHistorySync.Conversation, parser HistoryMessageParser) error {
+func (s *HistorySyncer) ingestConversation(ctx context.Context, instanceID, syncID string, syncType waHistorySync.HistorySync_HistorySyncType, conversationIndex int, conversation *waHistorySync.Conversation, parser HistoryMessageParser) error {
 	if conversation == nil || conversation.GetID() == "" {
 		return newHistorySyncFailure("conversation", "history_sync_conversation_identity_missing", conversationIndex, -1, nil)
 	}
@@ -136,7 +136,12 @@ func (s *HistorySyncer) ingestConversation(ctx context.Context, instanceID, sync
 	payload := messageEventPayload{
 		ChatID: chatJID.ToNonAD().String(), ChatType: projectedChatType(chatJID), DisplayName: boundedTextPointer(name, 4096),
 		UnreadCount: &unread, Archived: conversation.Archived, Pinned: pinned,
-		DisappearingTimer: conversation.EphemeralExpiration, LastActivityAt: lastActivityAt, HistorySyncID: &syncID,
+		DisappearingTimer: conversation.EphemeralExpiration, LastActivityAt: lastActivityAt,
+	}
+	// INITIAL_BOOTSTRAP completes chats but not message history. Only RECENT/FULL
+	// snapshots may participate in authoritative message-level unread recovery.
+	if historySyncCompletesMessages(syncType) {
+		payload.HistorySyncID = &syncID
 	}
 	if conversation.MuteEndTime != nil && conversation.GetMuteEndTime() > 0 && conversation.GetMuteEndTime() <= math.MaxInt64 {
 		mutedUntil := time.Unix(int64(conversation.GetMuteEndTime()), 0).UTC()
