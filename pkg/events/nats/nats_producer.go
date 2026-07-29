@@ -1,6 +1,8 @@
 package nats_producer
 
 import (
+	"strings"
+
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/gomessguii/logger"
@@ -20,7 +22,26 @@ func NewNatsProducer(
 	natsGlobalEvents []string,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) producer_interfaces.Producer {
-	conn, err := nats.Connect(url)
+	return newNatsProducer(url, natsGlobalEnabled, natsGlobalEvents, loggerWrapper, nats.Connect)
+}
+
+func newNatsProducer(
+	url string,
+	natsGlobalEnabled bool,
+	natsGlobalEvents []string,
+	loggerWrapper *logger_wrapper.LoggerManager,
+	connect func(string, ...nats.Option) (*nats.Conn, error),
+) producer_interfaces.Producer {
+	if strings.TrimSpace(url) == "" {
+		return &natsProducer{
+			conn:              nil,
+			natsGlobalEnabled: false,
+			natsGlobalEvents:  nil,
+			loggerWrapper:     loggerWrapper,
+		}
+	}
+
+	conn, err := connect(url)
 	if err != nil {
 		logger.LogError("Failed to connect to NATS: %v", err)
 		return &natsProducer{
