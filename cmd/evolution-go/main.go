@@ -333,6 +333,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	var projectionStateOptions []projection_service.StateServiceOption
 	contactIdentityBackfillRepository := projection_repository.NewContactIdentityBackfillRepository(db)
+	conversationBackfillRepository := projection_repository.NewConversationBackfillRepository(db)
+	canonicalChatReadiness := projection_service.NewCanonicalChatReadiness(contactIdentityBackfillRepository, conversationBackfillRepository)
 	groupCampaignsEnabled := config.GroupListsEnabled && config.CampaignGroupTargetsEnabled
 	if config.CampaignImageContentEnabled && !groupCampaignsEnabled {
 		logger.LogFatal("component=campaign_media action=initialize result=failed error=group_campaign_targets_required")
@@ -387,6 +389,13 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			},
 		))
 	}
+	if config.CanonicalChatIdentityEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
+			projection_service.CapabilityCanonicalChatIdentity,
+			[]string{"contacts", "chats", "messages"},
+			canonicalChatReadiness.Ready,
+		))
+	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(
 		projection_repository.NewStateRepository(db),
 		projection_repository.NewWorkHealthRepository(db),
@@ -439,6 +448,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		contactIdentityReconciler = projection_service.NewContactIdentityReconciler(
 			contactIdentityBackfillRepository, contactProjectionRepository,
 		)
+	}
+	var conversationReconciler *projection_service.ConversationReconciler
+	if config.CanonicalChatIdentityEnabled {
+		conversationReconciler = projection_service.NewConversationReconciler(conversationBackfillRepository)
 	}
 	contactReader := projection_service.NewContactReader(contactProjectionRepository, projectionStateService)
 	labelSyncer := projection_service.NewLabelSyncer(queryGuard, projectionStateService)
@@ -565,6 +578,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		labelSyncer,
 		contactSyncer,
 		contactIdentityReconciler,
+		conversationReconciler,
 		historySyncer,
 		durableEventService,
 		appCtx,

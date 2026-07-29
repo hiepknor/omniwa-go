@@ -152,6 +152,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.ContactIdentityReconciliationEnabled || config.ContactIdentityBackfillBatch != 100 || config.ContactIdentityBackfillMaxBatches != 10 {
 		t.Fatalf("contact identity reconciliation defaults are invalid")
 	}
+	if config.CanonicalChatIdentityEnabled || config.ConversationBackfillBatch != 100 || config.ConversationBackfillMaxBatches != 10 {
+		t.Fatalf("canonical chat identity defaults are invalid")
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -222,6 +225,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED, "true")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH, "25")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES, "4")
+	t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "true")
+	t.Setenv(config_env.CONVERSATION_BACKFILL_BATCH, "20")
+	t.Setenv(config_env.CONVERSATION_BACKFILL_MAX_BATCHES, "3")
 
 	config := Load()
 	if config.RemoteMedia.Policy != "allowlist" || config.RemoteMedia.Timeout != 3*time.Second || config.RemoteMedia.MaxBytes != 4096 || len(config.RemoteMedia.AllowedHosts) != 2 {
@@ -285,6 +291,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if !config.ContactIdentityReconciliationEnabled || config.ContactIdentityBackfillBatch != 25 || config.ContactIdentityBackfillMaxBatches != 4 {
 		t.Fatalf("contact identity reconciliation overrides are invalid")
+	}
+	if !config.CanonicalChatIdentityEnabled || config.ConversationBackfillBatch != 20 || config.ConversationBackfillMaxBatches != 3 {
+		t.Fatalf("canonical chat identity overrides are invalid")
 	}
 }
 

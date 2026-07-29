@@ -128,6 +128,9 @@ type Config struct {
 	ContactIdentityReconciliationEnabled bool
 	ContactIdentityBackfillBatch         int
 	ContactIdentityBackfillMaxBatches    int
+	CanonicalChatIdentityEnabled         bool
+	ConversationBackfillBatch            int
+	ConversationBackfillMaxBatches       int
 }
 
 type RemoteMediaConfig struct {
@@ -337,6 +340,18 @@ func Load() *Config {
 	contactIdentityBackfillMaxBatches, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES), "10"))
 	if err != nil || contactIdentityBackfillMaxBatches > 1000 {
 		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES)
+	}
+	canonicalChatIdentityEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED)), "true")
+	conversationBackfillBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.CONVERSATION_BACKFILL_BATCH), "100"))
+	if err != nil || conversationBackfillBatch > 1000 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.CONVERSATION_BACKFILL_BATCH)
+	}
+	conversationBackfillMaxBatches, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.CONVERSATION_BACKFILL_MAX_BATCHES), "10"))
+	if err != nil || conversationBackfillMaxBatches > 1000 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.CONVERSATION_BACKFILL_MAX_BATCHES)
+	}
+	if canonicalChatIdentityEnabled && !contactIdentityReconciliationEnabled {
+		logger.LogFatal("[CONFIG] %s requires %s=true", config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED)
 	}
 
 	clientName := os.Getenv(config_env.CLIENT_NAME)
@@ -867,6 +882,9 @@ func Load() *Config {
 		ContactIdentityReconciliationEnabled: contactIdentityReconciliationEnabled,
 		ContactIdentityBackfillBatch:         contactIdentityBackfillBatch,
 		ContactIdentityBackfillMaxBatches:    contactIdentityBackfillMaxBatches,
+		CanonicalChatIdentityEnabled:         canonicalChatIdentityEnabled,
+		ConversationBackfillBatch:            conversationBackfillBatch,
+		ConversationBackfillMaxBatches:       conversationBackfillMaxBatches,
 	}
 
 	minioEnabled := os.Getenv(config_env.MINIO_ENABLED) == "true"

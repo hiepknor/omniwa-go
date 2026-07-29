@@ -81,10 +81,30 @@ the mapping.
 
 The shadow aggregate marks unread state non-authoritative. Operators and
 clients must not expose it, group legacy Chat rows, or infer canonical Chat
-support from the presence of migration 37. The follow-up backfill/readiness
-rollout will advertise a separate `canonical_chat_identity` capability only
-after all aliases and retained messages are associated, unread is
-authoritative, redirects validate, and Contacts/Chats/Messages are ready.
+support from the presence of migration 37.
+
+Set `WA_CANONICAL_CHAT_IDENTITY_ENABLED=true` only after
+`WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED=true`. The worker scans active
+projected Chats in opaque provider-ID order, uses a two-minute lease, persists
+its cursor and counters, and can resume after a process restart. Live writes
+use the same entity locks and association transaction, so a Chat created below
+the persisted cursor is still associated without being rescanned. Batch size
+and bounded work per connection cycle are controlled by
+`CONVERSATION_BACKFILL_BATCH` and `CONVERSATION_BACKFILL_MAX_BATCHES`.
+
+Structural completion validates every active Chat alias and retained Message,
+redirect flattening, active-conversation ownership, and direct Contact
+agreement. It deliberately does not convert historical alias unread snapshots
+into an authoritative total. `canonical_chat_identity` is advertised per
+instance only when Contacts, Chats, and Messages are ready, both Contact and
+conversation checkpoints are complete, structural validation succeeds, and
+every active canonical conversation has authoritative unread state. Therefore
+the capability remains absent after structural backfill until the unread
+rollout establishes that invariant.
+
+Do not add or maximize unread counts from PN/LID alias rows: either operation
+can double-count or discard unread messages. Capability absence is the
+machine-readable mixed-rollout signal; clients must retain legacy Chat behavior.
 
 Rollback before that capability is advertised uses the previous binary and
 leaves the additive nullable columns/tables unused. Do not drop the shadow

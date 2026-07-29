@@ -30,6 +30,7 @@ const (
 	CapabilityGroupPhotoAssets           = "group_photo_assets"
 	CapabilityGroupSummary               = "group_summary"
 	CapabilityCanonicalContactIdentity   = "canonical_contact_identity"
+	CapabilityCanonicalChatIdentity      = "canonical_chat_identity"
 )
 
 var resourceCapabilities = map[string]string{

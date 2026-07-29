@@ -8698,6 +8698,7 @@ const docTemplate = `{
                         "contacts_projection",
                         "chats_projection",
                         "canonical_contact_identity",
+                        "canonical_chat_identity",
                         "group_lists",
                         "group_list_eligibility",
                         "campaign_group_targets",
