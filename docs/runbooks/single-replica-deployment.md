@@ -73,6 +73,10 @@ message-level unread snapshot.
 Do not accept process liveness as readiness. Verify migrations 34 through 38,
 the Contact and conversation backfill checkpoints, Chats/Contacts/Messages
 projection states, and an instance-targeted `/server/capabilities` response.
-Only the presence of `canonical_chat_identity` permits canonical Chat reads.
+New binaries advertise `canonical_conversation_identity` and the legacy
+`canonical_chat_identity` alias from the same readiness decision. Both must be
+present or absent together. Clients use `canonical_conversation_identity` for
+the `/conversations` contract and keep `canonical_chat_identity` only for mixed
+rollout compatibility. Do not derive either capability from the version string.
 Disable `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restart to return to legacy
 provider-Chat reads without deleting additive data.

@@ -238,6 +238,15 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/history-sync", r.chatHandler.HistorySyncRequest)
 		}
 	}
+	routes = eng.Group("/conversations")
+	{
+		routes.Use(r.authMiddleware.Auth)
+		{
+			routes.GET("", r.chatHandler.ListConversations)
+			routes.GET("/:conversationRef", r.chatHandler.GetConversation)
+			routes.GET("/:conversationRef/messages", r.chatHandler.ConversationMessages)
+		}
+	}
 	routes = eng.Group("/group")
 	{
 		routes.Use(r.authMiddleware.Auth)

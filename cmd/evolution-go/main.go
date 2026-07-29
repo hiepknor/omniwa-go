@@ -401,11 +401,16 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		))
 	}
 	if config.CanonicalChatIdentityEnabled {
-		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
+		for _, capability := range []string{
 			projection_service.CapabilityCanonicalChatIdentity,
-			[]string{"contacts", "chats", "messages"},
-			canonicalChatReadiness.Ready,
-		))
+			projection_service.CapabilityCanonicalConversationIdentity,
+		} {
+			projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
+				capability,
+				[]string{"contacts", "chats", "messages"},
+				canonicalChatReadiness.Ready,
+			))
+		}
 	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(
 		projection_repository.NewStateRepository(db),

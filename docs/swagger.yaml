@@ -72,6 +72,7 @@ definitions:
         - chats_projection
         - canonical_contact_identity
         - canonical_chat_identity
+        - canonical_conversation_identity
         - group_lists
         - group_list_eligibility
         - campaign_group_targets
@@ -2001,6 +2002,20 @@ definitions:
       status:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ConversationType:
+    enum:
+    - direct
+    - group
+    - newsletter
+    - broadcast
+    - unknown
+    type: string
+    x-enum-varnames:
+    - ConversationTypeDirect
+    - ConversationTypeGroup
+    - ConversationTypeNewsletter
+    - ConversationTypeBroadcast
+    - ConversationTypeUnknown
   github_com_evolution-foundation_evolution-go_pkg_projection_service.DurableEventHistoryItem:
     properties:
       id:
@@ -2158,6 +2173,136 @@ definitions:
     - chatId
     - type
     - unreadCount
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedConversation:
+    properties:
+      addressingJid:
+        type: string
+      aliases:
+        items:
+          type: string
+        type: array
+      archived:
+        type: boolean
+      contactId:
+        format: uuid
+        type: string
+      conversationId:
+        format: uuid
+        type: string
+      disappearingTimer:
+        type: integer
+      displayName:
+        type: string
+      displayNameSource:
+        enum:
+        - full_name
+        - business_name
+        - push_name
+        - first_name
+        - username
+        - provider_chat
+        - group_subject
+        - newsletter_name
+        - broadcast_name
+        type: string
+      displayNameUpdatedAt:
+        type: string
+      lastActivityAt:
+        type: string
+      lastMessageAt:
+        type: string
+      lastMessageId:
+        type: string
+      mutedUntil:
+        type: string
+      pinned:
+        type: boolean
+      type:
+        allOf:
+        - $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ConversationType'
+        enum:
+        - direct
+        - group
+        - newsletter
+        - broadcast
+        - unknown
+      unreadCount:
+        type: integer
+    required:
+    - conversationId
+    - type
+    - unreadCount
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedConversationMessage:
+    properties:
+      caption:
+        type: string
+      contentSummary:
+        type: string
+      contentText:
+        type: string
+      conversationId:
+        format: uuid
+        type: string
+      deliveredAt:
+        type: string
+      direction:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageDirection'
+      historySyncId:
+        type: string
+      mediaAssetId:
+        format: uuid
+        type: string
+      mediaDurationSeconds:
+        type: integer
+      mediaFileName:
+        type: string
+      mediaHeight:
+        type: integer
+      mediaMimeType:
+        type: string
+      mediaSize:
+        type: integer
+      mediaType:
+        type: string
+      mediaWidth:
+        type: integer
+      messageId:
+        type: string
+      messageType:
+        type: string
+      participantJid:
+        type: string
+      playedAt:
+        type: string
+      provenance:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_model.MessageProvenance'
+      providerChatId:
+        type: string
+      providerTimestamp:
+        type: string
+      quotedMessageId:
+        type: string
+      readAt:
+        type: string
+      recipientJid:
+        type: string
+      retentionExpiresAt:
+        type: string
+      senderJid:
+        type: string
+      sentAt:
+        type: string
+      status:
+        type: string
+    required:
+    - conversationId
+    - direction
+    - messageId
+    - messageType
+    - provenance
+    - providerTimestamp
     type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedMessage:
     properties:
@@ -10141,9 +10286,11 @@ paths:
       - Campaigns
   /chat/{chatId}/messages:
     get:
+      deprecated: true
       description: With canonical_chat_identity, resolves canonical or absorbed Chat
         IDs and returns deduplicated provider-message history across all aliases.
         Cursors are opaque and scoped to the canonical conversation.
+      operationId: listChatMessages
       parameters:
       - description: Canonical conversation UUID or provider Chat ID
         in: path
@@ -10264,10 +10411,12 @@ paths:
       - Chat
   /chat/info/{chatId}:
     get:
+      deprecated: true
       description: Return a projected chat with locally denormalized contact or type-specific
         display-name metadata. With canonical_chat_identity, chatId accepts a canonical
         conversation UUID or any absorbed provider Chat ID and the response contains
         the canonical conversationId.
+      operationId: getChat
       parameters:
       - description: Canonical conversation UUID or provider Chat ID
         in: path
@@ -10305,10 +10454,12 @@ paths:
       - Chat
   /chat/list:
     get:
+      deprecated: true
       description: Cursor-page projected chats without live reads. With canonical_chat_identity,
         direct aliases collapse to one conversation, meta.total counts canonical conversations,
         and cursors are conversation-scoped. Without it, legacy provider-chat rows
         and cursors are preserved.
+      operationId: listChats
       parameters:
       - description: Page size (1-200)
         in: query
@@ -10635,6 +10786,151 @@ paths:
       summary: Remove participant from community
       tags:
       - Community
+  /conversations:
+    get:
+      description: Cursor-page canonical conversations without live WhatsApp reads.
+        conversationId is the entity identity; addressingJid and aliases are provider-addressing
+        metadata. Requires canonical_conversation_identity readiness, and meta.total
+        counts canonical conversations.
+      operationId: listConversations
+      parameters:
+      - description: Page size (1-200)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque canonical-conversation cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedConversation'
+                  type: array
+              type: object
+        "400":
+          description: Invalid pagination or cursor
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Canonical conversation projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List canonical conversations
+      tags:
+      - Conversation
+  /conversations/{conversationRef}:
+    get:
+      description: conversationRef accepts a canonical conversation UUID, a current
+        or absorbed provider Chat ID alias, or an absorbed conversation UUID. The
+        response always normalizes identity to conversationId and never uses addressingJid
+        as entity identity.
+      operationId: getConversation
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider Chat ID
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedConversation'
+              type: object
+        "404":
+          description: Conversation not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Canonical conversation projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a canonical conversation
+      tags:
+      - Conversation
+  /conversations/{conversationRef}/messages:
+    get:
+      description: conversationRef accepts a canonical or absorbed identifier. Results
+        aggregate all authoritative provider Chat aliases and deduplicate by instance-scoped
+        provider message identity. conversationId is required; providerChatId is provenance
+        only. Cursors are opaque and scoped to the resolved canonical conversation.
+      operationId: listConversationMessages
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider Chat ID
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      - description: Page size (1-200)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque canonical-conversation message cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectedConversationMessage'
+                  type: array
+              type: object
+        "400":
+          description: Invalid pagination or cursor
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Conversation not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Canonical conversation projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List messages for a canonical conversation
+      tags:
+      - Conversation
   /events:
     get:
       parameters:

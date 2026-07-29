@@ -151,6 +151,37 @@ Rollback disables `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restarts the binary.
 This removes the capability and restores legacy reads without deleting the
 additive schema.
 
+### Canonical Conversation API
+
+The preferred public read contract is:
+
+- `GET /conversations`
+- `GET /conversations/{conversationRef}`
+- `GET /conversations/{conversationRef}/messages`
+
+Use these endpoints only when `canonical_conversation_identity` is advertised.
+The legacy `canonical_chat_identity` capability is emitted by the same readiness
+decision for compatibility, and the existing Chat reads remain available during
+the deprecation window. A new canonical-ready backend emits both capabilities or
+neither; clients must not infer either capability from the server version.
+
+`conversationRef` accepts a current canonical UUID, an absorbed Conversation
+UUID, or a current/absorbed provider Chat ID alias. Responses always contain the
+current canonical `conversationId`. `ProjectedConversation` uses `aliases` for
+provider lookup material and keeps `addressingJid` separate as the command
+target. The message response requires `conversationId` and exposes the arrival
+alias only as optional `providerChatId` provenance.
+
+Conversation list totals count canonical rows. Message history aggregates every
+authoritative alias and deduplicates by the instance-scoped provider message
+key. Version-2 cursors remain opaque and canonical-conversation scoped; legacy
+or cross-conversation cursors return `invalid_cursor`.
+
+The archive, pin, mute, and HistorySync endpoints remain provider-Chat commands.
+They do not currently accept a canonical Conversation UUID. Resolve and use the
+published `addressingJid` only where the command contract explicitly accepts a
+provider JID.
+
 ## Projected message field contract
 
 Every message returned by `GET /chat/{chatId}/messages` and

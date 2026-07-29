@@ -173,7 +173,7 @@ func (r *ChatMessageReader) GetChat(ctx context.Context, instanceID, chatID stri
 		return nil, meta, err
 	}
 	if canonical {
-		record, err := r.repository.GetConversation(ctx, instanceID, chatID)
+		record, err := r.getCanonicalConversation(ctx, instanceID, chatID)
 		if err != nil {
 			return nil, meta, err
 		}
@@ -201,29 +201,13 @@ func (r *ChatMessageReader) ListMessages(ctx context.Context, instanceID, chatID
 		return nil, meta, err
 	}
 	if canonical {
-		record, err := r.repository.GetConversation(ctx, instanceID, chatID)
-		if err != nil {
-			return nil, meta, err
-		}
-		conversationID := record.Conversation.ConversationID
-		decoded, err := decodeConversationMessageCursor(cursor, conversationID)
+		messages, meta, err := r.listCanonicalConversationMessageRecords(ctx, instanceID, chatID, limit, cursor, meta)
 		if err != nil {
 			return nil, nil, err
 		}
-		page, err := r.repository.ListConversationMessages(ctx, instanceID, conversationID, limit, decoded)
-		if err != nil {
-			return nil, nil, err
-		}
-		items := make([]ProjectedMessage, len(page.Items))
-		for index := range page.Items {
-			items[index] = projectedMessageView(&page.Items[index], r.retention, true)
-		}
-		if page.NextCursor != nil {
-			at := page.NextCursor.ProviderTimestamp.UTC()
-			meta.NextCursor, err = encodeProjectionCursor(projectionCursor{Version: 2, Kind: "conversation_messages", ConversationID: conversationID, MessageID: page.NextCursor.MessageID, ProviderTimestamp: &at})
-			if err != nil {
-				return nil, nil, err
-			}
+		items := make([]ProjectedMessage, len(messages))
+		for index := range messages {
+			items[index] = projectedMessageView(&messages[index], r.retention, true)
 		}
 		return items, meta, nil
 	}
@@ -307,28 +291,14 @@ func projectedChatView(chat *projection_model.Chat) ProjectedChat {
 }
 
 func (r *ChatMessageReader) listCanonicalChats(ctx context.Context, instanceID string, limit int, cursor string, meta *ProjectionReadMeta) ([]ProjectedChat, *ProjectionReadMeta, error) {
-	decoded, err := decodeConversationCursor(cursor)
+	records, meta, err := r.listCanonicalConversationRecords(ctx, instanceID, limit, cursor, meta)
 	if err != nil {
 		return nil, nil, err
 	}
-	page, err := r.repository.ListConversations(ctx, instanceID, limit, decoded)
-	if err != nil {
-		return nil, nil, err
+	items := make([]ProjectedChat, len(records))
+	for index := range records {
+		items[index] = projectedConversationView(&records[index])
 	}
-	items := make([]ProjectedChat, len(page.Items))
-	for index := range page.Items {
-		items[index] = projectedConversationView(&page.Items[index])
-	}
-	if page.NextCursor != nil {
-		meta.NextCursor, err = encodeProjectionCursor(projectionCursor{
-			Version: 2, Kind: "conversations", ConversationID: page.NextCursor.ConversationID,
-			LastActivityAt: page.NextCursor.LastActivityAt,
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	meta.Total = &page.Total
 	return items, meta, nil
 }
 
