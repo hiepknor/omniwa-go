@@ -116,6 +116,7 @@ type whatsmeowService struct {
 	labelSyncer        *projection_service.LabelSyncer
 	contactSyncer      *projection_service.ContactSyncer
 	identityReconciler *projection_service.ContactIdentityReconciler
+	chatReconciler     *projection_service.ConversationReconciler
 	historySyncer      *projection_service.HistorySyncer
 	durableEvents      *projection_service.DurableEventService
 	appCtx             context.Context
@@ -167,6 +168,7 @@ type MyClient struct {
 	labelSyncer        *projection_service.LabelSyncer
 	contactSyncer      *projection_service.ContactSyncer
 	identityReconciler *projection_service.ContactIdentityReconciler
+	chatReconciler     *projection_service.ConversationReconciler
 	historySyncer      *projection_service.HistorySyncer
 	appCtx             context.Context
 	reconcileMu        sync.Mutex
@@ -305,6 +307,19 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo(
 					"component=projection action=backfill instance_id=%s resource=contact_identity result=success batches=%d scanned=%d mapped=%d merged=%d unchanged=%d complete=%t lease_held=%t",
 					mycli.userID, result.Batches, result.Scanned, result.Mapped, result.Merged, result.Unchanged, result.Complete, result.LeaseHeld,
+				)
+			}
+		}
+		if mycli.chatReconciler != nil {
+			result, reconcileErr := mycli.chatReconciler.RunBounded(
+				ctx, mycli.userID, mycli.config.ConversationBackfillBatch, mycli.config.ConversationBackfillMaxBatches,
+			)
+			if reconcileErr != nil {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=backfill instance_id=%s resource=canonical_conversation result=failed error_code=association_failed", mycli.userID)
+			} else {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo(
+					"component=projection action=backfill instance_id=%s resource=canonical_conversation result=success batches=%d scanned=%d associated=%d absorbed=%d messages=%d conflicts=%d complete=%t lease_held=%t",
+					mycli.userID, result.Batches, result.Scanned, result.Associated, result.Absorbed, result.Messages, result.Conflicts, result.Complete, result.LeaseHeld,
 				)
 			}
 		}
@@ -874,6 +889,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		labelSyncer:        w.labelSyncer,
 		contactSyncer:      w.contactSyncer,
 		identityReconciler: w.identityReconciler,
+		chatReconciler:     w.chatReconciler,
 		historySyncer:      w.historySyncer,
 		appCtx:             w.appCtx,
 	}
@@ -3238,6 +3254,7 @@ func NewWhatsmeowService(
 	labelSyncer *projection_service.LabelSyncer,
 	contactSyncer *projection_service.ContactSyncer,
 	contactIdentityReconciler *projection_service.ContactIdentityReconciler,
+	conversationReconciler *projection_service.ConversationReconciler,
 	historySyncer *projection_service.HistorySyncer,
 	durableEvents *projection_service.DurableEventService,
 	appCtx context.Context,
@@ -3271,6 +3288,7 @@ func NewWhatsmeowService(
 		labelSyncer:        labelSyncer,
 		contactSyncer:      contactSyncer,
 		identityReconciler: contactIdentityReconciler,
+		chatReconciler:     conversationReconciler,
 		historySyncer:      historySyncer,
 		durableEvents:      durableEvents,
 		appCtx:             appCtx,
