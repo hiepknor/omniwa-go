@@ -90,3 +90,19 @@ reads and legacy projected-message detail with HTTP 410, and removes their
 capability alias; provider commands and message receipts remain. Continue
 watching legacy 4xx traffic before physical route deletion. Roll back by setting
 it to `true` and restarting.
+
+Use a durable Prometheus scraper rather than a process-local `/metrics`
+snapshot for this gate. Account for application counter resets with
+`increase()`, and treat an absent or unhealthy scrape target as missing
+evidence rather than zero legacy traffic:
+
+```promql
+up{job="omniwa-go"} == 1
+sum(increase(omniwa_conversation_api_requests_total{contract="legacy_chat",status="2xx"}[24h])) or vector(0)
+sum(increase(omniwa_conversation_api_requests_total{contract="legacy_chat",status=~"4xx|5xx"}[24h])) or vector(0)
+```
+
+Retain the time series for the full agreed deprecation window and record the
+query interval and result in the retirement change. The local development
+stack provides a bounded persistent Prometheus service for rehearsal; deployed
+environments must use their operator-owned metrics backend and secret manager.

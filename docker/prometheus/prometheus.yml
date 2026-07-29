@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: omniwa-go
+    metrics_path: /metrics
+    http_headers:
+      apikey:
+        files:
+          - /tmp/omniwa-metrics-api-key
+    static_configs:
+      - targets:
+          - omniwa-go:4000
