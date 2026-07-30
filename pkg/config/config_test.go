@@ -73,6 +73,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_MAX_ATTEMPTS, "")
 	t.Setenv(config_env.WEBHOOK_RETRY_BASE, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, "")
+	t.Setenv(config_env.HTTP_ALLOWED_ORIGINS, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "")
@@ -149,6 +150,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if len(config.InstanceTokenHMACKey) != 0 || config.InstanceTokenHMACKeyVersion != 0 || config.InstanceTokenBackfillBatch != 100 || config.InstanceTokenBackfillMaxBatches != 10 {
 		t.Fatalf("instance token digest defaults are invalid")
 	}
+	if len(config.HTTPAllowedOrigins) != 0 {
+		t.Fatalf("HTTP allowed origin defaults = %v", config.HTTPAllowedOrigins)
+	}
 	if config.ContactIdentityReconciliationEnabled || config.ContactIdentityBackfillBatch != 100 || config.ContactIdentityBackfillMaxBatches != 10 {
 		t.Fatalf("contact identity reconciliation defaults are invalid")
 	}
@@ -222,6 +226,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_MAX_ATTEMPTS, "4")
 	t.Setenv(config_env.WEBHOOK_RETRY_BASE, "250ms")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	t.Setenv(config_env.HTTP_ALLOWED_ORIGINS, "https://console.example.com, https://admin.example.com/")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "7")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "25")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "4")
@@ -293,6 +298,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if len(config.InstanceTokenHMACKey) != 32 || config.InstanceTokenHMACKeyVersion != 7 || config.InstanceTokenBackfillBatch != 25 || config.InstanceTokenBackfillMaxBatches != 4 {
 		t.Fatalf("instance token digest overrides are invalid")
+	}
+	if len(config.HTTPAllowedOrigins) != 2 || config.HTTPAllowedOrigins[0] != "https://console.example.com" || config.HTTPAllowedOrigins[1] != "https://admin.example.com/" {
+		t.Fatalf("HTTP allowed origin overrides = %v", config.HTTPAllowedOrigins)
 	}
 	if !config.ContactIdentityReconciliationEnabled || config.ContactIdentityBackfillBatch != 25 || config.ContactIdentityBackfillMaxBatches != 4 {
 		t.Fatalf("contact identity reconciliation overrides are invalid")

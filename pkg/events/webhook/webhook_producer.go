@@ -11,6 +11,7 @@ import (
 	"time"
 
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
+	eventpayload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 )
@@ -137,6 +138,10 @@ func (p *Producer) Produce(queueName string, payload []byte, webhookURL string, 
 		return nil
 	}
 
+	safePayload, err := eventpayload.SanitizeJSON(payload)
+	if err != nil {
+		return err
+	}
 	instanceID := userID
 	if instanceID == "" {
 		instanceID = "unknown"
@@ -151,7 +156,7 @@ func (p *Producer) Produce(queueName string, payload []byte, webhookURL string, 
 
 	var enqueueErrors []error
 	for _, target := range urls {
-		item := delivery{url: target, body: append([]byte(nil), payload...), instanceID: instanceID}
+		item := delivery{url: target, body: append([]byte(nil), safePayload...), instanceID: instanceID}
 		if err := p.enqueue(item); err != nil {
 			enqueueErrors = append(enqueueErrors, err)
 			p.log(instanceID, "warn", "enqueue", "dropped", errorCode(err), 0, 0)

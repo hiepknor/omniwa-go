@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	"github.com/gorilla/websocket"
 )
 
@@ -24,7 +25,7 @@ func testWSHandler(expectedToken string, producer *websocketProducer) http.Handl
 }
 
 func TestServeWs_SubprotocolHandshake(t *testing.T) {
-	const token = "s3cret-global-key"
+	const token = "test-key"
 
 	// nil loggerWrapper is safe here: we exercise the broadcast path
 	// (no instanceId), which only touches the package-level logger.
@@ -80,4 +81,34 @@ func TestServeWs_SubprotocolHandshake(t *testing.T) {
 			t.Errorf("expected 401 for query-string token, got resp=%v err=%v", resp, err)
 		}
 	})
+}
+
+func TestServeWsEnforcesConfiguredOriginPolicy(t *testing.T) {
+	const token = "test-key"
+	policy, err := httpapi.NewOriginPolicy([]string{"https://console.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer := NewWebsocketProducer(nil, policy)
+	server := httptest.NewServer(testWSHandler(token, producer))
+	defer server.Close()
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	dialer := websocket.Dialer{Subprotocols: []string{"apikey", token}}
+
+	rejectedHeader := http.Header{"Origin": []string{"https://evil.example"}}
+	connection, response, err := dialer.Dial(wsURL, rejectedHeader)
+	if err == nil {
+		connection.Close()
+		t.Fatal("disallowed origin upgraded successfully")
+	}
+	if response == nil || response.StatusCode != http.StatusForbidden {
+		t.Fatalf("disallowed origin response=%v error=%v", response, err)
+	}
+
+	allowedHeader := http.Header{"Origin": []string{"https://console.example.com"}}
+	connection, response, err = dialer.Dial(wsURL, allowedHeader)
+	if err != nil {
+		t.Fatalf("allowed origin failed: response=%v error=%v", response, err)
+	}
+	connection.Close()
 }

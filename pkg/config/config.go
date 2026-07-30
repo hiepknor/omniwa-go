@@ -29,6 +29,7 @@ type Config struct {
 	PostgresDB                      string
 	DatabaseSaveMessages            bool
 	GlobalApiKey                    string
+	HTTPAllowedOrigins              []string
 	InstanceTokenHMACKey            []byte
 	InstanceTokenHMACKeyVersion     int
 	InstanceTokenBackfillBatch      int
@@ -228,7 +229,7 @@ func extractDBNameAndAdminDSN(dsn string) (string, string, error) {
 }
 
 func (c *Config) CreateUsersDB() (*gorm.DB, error) {
-	logger.LogDebug("Connecting to database on: %s", c.postgresUsersDB)
+	logger.LogDebug("[CONFIG] Connecting to users database")
 
 	dbDSN := c.postgresUsersDB
 
@@ -313,6 +314,7 @@ func Load() *Config {
 	panicIfEmpty(config_env.DATABASE_SAVE_MESSAGES, databaseSaveMessages)
 
 	globalApiKey := os.Getenv(config_env.GLOBAL_API_KEY)
+	httpAllowedOrigins := splitNonEmptyCSV(os.Getenv(config_env.HTTP_ALLOWED_ORIGINS))
 	panicIfEmpty(config_env.GLOBAL_API_KEY, globalApiKey)
 
 	instanceTokenHMACKey, err := parseOptionalBase64Key(os.Getenv(config_env.INSTANCE_TOKEN_HMAC_KEY), 32)
@@ -778,6 +780,7 @@ func Load() *Config {
 		postgresUsersDB:                 postgresUsersDB,
 		DatabaseSaveMessages:            databaseSaveMessages == "true",
 		GlobalApiKey:                    globalApiKey,
+		HTTPAllowedOrigins:              httpAllowedOrigins,
 		InstanceTokenHMACKey:            instanceTokenHMACKey,
 		InstanceTokenHMACKeyVersion:     instanceTokenHMACKeyVersion,
 		InstanceTokenBackfillBatch:      instanceTokenBackfillBatch,

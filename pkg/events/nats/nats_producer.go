@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
+	eventpayload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/gomessguii/logger"
 	"github.com/nats-io/nats.go"
@@ -66,6 +67,10 @@ func (p *natsProducer) Produce(
 	natsEnable string,
 	userID string,
 ) error {
+	safePayload, err := eventpayload.SanitizeJSON(payload)
+	if err != nil {
+		return err
+	}
 	p.loggerWrapper.GetLogger(userID).LogInfo("[%s] NATS Producer - Starting produce for subject: %s", userID, queueName)
 	p.loggerWrapper.GetLogger(userID).LogInfo("[%s] NATS Producer - Global enabled: %v", userID, p.natsGlobalEnabled)
 
@@ -76,7 +81,7 @@ func (p *natsProducer) Produce(
 
 	if natsEnable == "global" {
 		p.loggerWrapper.GetLogger(userID).LogInfo("[%s] Publishing to global subject: %s", userID, queueName)
-		err := p.conn.Publish(queueName, payload)
+		err := p.conn.Publish(queueName, safePayload)
 		if err != nil {
 			p.loggerWrapper.GetLogger(userID).LogError("[%s] Failed to publish message to subject %s: %v", userID, queueName, err)
 			return err
@@ -85,7 +90,7 @@ func (p *natsProducer) Produce(
 	}
 
 	if natsEnable == "enabled" {
-		err := p.conn.Publish(queueName, payload)
+		err := p.conn.Publish(queueName, safePayload)
 		if err != nil {
 			p.loggerWrapper.GetLogger(userID).LogError("[%s] Failed to publish message to instance subject %s: %v", userID, queueName, err)
 			return err

@@ -118,4 +118,9 @@ Use stop-first/Recreate upgrades, not start-first or surge rollouts. See the
 
 - Databases (`omniwa_auth`, `omniwa_users`) are created automatically on startup.
 - Set `LICENSE_GATE_ENABLED=false` in `.env` to run without the activation gate.
+- Set `HTTP_ALLOWED_ORIGINS` to a comma-separated list of exact `http://` or
+  `https://` browser origins. The same policy protects HTTP and WebSocket
+  handshakes; same-host requests and clients without an `Origin` header remain
+  allowed. Wildcards, URL paths, credentials, queries, and fragments are
+  rejected during startup.
 - Ports: API `4000`, Prometheus `127.0.0.1:9090`, Postgres `5432`, RabbitMQ `5672` (+UI `15672`), MinIO `9000` (+console `9001`).

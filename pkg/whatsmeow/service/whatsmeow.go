@@ -1160,9 +1160,8 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 					"count":    mycli.qrcodeCount,
 					"maxCount": mycli.config.QrcodeMaxCount,
 				},
-				"instanceToken": mycli.currentToken(),
-				"instanceId":    instanceID,
-				"instanceName":  instance.Name,
+				"instanceId":   instanceID,
+				"instanceName": instance.Name,
 			}
 			queueName := strings.ToLower(fmt.Sprintf("%s.%s", instanceID, "QRCode"))
 			if mycli.persistDurableEvent(nil, "QRCode") {
@@ -1231,11 +1230,10 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 		data["forceLogout"] = forceLogout
 	}
 	postMap := map[string]interface{}{
-		"event":         "QRTimeout",
-		"data":          data,
-		"instanceToken": mycli.currentToken(),
-		"instanceId":    instanceID,
-		"instanceName":  instance.Name,
+		"event":        "QRTimeout",
+		"data":         data,
+		"instanceId":   instanceID,
+		"instanceName": instance.Name,
 	}
 	queueName := strings.ToLower(fmt.Sprintf("%s.%s", instanceID, "QRTimeout"))
 	if mycli.persistDurableEvent(nil, "QRTimeout") {
@@ -2153,9 +2151,8 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					"timestamp":  evt.Info.Timestamp.Unix(),
 					"extraData":  buttonClickData,
 				},
-				"instanceToken": mycli.currentToken(),
-				"instanceId":    mycli.userID,
-				"instanceName":  mycli.Instance.Name,
+				"instanceId":   mycli.userID,
+				"instanceName": mycli.Instance.Name,
 			}
 
 			if mycli.persistDurableEvent(evt, "ButtonClick") {
@@ -2318,7 +2315,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		dataMap["reason"] = evt.Reason.String()
 
 		// Enviar evento LoggedOut para webhook/RabbitMQ ANTES de matar o canal
-		postMap["instanceToken"] = mycli.currentToken()
 		postMap["instanceId"] = mycli.userID
 		postMap["instanceName"] = mycli.Instance.Name
 
@@ -2521,7 +2517,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if !mycli.persistDurableEvent(rawEvt, eventType) {
 			return
 		}
-		postMap["instanceToken"] = mycli.currentToken()
 		postMap["instanceId"] = mycli.userID
 		postMap["instanceName"] = mycli.Instance.Name
 
