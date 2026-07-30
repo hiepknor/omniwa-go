@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/evolution-foundation/evolution-go/pkg/netguard"
+	"github.com/google/uuid"
 )
 
 type requesterFunc func(context.Context, string, string, http.Header, []byte) (*netguard.Response, error)
@@ -47,7 +48,7 @@ func TestWebhookUsesBoundedConfiguredRequester(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sendErr, status := producer.sendWebhook(context.Background(), server.URL, []byte(`{"ok":true}`)); sendErr != nil || status != http.StatusNoContent {
+	if sendErr, status := producer.sendWebhook(context.Background(), server.URL, []byte(`{"ok":true}`), ""); sendErr != nil || status != http.StatusNoContent {
 		t.Fatalf("sendWebhook() status=%d error=%v", status, sendErr)
 	}
 }
@@ -57,7 +58,7 @@ func TestWebhookRejectsUnconfiguredTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sendErr, _ := producer.sendWebhook(context.Background(), "https://example.com", nil)
+	sendErr, _ := producer.sendWebhook(context.Background(), "https://example.com", nil, "")
 	if !errors.Is(sendErr, netguard.ErrUnsafeTarget) {
 		t.Fatalf("sendWebhook() error=%v, want ErrUnsafeTarget", sendErr)
 	}
@@ -74,14 +75,18 @@ func TestDeliverConfirmedUsesHTTPAcknowledgementAndClassifiesFailure(t *testing.
 		{status: http.StatusBadRequest, retryable: false},
 	}
 	for _, response := range responses {
-		requester := requesterFunc(func(context.Context, string, string, http.Header, []byte) (*netguard.Response, error) {
+		deliveryID := uuid.NewString()
+		requester := requesterFunc(func(_ context.Context, _, _ string, header http.Header, _ []byte) (*netguard.Response, error) {
+			if header.Get("X-Omniwa-Delivery-ID") != deliveryID {
+				t.Fatalf("delivery header = %q, want %q", header.Get("X-Omniwa-Delivery-ID"), deliveryID)
+			}
 			return &netguard.Response{StatusCode: response.status}, nil
 		})
 		producer, err := NewWebhookProducer("", requester, nil, testSettings())
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = producer.DeliverConfirmed(context.Background(), "https://configured.example/events", []byte(`{"ok":true}`))
+		err = producer.DeliverConfirmed(context.Background(), "https://configured.example/events", []byte(`{"ok":true}`), deliveryID)
 		if response.status == http.StatusNoContent {
 			if err != nil {
 				t.Fatalf("confirmed status %d returned %v", response.status, err)

@@ -14,6 +14,7 @@ import (
 	eventpayload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/netguard"
+	"github.com/google/uuid"
 )
 
 var _ producer_interfaces.Producer = (*Producer)(nil)
@@ -55,7 +56,9 @@ type ConfirmedDeliveryError struct {
 	StatusCode int
 }
 
-func (e *ConfirmedDeliveryError) Error() string { return "webhook delivery was not confirmed" }
+func (e *ConfirmedDeliveryError) Error() string           { return "webhook delivery was not confirmed" }
+func (e *ConfirmedDeliveryError) DeliveryCode() string    { return e.Code }
+func (e *ConfirmedDeliveryError) DeliveryRetryable() bool { return e.Retryable }
 
 type Producer struct {
 	url           string
@@ -213,7 +216,7 @@ func (p *Producer) worker(ctx context.Context) {
 
 func (p *Producer) deliver(ctx context.Context, item delivery) {
 	for attempt := 1; attempt <= p.settings.MaxAttempts; attempt++ {
-		err, statusCode := p.sendWebhook(ctx, item.url, item.body)
+		err, statusCode := p.sendWebhook(ctx, item.url, item.body, "")
 		if err == nil {
 			p.succeeded.Add(1)
 			p.log(item.instanceID, "info", "deliver", "success", "", attempt, statusCode)
@@ -273,12 +276,15 @@ func (p *Producer) Stats() Stats {
 	}
 }
 
-func (p *Producer) sendWebhook(ctx context.Context, url string, body []byte) (error, int) {
+func (p *Producer) sendWebhook(ctx context.Context, url string, body []byte, deliveryID string) (error, int) {
 	if p.requester == nil {
 		return fmt.Errorf("%w: webhook host is not configured", netguard.ErrUnsafeTarget), 0
 	}
 	header := make(http.Header)
 	header.Set("Content-Type", "application/json")
+	if deliveryID != "" {
+		header.Set("X-Omniwa-Delivery-ID", deliveryID)
+	}
 	resp, err := p.requester.Do(ctx, http.MethodPost, url, header, body)
 	if err != nil {
 		return err, 0
@@ -292,15 +298,15 @@ func (p *Producer) sendWebhook(ctx context.Context, url string, body []byte) (er
 // DeliverConfirmed succeeds only after the configured target returns 2xx. It
 // bypasses the legacy in-memory queue and is intended for durable workers that
 // own retry scheduling in PostgreSQL.
-func (p *Producer) DeliverConfirmed(ctx context.Context, target string, payload []byte) error {
-	if p == nil || ctx == nil || strings.TrimSpace(target) == "" {
+func (p *Producer) DeliverConfirmed(ctx context.Context, target string, payload []byte, deliveryID string) error {
+	if p == nil || ctx == nil || strings.TrimSpace(target) == "" || uuid.Validate(deliveryID) != nil {
 		return &ConfirmedDeliveryError{Code: "invalid_delivery", Retryable: false}
 	}
 	safePayload, err := eventpayload.SanitizeJSON(payload)
 	if err != nil {
 		return &ConfirmedDeliveryError{Code: "invalid_payload", Retryable: false}
 	}
-	err, statusCode := p.sendWebhook(ctx, target, safePayload)
+	err, statusCode := p.sendWebhook(ctx, target, safePayload, deliveryID)
 	if err == nil {
 		return nil
 	}

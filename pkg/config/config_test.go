@@ -72,6 +72,14 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_MAX_PENDING_PER_INSTANCE, "")
 	t.Setenv(config_env.WEBHOOK_MAX_ATTEMPTS, "")
 	t.Setenv(config_env.WEBHOOK_RETRY_BASE, "")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED, "")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_BATCH, "")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_LEASE, "")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_POLL_INTERVAL, "")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_ATTEMPT_TIMEOUT, "")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_STATE_TIMEOUT, "")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_RETRY_BASE, "")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_RETRY_MAX, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, "")
 	t.Setenv(config_env.HTTP_ALLOWED_ORIGINS, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "")
@@ -146,6 +154,12 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	}
 	if config.Webhook.Timeout != 10*time.Second || config.Webhook.MaxRequestBytes != 4*1024*1024 || config.Webhook.MaxResponseBytes != 64*1024 || config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 0 || len(config.Webhook.AllowedPorts) != 2 || config.Webhook.Workers != 4 || config.Webhook.QueueCapacity != 256 || config.Webhook.MaxPendingPerInstance != 32 || config.Webhook.MaxAttempts != 3 || config.Webhook.RetryBase != time.Second {
 		t.Fatalf("webhook defaults are invalid")
+	}
+	if config.ExternalEventOutbox.ServeEnabled || config.ExternalEventOutbox.BatchSize != 4 ||
+		config.ExternalEventOutbox.LeaseDuration != 45*time.Second || config.ExternalEventOutbox.PollInterval != time.Second ||
+		config.ExternalEventOutbox.AttemptTimeout != 15*time.Second || config.ExternalEventOutbox.StateTimeout != 5*time.Second ||
+		config.ExternalEventOutbox.RetryBase != 5*time.Second || config.ExternalEventOutbox.RetryMax != 15*time.Minute {
+		t.Fatalf("external event outbox defaults are invalid: %+v", config.ExternalEventOutbox)
 	}
 	if len(config.InstanceTokenHMACKey) != 0 || config.InstanceTokenHMACKeyVersion != 0 || config.InstanceTokenBackfillBatch != 100 || config.InstanceTokenBackfillMaxBatches != 10 {
 		t.Fatalf("instance token digest defaults are invalid")
@@ -225,6 +239,14 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_MAX_PENDING_PER_INSTANCE, "20")
 	t.Setenv(config_env.WEBHOOK_MAX_ATTEMPTS, "4")
 	t.Setenv(config_env.WEBHOOK_RETRY_BASE, "250ms")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED, "true")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_BATCH, "12")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_LEASE, "50s")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_POLL_INTERVAL, "2s")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_ATTEMPT_TIMEOUT, "20s")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_STATE_TIMEOUT, "10s")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_RETRY_BASE, "3s")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_RETRY_MAX, "10m")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	t.Setenv(config_env.HTTP_ALLOWED_ORIGINS, "https://console.example.com, https://admin.example.com/")
 	t.Setenv(config_env.INSTANCE_TOKEN_HMAC_KEY_VERSION, "7")
@@ -245,6 +267,12 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if config.Webhook.Timeout != 4*time.Second || config.Webhook.MaxRequestBytes != 2048 || config.Webhook.MaxResponseBytes != 1024 || !config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 2 || len(config.Webhook.AllowedPorts) != 2 || config.Webhook.Workers != 8 || config.Webhook.QueueCapacity != 100 || config.Webhook.MaxPendingPerInstance != 20 || config.Webhook.MaxAttempts != 4 || config.Webhook.RetryBase != 250*time.Millisecond {
 		t.Fatalf("webhook overrides are invalid")
+	}
+	if !config.ExternalEventOutbox.ServeEnabled || config.ExternalEventOutbox.BatchSize != 12 ||
+		config.ExternalEventOutbox.LeaseDuration != 50*time.Second || config.ExternalEventOutbox.PollInterval != 2*time.Second ||
+		config.ExternalEventOutbox.AttemptTimeout != 20*time.Second || config.ExternalEventOutbox.StateTimeout != 10*time.Second ||
+		config.ExternalEventOutbox.RetryBase != 3*time.Second || config.ExternalEventOutbox.RetryMax != 10*time.Minute {
+		t.Fatalf("external event outbox overrides are invalid: %+v", config.ExternalEventOutbox)
 	}
 	if math.Abs(config.WAInfoRatePerSecond-(12.0/3600.0)) > 1e-12 {
 		t.Fatalf("WAInfoRatePerSecond = %v", config.WAInfoRatePerSecond)

@@ -36,6 +36,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/core"
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	nats_producer "github.com/evolution-foundation/evolution-go/pkg/events/nats"
+	event_outbox "github.com/evolution-foundation/evolution-go/pkg/events/outbox"
 	rabbitmq_producer "github.com/evolution-foundation/evolution-go/pkg/events/rabbitmq"
 	webhook_producer "github.com/evolution-foundation/evolution-go/pkg/events/webhook"
 	websocket_producer "github.com/evolution-foundation/evolution-go/pkg/events/websocket"
@@ -222,6 +223,37 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		logger.LogFatal("component=webhook action=initialize result=failed error=%v", err)
 	}
 	startBackground(backgroundWorkers, "webhook.deliveries", webhookProducer.Run)
+	if config.ExternalEventOutbox.ServeEnabled {
+		rabbitOutbox, ok := rabbitmqProducer.(event_outbox.RabbitMQDeliverer)
+		if !ok {
+			logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=rabbit_adapter_unavailable")
+		}
+		targetResolver, resolveErr := event_outbox.NewDatabaseTargetResolver(db, config.WebhookUrl, config.AmqpGlobalEnabled)
+		if resolveErr != nil {
+			logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=target_resolver_unavailable")
+		}
+		dispatcher, dispatchErr := event_outbox.NewTransportDispatcher(webhookProducer, rabbitOutbox, targetResolver)
+		if dispatchErr != nil {
+			logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=dispatcher_unavailable")
+		}
+		outboxWorker, workerErr := event_outbox.NewWorker(
+			event_outbox.NewRepository(db), dispatcher,
+			event_outbox.Settings{
+				BatchSize: config.ExternalEventOutbox.BatchSize, LeaseDuration: config.ExternalEventOutbox.LeaseDuration,
+				PollInterval: config.ExternalEventOutbox.PollInterval, AttemptTimeout: config.ExternalEventOutbox.AttemptTimeout,
+				StateTimeout: config.ExternalEventOutbox.StateTimeout, RetryBase: config.ExternalEventOutbox.RetryBase,
+				RetryMax: config.ExternalEventOutbox.RetryMax,
+			},
+			metricsRegistry.ExternalEventOutbox(),
+		)
+		if workerErr != nil {
+			logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=invalid_worker_configuration")
+		}
+		startBackground(backgroundWorkers, "external_event_outbox.deliveries", outboxWorker.Run)
+		logger.LogInfo("component=external_event_outbox action=initialize result=success mode=serve")
+	} else {
+		logger.LogInfo("component=external_event_outbox action=initialize result=skipped mode=disabled")
+	}
 	originPolicy, err := httpapi.NewOriginPolicy(config.HTTPAllowedOrigins)
 	if err != nil {
 		logger.LogFatal("component=http action=configure_origin_policy result=failed error=%v", err)

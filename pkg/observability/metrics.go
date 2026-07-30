@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/evolution-foundation/evolution-go/pkg/events/outbox"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -63,13 +64,19 @@ type ConversationAPIObserver interface {
 
 // Registry owns the process collectors and bounded OmniWA domain metrics.
 type Registry struct {
-	registry                   *prometheus.Registry
-	eligibilityRequestDuration *prometheus.HistogramVec
-	eligibilityRequestedGroups *prometheus.HistogramVec
-	eligibilityResults         *prometheus.CounterVec
-	mutationRejections         *prometheus.CounterVec
-	conversationRequests       *prometheus.CounterVec
-	conversationDuration       *prometheus.HistogramVec
+	registry                     *prometheus.Registry
+	eligibilityRequestDuration   *prometheus.HistogramVec
+	eligibilityRequestedGroups   *prometheus.HistogramVec
+	eligibilityResults           *prometheus.CounterVec
+	mutationRejections           *prometheus.CounterVec
+	conversationRequests         *prometheus.CounterVec
+	conversationDuration         *prometheus.HistogramVec
+	outboxAttempts               *prometheus.CounterVec
+	outboxAttemptDuration        *prometheus.HistogramVec
+	outboxClaimed                prometheus.Histogram
+	outboxQueue                  *prometheus.GaugeVec
+	outboxOldestPending          prometheus.Gauge
+	outboxInfrastructureFailures *prometheus.CounterVec
 }
 
 // NewRegistry constructs an isolated registry. Registration failures are
@@ -102,18 +109,115 @@ func NewRegistry() (*Registry, error) {
 			Namespace: "omniwa", Subsystem: "conversation_api", Name: "request_duration_seconds",
 			Help: "Conversation API latency by bounded contract and operation.",
 		}, []string{"contract", "operation"}),
+		outboxAttempts: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "omniwa", Subsystem: "external_event_outbox", Name: "attempts_total",
+			Help: "External event delivery attempts by bounded transport, outcome, and error code.",
+		}, []string{"transport", "outcome", "code"}),
+		outboxAttemptDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "omniwa", Subsystem: "external_event_outbox", Name: "attempt_duration_seconds",
+			Help: "External event delivery attempt duration by bounded transport and outcome.",
+		}, []string{"transport", "outcome"}),
+		outboxClaimed: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: "omniwa", Subsystem: "external_event_outbox", Name: "claimed_batch_size",
+			Help:    "Number of external event deliveries claimed per worker poll.",
+			Buckets: []float64{0, 1, 5, 10, 25, 50, 100},
+		}),
+		outboxQueue: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "omniwa", Subsystem: "external_event_outbox", Name: "rows",
+			Help: "External event outbox rows by bounded state.",
+		}, []string{"status"}),
+		outboxOldestPending: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "omniwa", Subsystem: "external_event_outbox", Name: "oldest_pending_age_seconds",
+			Help: "Age of the oldest pending external event delivery.",
+		}),
+		outboxInfrastructureFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "omniwa", Subsystem: "external_event_outbox", Name: "infrastructure_failures_total",
+			Help: "Outbox worker infrastructure failures by bounded code.",
+		}, []string{"code"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		result.eligibilityRequestDuration, result.eligibilityRequestedGroups,
 		result.eligibilityResults, result.mutationRejections,
 		result.conversationRequests, result.conversationDuration,
+		result.outboxAttempts, result.outboxAttemptDuration, result.outboxClaimed,
+		result.outboxQueue, result.outboxOldestPending, result.outboxInfrastructureFailures,
 	} {
 		if err := result.registry.Register(collector); err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
+}
+
+// ExternalEventOutbox returns aggregate-only worker instrumentation. Labels
+// never include an instance, destination, routing key, or delivery identifier.
+func (r *Registry) ExternalEventOutbox() outbox.Observer {
+	if r == nil {
+		return nil
+	}
+	return r
+}
+
+func (r *Registry) ObserveAttempt(transport outbox.Transport, outcome, code string, duration time.Duration) {
+	transportLabel := boundedOutboxTransport(transport)
+	if r == nil || transportLabel == "" || !boundedOutboxOutcome(outcome) || duration < 0 {
+		return
+	}
+	code = boundedOutboxCode(code)
+	r.outboxAttempts.WithLabelValues(transportLabel, outcome, code).Inc()
+	r.outboxAttemptDuration.WithLabelValues(transportLabel, outcome).Observe(duration.Seconds())
+}
+
+func (r *Registry) ObserveClaimed(count int) {
+	if r != nil && count >= 0 && count <= 1000 {
+		r.outboxClaimed.Observe(float64(count))
+	}
+}
+
+func (r *Registry) ObserveHealth(health outbox.Health) {
+	if r == nil || health.Pending < 0 || health.Processing < 0 || health.DeadLetter < 0 || health.OldestPendingAge < 0 {
+		return
+	}
+	r.outboxQueue.WithLabelValues("pending").Set(float64(health.Pending))
+	r.outboxQueue.WithLabelValues("processing").Set(float64(health.Processing))
+	r.outboxQueue.WithLabelValues("dead_letter").Set(float64(health.DeadLetter))
+	r.outboxOldestPending.Set(health.OldestPendingAge.Seconds())
+}
+
+func (r *Registry) ObserveInfrastructureFailure(code string) {
+	if r == nil || code != "repository_error" {
+		return
+	}
+	r.outboxInfrastructureFailures.WithLabelValues(code).Inc()
+}
+
+func boundedOutboxTransport(value outbox.Transport) string {
+	switch value {
+	case outbox.TransportWebhook, outbox.TransportRabbitMQ, outbox.TransportNATS:
+		return string(value)
+	default:
+		return ""
+	}
+}
+
+func boundedOutboxOutcome(value string) bool {
+	return value == "delivered" || value == "retry" || value == "dead_letter"
+}
+
+func boundedOutboxCode(value string) string {
+	if value == "" {
+		return "none"
+	}
+	switch value {
+	case "attempt_timeout", "delivery_failed", "invalid_delivery", "invalid_payload", "invalid_destination",
+		"destination_disabled", "instance_not_found", "target_lookup_failed", "transport_not_supported",
+		"unsafe_target", "response_too_large", "cancelled", "connection_unavailable", "channel_unavailable",
+		"confirm_unavailable", "queue_declare_failed", "publish_not_confirmed", "attempt_budget_exhausted":
+		return value
+	default:
+		return "other"
+	}
 }
 
 // ConversationAPI returns the bounded canonical-contract migration observer.
