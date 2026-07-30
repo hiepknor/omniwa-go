@@ -47,6 +47,16 @@ type delivery struct {
 	instanceID string
 }
 
+// ConfirmedDeliveryError classifies one synchronous webhook attempt without
+// exposing the destination URL or response body.
+type ConfirmedDeliveryError struct {
+	Code       string
+	Retryable  bool
+	StatusCode int
+}
+
+func (e *ConfirmedDeliveryError) Error() string { return "webhook delivery was not confirmed" }
+
 type Producer struct {
 	url           string
 	loggerWrapper *logger_wrapper.LoggerManager
@@ -277,6 +287,24 @@ func (p *Producer) sendWebhook(ctx context.Context, url string, body []byte) (er
 		return errors.New("received non-2xx webhook response"), resp.StatusCode
 	}
 	return nil, resp.StatusCode
+}
+
+// DeliverConfirmed succeeds only after the configured target returns 2xx. It
+// bypasses the legacy in-memory queue and is intended for durable workers that
+// own retry scheduling in PostgreSQL.
+func (p *Producer) DeliverConfirmed(ctx context.Context, target string, payload []byte) error {
+	if p == nil || ctx == nil || strings.TrimSpace(target) == "" {
+		return &ConfirmedDeliveryError{Code: "invalid_delivery", Retryable: false}
+	}
+	safePayload, err := eventpayload.SanitizeJSON(payload)
+	if err != nil {
+		return &ConfirmedDeliveryError{Code: "invalid_payload", Retryable: false}
+	}
+	err, statusCode := p.sendWebhook(ctx, target, safePayload)
+	if err == nil {
+		return nil
+	}
+	return &ConfirmedDeliveryError{Code: errorCode(err), Retryable: isRetryable(ctx, err, statusCode), StatusCode: statusCode}
 }
 
 func isRetryable(ctx context.Context, err error, statusCode int) bool {

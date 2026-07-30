@@ -1,7 +1,9 @@
 package nats_producer
 
 import (
+	"errors"
 	"strings"
+	"time"
 
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	eventpayload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
@@ -10,8 +12,16 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+const publishFlushTimeout = 5 * time.Second
+
+type publishConnection interface {
+	Publish(string, []byte) error
+	FlushTimeout(time.Duration) error
+	LastError() error
+}
+
 type natsProducer struct {
-	conn              *nats.Conn
+	conn              publishConnection
 	natsGlobalEnabled bool
 	natsGlobalEvents  []string
 	loggerWrapper     *logger_wrapper.LoggerManager
@@ -76,12 +86,15 @@ func (p *natsProducer) Produce(
 
 	if p.conn == nil {
 		p.loggerWrapper.GetLogger(userID).LogWarn("[%s] NATS connection is nil", userID)
+		if natsEnable == "global" || natsEnable == "enabled" {
+			return errors.New("NATS connection is unavailable")
+		}
 		return nil
 	}
 
 	if natsEnable == "global" {
 		p.loggerWrapper.GetLogger(userID).LogInfo("[%s] Publishing to global subject: %s", userID, queueName)
-		err := p.conn.Publish(queueName, safePayload)
+		err := publishAndFlush(p.conn, queueName, safePayload, publishFlushTimeout)
 		if err != nil {
 			p.loggerWrapper.GetLogger(userID).LogError("[%s] Failed to publish message to subject %s: %v", userID, queueName, err)
 			return err
@@ -90,7 +103,7 @@ func (p *natsProducer) Produce(
 	}
 
 	if natsEnable == "enabled" {
-		err := p.conn.Publish(queueName, safePayload)
+		err := publishAndFlush(p.conn, queueName, safePayload, publishFlushTimeout)
 		if err != nil {
 			p.loggerWrapper.GetLogger(userID).LogError("[%s] Failed to publish message to instance subject %s: %v", userID, queueName, err)
 			return err
@@ -99,6 +112,22 @@ func (p *natsProducer) Produce(
 	}
 
 	return nil
+}
+
+func publishAndFlush(conn publishConnection, subject string, payload []byte, timeout time.Duration) error {
+	if conn == nil {
+		return errors.New("NATS connection is unavailable")
+	}
+	if strings.TrimSpace(subject) == "" || timeout <= 0 {
+		return errors.New("NATS subject and positive flush timeout are required")
+	}
+	if err := conn.Publish(subject, payload); err != nil {
+		return err
+	}
+	if err := conn.FlushTimeout(timeout); err != nil {
+		return err
+	}
+	return conn.LastError()
 }
 
 // CreateGlobalQueues não faz nada para NATS producer pois os subjects são criados dinamicamente

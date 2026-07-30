@@ -32,6 +32,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: omniwa
+          RABBITMQ_DEFAULT_PASS: omniwa
+          RABBITMQ_DEFAULT_VHOST: omniwa_ci
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v5.1.0
 
@@ -61,6 +74,11 @@ jobs:
         # package's inbox fixtures; concurrency is exercised explicitly inside
         # the repository tests and by the separate race suite.
         run: go test -p=1 ./... -count=1
+
+      - name: Test RabbitMQ publisher confirmation
+        env:
+          TEST_RABBITMQ_URL: amqp://omniwa:omniwa@localhost:5672/omniwa_ci
+        run: go test -run TestPublishAndAwaitConfirmationWithRabbitMQ -count=1 ./pkg/events/rabbitmq
 
       - name: Test with race detector
         run: go test -race ./...
