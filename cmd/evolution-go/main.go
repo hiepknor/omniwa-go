@@ -222,7 +222,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		logger.LogFatal("component=webhook action=initialize result=failed error=%v", err)
 	}
 	startBackground(backgroundWorkers, "webhook.deliveries", webhookProducer.Run)
-	websocketProducer := websocket_producer.NewWebsocketProducer(loggerWrapper)
+	originPolicy, err := httpapi.NewOriginPolicy(config.HTTPAllowedOrigins)
+	if err != nil {
+		logger.LogFatal("component=http action=configure_origin_policy result=failed error=%v", err)
+	}
+	websocketProducer := websocket_producer.NewWebsocketProducer(loggerWrapper, originPolicy)
 	startBackground(backgroundWorkers, "websocket.shutdown", func(ctx context.Context) error {
 		<-ctx.Done()
 		websocketProducer.Close()
@@ -905,20 +909,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	r := gin.Default()
 	r.Use(httpapi.RequestIdentity())
-
-	// CORS middleware — must be before all business, auth, and body middleware.
-	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, X-Request-ID, Idempotency-Key, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, Retry-After, X-Request-ID")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(200)
-			return
-		}
-		c.Next()
-	})
+	r.Use(originPolicy.Middleware())
 	r.Use(auth_middleware.BodyLimit())
 
 	// License gate is opt-out via LICENSE_GATE_ENABLED=false (default: enabled).

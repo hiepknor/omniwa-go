@@ -86,6 +86,21 @@ func TestBroadcastAndInstanceSessionsBothReceiveEvents(t *testing.T) {
 	assertWebsocketEvent(t, instance, "connected", `{"status":"open"}`)
 }
 
+func TestProduceSanitizesCredentialsBeforeBroadcast(t *testing.T) {
+	const token = "test-admin-key"
+	producer := NewWebsocketProducer(nil)
+	server := httptest.NewServer(testWSHandler(token, producer))
+	defer server.Close()
+	connection := dialTestWebsocket(t, "ws"+strings.TrimPrefix(server.URL, "http"), token)
+	defer connection.Close()
+	waitForSessionCount(t, producer, "", 1)
+
+	if err := producer.Produce("Message", []byte(`{"id":"one","instanceToken":"secret"}`), "instance-a", ""); err != nil {
+		t.Fatal(err)
+	}
+	assertWebsocketEvent(t, connection, "message", `{"id":"one"}`)
+}
+
 func TestSlowSessionIsDisconnectedWithoutBlockingProducer(t *testing.T) {
 	producer := NewWebsocketProducer(nil)
 	slow := &websocketSession{

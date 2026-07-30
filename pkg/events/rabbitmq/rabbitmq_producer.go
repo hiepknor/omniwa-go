@@ -7,6 +7,7 @@ import (
 	"time"
 
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
+	eventpayload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/gomessguii/logger"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -173,6 +174,10 @@ func (p *rabbitMQProducer) Produce(
 	rabbitmqEnable string,
 	userID string,
 ) error {
+	safePayload, err := eventpayload.SanitizeJSON(payload)
+	if err != nil {
+		return err
+	}
 	p.loggerWrapper.GetLogger(userID).LogInfo("[%s] RabbitMQ Producer - Starting produce for queue: %s", userID, queueName)
 
 	if p.connStr == "" {
@@ -213,7 +218,7 @@ func (p *rabbitMQProducer) Produce(
 			return fmt.Errorf("falha ao declarar fila %s: %v", queueName, err)
 		}
 
-		err = p.publishWithRetry(channel, queueName, payload, userID)
+		err = p.publishWithRetry(channel, queueName, safePayload, userID)
 		if err != nil {
 			return fmt.Errorf("falha ao publicar mensagem após todas as tentativas: %v", err)
 		}

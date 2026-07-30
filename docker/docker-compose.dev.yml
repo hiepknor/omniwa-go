@@ -39,6 +39,7 @@ services:
 
       # Security — change this for anything beyond local dev.
       GLOBAL_API_KEY: "${GLOBAL_API_KEY:-dev-global-api-key-change-me}"
+      HTTP_ALLOWED_ORIGINS: "${HTTP_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,https://web.whatsapp.com}"
 
       # Optional token lookup digest. Supply a base64-encoded 32-byte secret
       # from the shell/secret manager to exercise the staged credential rollout.

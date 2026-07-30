@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	eventpayload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
+	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/gomessguii/logger"
 	"github.com/gorilla/websocket"
@@ -20,19 +22,6 @@ const (
 	pingPeriod       = pongWait * 9 / 10
 	maxInboundBytes  = 64 << 10
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		logger.LogInfo("Verificando origem da conexão WebSocket")
-		return true
-	},
-	// The auth token is carried as the second Sec-WebSocket-Protocol value
-	// (["apikey", "<token>"]). Advertise only "apikey" so the handshake echoes
-	// that scheme back and never reflects the token in the response header.
-	Subprotocols: []string{"apikey"},
-}
 
 type websocketSession struct {
 	id         uint64
@@ -51,13 +40,19 @@ type websocketProducer struct {
 	nextSessionID atomic.Uint64
 	closed        bool
 	loggerWrapper *logger_wrapper.LoggerManager
+	originPolicy  *httpapi.OriginPolicy
 }
 
-func NewWebsocketProducer(loggerWrapper *logger_wrapper.LoggerManager) *websocketProducer {
+func NewWebsocketProducer(loggerWrapper *logger_wrapper.LoggerManager, policies ...*httpapi.OriginPolicy) *websocketProducer {
+	policy, _ := httpapi.NewOriginPolicy(nil)
+	if len(policies) > 0 && policies[0] != nil {
+		policy = policies[0]
+	}
 	return &websocketProducer{
 		clients:       make(map[string]map[uint64]*websocketSession),
 		broadcast:     make(map[uint64]*websocketSession),
 		loggerWrapper: loggerWrapper,
+		originPolicy:  policy,
 	}
 }
 
@@ -78,6 +73,12 @@ func TokenFromProtocolHeader(header string) string {
 // browser tab cannot replace or remove another tab for the same instance.
 func ServeWs(w http.ResponseWriter, r *http.Request, instanceID string, producer *websocketProducer) {
 	logger.LogInfo("Iniciando upgrade da conexão WebSocket")
+	upgrader := websocket.Upgrader{
+		ReadBufferSize: 1024, WriteBufferSize: 1024,
+		CheckOrigin: producer.originPolicy.Allows,
+		// Advertise only the scheme so the bearer token is never reflected.
+		Subprotocols: []string{"apikey"},
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logger.LogError("Erro ao fazer upgrade da conexão websocket: %v", err)
@@ -231,9 +232,13 @@ func (session *websocketSession) write(messageType int, message []byte) error {
 }
 
 func (p *websocketProducer) Produce(queueName string, payload []byte, instanceID string, _ string) error {
+	safePayload, err := eventpayload.SanitizeJSON(payload)
+	if err != nil {
+		return err
+	}
 	message, err := json.Marshal(map[string]interface{}{
 		"queue":   strings.ToLower(queueName),
-		"payload": string(payload),
+		"payload": string(safePayload),
 	})
 	if err != nil {
 		return err

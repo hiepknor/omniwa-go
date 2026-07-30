@@ -71,19 +71,19 @@ func TestProducerEnforcesGlobalAndPerInstanceOutstandingLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := producer.Produce("event.message", []byte("one"), "https://example.com", "instance-a"); err != nil {
+	if err := producer.Produce("event.message", []byte(`{"value":"one"}`), "https://example.com", "instance-a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := producer.Produce("event.message", []byte("two"), "https://example.com", "instance-a"); err != nil {
+	if err := producer.Produce("event.message", []byte(`{"value":"two"}`), "https://example.com", "instance-a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := producer.Produce("event.message", nil, "https://example.com", "instance-a"); !errors.Is(err, ErrInstanceQueueFull) {
+	if err := producer.Produce("event.message", []byte(`{}`), "https://example.com", "instance-a"); !errors.Is(err, ErrInstanceQueueFull) {
 		t.Fatalf("third instance delivery error = %v", err)
 	}
-	if err := producer.Produce("event.message", nil, "https://example.com", "instance-b"); err != nil {
+	if err := producer.Produce("event.message", []byte(`{}`), "https://example.com", "instance-b"); err != nil {
 		t.Fatal(err)
 	}
-	if err := producer.Produce("event.message", nil, "https://example.com", "instance-c"); !errors.Is(err, ErrQueueFull) {
+	if err := producer.Produce("event.message", []byte(`{}`), "https://example.com", "instance-c"); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("delivery beyond global capacity error = %v", err)
 	}
 	stats := producer.Stats()
@@ -105,7 +105,7 @@ func TestProducerConcurrentAdmissionNeverExceedsCapacity(t *testing.T) {
 		wait.Add(1)
 		go func(index int) {
 			defer wait.Done()
-			_ = producer.Produce("event.message", nil, "https://example.com", "instance-"+string(rune('a'+index%10)))
+			_ = producer.Produce("event.message", []byte(`{}`), "https://example.com", "instance-"+string(rune('a'+index%10)))
 		}(i)
 	}
 	wait.Wait()
@@ -144,7 +144,7 @@ func TestProducerBoundsConcurrentRequestsAndStopsWithContext(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- producer.Run(ctx) }()
 	for i := 0; i < settings.QueueCapacity; i++ {
-		if err := producer.Produce("event.message", nil, "https://example.com", "instance-a"); err != nil {
+		if err := producer.Produce("event.message", []byte(`{}`), "https://example.com", "instance-a"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -167,7 +167,7 @@ func TestProducerBoundsConcurrentRequestsAndStopsWithContext(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("producer did not stop after cancellation")
 	}
-	if err := producer.Produce("event.message", nil, "https://example.com", "instance-b"); !errors.Is(err, ErrStopped) {
+	if err := producer.Produce("event.message", []byte(`{}`), "https://example.com", "instance-b"); !errors.Is(err, ErrStopped) {
 		t.Fatalf("produce after shutdown error = %v", err)
 	}
 	if stats := producer.Stats(); stats.Pending != 0 || stats.Dropped == 0 {
@@ -197,10 +197,10 @@ func TestProducerRetriesOnlyTransientFailures(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- producer.Run(ctx) }()
-	if err := producer.Produce("event.message", nil, "https://transient.example", "instance-a"); err != nil {
+	if err := producer.Produce("event.message", []byte(`{}`), "https://transient.example", "instance-a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := producer.Produce("event.message", nil, "https://permanent.example", "instance-b"); err != nil {
+	if err := producer.Produce("event.message", []byte(`{}`), "https://permanent.example", "instance-b"); err != nil {
 		t.Fatal(err)
 	}
 	waitForStats(t, producer, func(stats Stats) bool { return stats.Succeeded == 1 && stats.Failed == 1 })
@@ -245,17 +245,17 @@ func TestProducerCopiesPayloadBeforeReturning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := []byte("original")
+	payload := []byte(`{"value":"original","instanceToken":"secret"}`)
 	if err := producer.Produce("event.message", payload, "https://example.com", "instance-a"); err != nil {
 		t.Fatal(err)
 	}
-	copy(payload, "mutated!")
+	copy(payload, `{"value":"mutated!","instanceToken":"secret"}`)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- producer.Run(ctx) }()
 	select {
 	case got := <-received:
-		if got != "original" {
+		if got != `{"value":"original"}` {
 			t.Fatalf("received payload = %q", got)
 		}
 	case <-time.After(time.Second):

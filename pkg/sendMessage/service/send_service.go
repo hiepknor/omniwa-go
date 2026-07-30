@@ -2968,7 +2968,6 @@ func (s *sendService) sendMessageContext(ctx context.Context, instance *instance
 		}
 	}
 
-	postMap["instanceToken"] = instance.Token
 	postMap["instanceId"] = instance.Id
 	postMap["instanceName"] = instance.Name
 
@@ -3452,7 +3451,6 @@ func (s *sendService) sendStatusWebhook(messageSent *MessageSendStruct, instance
 	messageData["Message"] = msgMap
 	messageData["MessageContextInfo"] = messageSent.MessageContextInfo
 	postMap["data"] = messageData
-	postMap["instanceToken"] = instance.Token
 	postMap["instanceId"] = instance.Id
 	postMap["instanceName"] = instance.Name
 
