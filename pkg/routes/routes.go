@@ -230,40 +230,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/edit", r.jidValidationMiddleware.ValidateNumberField(), r.messageHandler.EditMessage) // TODO: edit MediaMessage too
 		}
 	}
-	routes = eng.Group("/chat")
-	{
-		routes.Use(r.authMiddleware.Auth)
-		{
-			routes.POST("/pin", r.observeConversationAPI(observability.ConversationContractProvider, observability.ConversationOperationPin), r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatPin)                   // TODO: not working
-			routes.POST("/unpin", r.observeConversationAPI(observability.ConversationContractProvider, observability.ConversationOperationUnpin), r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnpin)             // TODO: not working
-			routes.POST("/archive", r.observeConversationAPI(observability.ConversationContractProvider, observability.ConversationOperationArchive), r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatArchive)       // TODO: not working
-			routes.POST("/unarchive", r.observeConversationAPI(observability.ConversationContractProvider, observability.ConversationOperationUnarchive), r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnarchive) // TODO: not working
-			routes.POST("/mute", r.observeConversationAPI(observability.ConversationContractProvider, observability.ConversationOperationMute), r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatMute)                // TODO: not working
-			routes.POST("/unmute", r.observeConversationAPI(observability.ConversationContractProvider, observability.ConversationOperationUnmute), r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnmute)          // TODO: not working
-			routes.POST("/history-sync", r.observeConversationAPI(observability.ConversationContractProvider, observability.ConversationOperationHistorySync), r.chatHandler.HistorySyncRequest)
-		}
-	}
-	routes = eng.Group("/conversations")
-	{
-		routes.Use(r.authMiddleware.Auth)
-		{
-			routes.GET("", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationList), r.chatHandler.ListConversations)
-			routes.GET("/:conversationRef", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationGet), r.chatHandler.GetConversation)
-			routes.GET("/:conversationRef/messages", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMessages), r.chatHandler.ConversationMessages)
-			routes.GET("/:conversationRef/messages/:messageId", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMessage), r.chatHandler.ConversationMessage)
-			if r.chatHandler.ConversationAppStateCommandsEnabled() {
-				routes.POST("/:conversationRef/archive", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationArchive), r.chatHandler.ArchiveConversation)
-				routes.DELETE("/:conversationRef/archive", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationUnarchive), r.chatHandler.UnarchiveConversation)
-				routes.POST("/:conversationRef/pin", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationPin), r.chatHandler.PinConversation)
-				routes.DELETE("/:conversationRef/pin", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationUnpin), r.chatHandler.UnpinConversation)
-				routes.PUT("/:conversationRef/mute", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMute), r.chatHandler.MuteConversation)
-				routes.DELETE("/:conversationRef/mute", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationUnmute), r.chatHandler.UnmuteConversation)
-			}
-			if r.chatHandler.ConversationHistorySyncEnabled() {
-				routes.POST("/:conversationRef/history-sync", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationHistorySync), r.chatHandler.ConversationHistorySync)
-			}
-		}
-	}
+	r.assignConversationRoutes(eng)
 	routes = eng.Group("/group")
 	{
 		routes.Use(r.authMiddleware.Auth)
@@ -358,6 +325,26 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		}
 	}
 
+}
+
+func (r *Routes) assignConversationRoutes(eng *gin.Engine) {
+	routes := eng.Group("/conversations")
+	routes.Use(r.authMiddleware.Auth)
+	routes.GET("", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationList), r.chatHandler.ListConversations)
+	routes.GET("/:conversationRef", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationGet), r.chatHandler.GetConversation)
+	routes.GET("/:conversationRef/messages", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMessages), r.chatHandler.ConversationMessages)
+	routes.GET("/:conversationRef/messages/:messageId", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMessage), r.chatHandler.ConversationMessage)
+	if r.chatHandler.ConversationAppStateCommandsEnabled() {
+		routes.POST("/:conversationRef/archive", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationArchive), r.chatHandler.ArchiveConversation)
+		routes.DELETE("/:conversationRef/archive", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationUnarchive), r.chatHandler.UnarchiveConversation)
+		routes.POST("/:conversationRef/pin", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationPin), r.chatHandler.PinConversation)
+		routes.DELETE("/:conversationRef/pin", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationUnpin), r.chatHandler.UnpinConversation)
+		routes.PUT("/:conversationRef/mute", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMute), r.chatHandler.MuteConversation)
+		routes.DELETE("/:conversationRef/mute", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationUnmute), r.chatHandler.UnmuteConversation)
+	}
+	if r.chatHandler.ConversationHistorySyncEnabled() {
+		routes.POST("/:conversationRef/history-sync", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationHistorySync), r.chatHandler.ConversationHistorySync)
+	}
 }
 
 func (r *Routes) assignMetricsRoute(eng *gin.Engine) {

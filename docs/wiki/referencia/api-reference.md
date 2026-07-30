@@ -104,17 +104,18 @@ http://localhost:4000
 
 ---
 
-### Chats (7 endpoints)
+### Conversations (11 operations)
 
-- `POST /chat/pin` - Fixar conversa
-- `POST /chat/unpin` - Desfixar conversa
-- `POST /chat/archive` - Arquivar
-- `POST /chat/unarchive` - Desarquivar
-- `POST /chat/mute` - Silenciar
-- `POST /chat/unmute` - Reativar notificações
-- `POST /chat/history-sync` - Sincronizar histórico
+- `GET /conversations` - List canonical Conversations
+- `GET /conversations/{conversationRef}` - Get one canonical Conversation
+- `GET /conversations/{conversationRef}/messages` - List canonical message history
+- `GET /conversations/{conversationRef}/messages/{messageId}` - Get one scoped message
+- `POST` / `DELETE /conversations/{conversationRef}/archive` - Archive or unarchive
+- `POST` / `DELETE /conversations/{conversationRef}/pin` - Pin or unpin
+- `PUT` / `DELETE /conversations/{conversationRef}/mute` - Mute or unmute
+- `POST /conversations/{conversationRef}/history-sync` - Request older history
 
-**Documentação completa:** [API de Chats](../guias-api/api-chats.md)
+**Complete documentation:** [Conversation API](../guias-api/api-chats.md)
 
 ---
 

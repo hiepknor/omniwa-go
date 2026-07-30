@@ -947,7 +947,6 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		send_handler.NewSendHandler(sendMessageService, sendHandlerOptions...),
 		message_handler.NewMessageHandler(messageService, chatMessageReader),
 		chat_handler.NewChatHandler(
-			chatService,
 			chatMessageReader,
 			chat_handler.WithConversationCommands(
 				conversationCommandService,

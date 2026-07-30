@@ -82,7 +82,7 @@ Referência completa de todos os endpoints disponíveis.
 | [**Mensagens**](./guias-api/api-messages.md) | 16 | Enviar texto, mídia, enquetes, stickers |
 | [**Usuários**](./guias-api/api-user.md) | 13 | Perfil, contatos, privacidade, bloqueio |
 | [**Grupos**](./guias-api/api-groups.md) | 11 | Criar e administrar grupos |
-| [**Chats**](./guias-api/api-chats.md) | 7 | Pin, archive, mute, histórico |
+| [**Conversations**](./guias-api/api-chats.md) | 11 | Canonical reads, archive, pin, mute, and history sync |
 | [**Labels**](./guias-api/api-labels.md) | 6 | Etiquetar chats e mensagens |
 | [**Chamadas**](./guias-api/api-call.md) | 1 | Rejeitar chamadas recebidas |
 | [**Comunidades**](./guias-api/api-community.md) | 3 | Criar e gerenciar comunidades |

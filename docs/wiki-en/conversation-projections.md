@@ -170,23 +170,20 @@ Conversations are supported; newsletter, broadcast, unknown, and infinite mute
 semantics fail closed. A provider acknowledgement returns HTTP 202 and the
 projection is updated only from subsequent authoritative app-state events.
 
-The legacy provider commands remain under `/chat/*` during the measured
-compatibility window. They accept provider metadata and must not be given a
-canonical UUID.
-
-### Removed Chat-read contract
+### Removed Chat contract
 
 ADR 0039 physically removed `GET /chat/list`, `GET /chat/info/{chatId}`,
 `GET /chat/{chatId}/messages`, and `GET /message/{messageId}` together with the
-legacy DTOs and capability alias. Provider commands under `/chat/*` and
-`GET /message/{messageId}/delivery` remain. A removed path now receives the
-router's normal not-found response; there is no runtime compatibility flag or
-HTTP 410 tombstone in the current binary.
+legacy DTOs and capability alias. ADR 0041 subsequently removed the seven
+provider command operations under `/chat/*` after the owned Console consumer
+cut over. `GET /message/{messageId}/delivery` remains. A removed path now
+receives the router's normal not-found response; there is no runtime
+compatibility flag or HTTP 410 tombstone in the current binary.
 
 Prometheus exposes canonical `omniwa_conversation_api_requests_total` and
 `omniwa_conversation_api_request_duration_seconds` series with bounded labels.
-Historical `contract="legacy_chat"` series may remain in durable storage, but
-the current binary does not emit them.
+Historical `contract="legacy_chat"` and `contract="provider_chat"` series may
+remain in durable storage, but the current binary does not emit them.
 
 ## Projected message field contract
 

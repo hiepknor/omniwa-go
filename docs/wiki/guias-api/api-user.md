@@ -747,7 +747,7 @@ Ao alterar foto de perfil, certifique-se que a imagem:
 
 - [API de Mensagens](./api-messages.md) - Enviar e gerenciar mensagens
 - [API de Grupos](./api-groups.md) - Gerenciar grupos WhatsApp
-- [API de Chats](./api-chats.md) - Gerenciar conversas
+- [Conversation API](./api-chats.md) - Inspect and manage canonical Conversations
 - [Visão Geral da API](./api-overview.md)
 
 ---

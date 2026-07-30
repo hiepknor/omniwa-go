@@ -2,7 +2,6 @@ package observability
 
 import (
 	"io"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -59,7 +58,7 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	registry.ConversationAPI().ObserveConversationRequest("legacy_chat", ConversationOperationList, 200, time.Second)
 	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, "provider_120363@g.us", 200, time.Second)
 	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, ConversationOperationList, 999, time.Second)
-	registry.ConversationAPI().ObserveConversationRequest(ConversationContractProvider, "provider_120363@g.us", 200, time.Second)
+	registry.ConversationAPI().ObserveConversationRequest("provider_chat", "provider_120363@g.us", 200, time.Second)
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -72,26 +71,6 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("invalid metric material was exposed: %q", forbidden)
 		}
-	}
-}
-
-func TestConversationObserverRecordsBoundedProviderCommand(t *testing.T) {
-	registry, err := NewRegistry()
-	if err != nil {
-		t.Fatal(err)
-	}
-	registry.ConversationAPI().ObserveConversationRequest(ConversationContractProvider, ConversationOperationHistorySync, http.StatusBadRequest, time.Millisecond)
-
-	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	response := httptest.NewRecorder()
-	registry.Handler().ServeHTTP(response, request)
-	body, err := io.ReadAll(response.Result().Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := `omniwa_conversation_api_requests_total{contract="provider_chat",operation="history_sync",status="4xx"} 1`
-	if !strings.Contains(string(body), want) {
-		t.Fatalf("missing metric %q in %s", want, body)
 	}
 }
 

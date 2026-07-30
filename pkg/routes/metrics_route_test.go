@@ -97,19 +97,3 @@ func TestConversationAPIMiddlewareRecordsBoundedRouteOutcome(t *testing.T) {
 		t.Fatalf("observation=%+v", observation)
 	}
 }
-
-func TestConversationAPIMiddlewareRecordsProviderCommandOutcome(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	observation := &conversationObservation{}
-	configured := &Routes{conversationObserver: observation}
-	router := gin.New()
-	router.POST("/chat/history-sync", configured.observeConversationAPI("provider_chat", "history_sync"), func(ctx *gin.Context) {
-		ctx.Status(http.StatusBadRequest)
-	})
-
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/chat/history-sync", nil))
-	if observation.contract != "provider_chat" || observation.operation != "history_sync" || observation.status != http.StatusBadRequest || observation.duration < 0 {
-		t.Fatalf("observation=%+v", observation)
-	}
-}

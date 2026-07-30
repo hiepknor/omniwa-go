@@ -136,19 +136,19 @@ func TestConversationCommandHandlersReturnMachineReadableErrors(t *testing.T) {
 }
 
 func TestConversationCommandFeatureFlagsRequireAService(t *testing.T) {
-	handler := NewChatHandler(nil, nil, WithConversationCommands(nil, true, true))
+	handler := NewChatHandler(nil, WithConversationCommands(nil, true, true))
 	if handler.ConversationAppStateCommandsEnabled() || handler.ConversationHistorySyncEnabled() {
 		t.Fatal("nil command service enabled canonical routes")
 	}
 	service := &conversationCommandServiceFake{}
-	handler = NewChatHandler(nil, nil, WithConversationCommands(service, true, false))
+	handler = NewChatHandler(nil, WithConversationCommands(service, true, false))
 	if !handler.ConversationAppStateCommandsEnabled() || handler.ConversationHistorySyncEnabled() {
 		t.Fatal("feature flags were not preserved")
 	}
 }
 
 func conversationCommandTestRouter(service conversationCommandService) *gin.Engine {
-	handler := NewChatHandler(nil, nil, WithConversationCommands(service, true, true))
+	handler := NewChatHandler(nil, WithConversationCommands(service, true, true))
 	router := gin.New()
 	router.Use(httpapi.RequestIdentity(), func(ctx *gin.Context) { ctx.Set("instance", &instance_model.Instance{Id: "instance-a"}) })
 	router.POST("/conversations/:conversationRef/archive", handler.ArchiveConversation)

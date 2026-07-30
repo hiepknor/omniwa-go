@@ -137,15 +137,10 @@ Gerenciar grupos WhatsApp
 - `POST /group/join` - Entrar via link
 - `POST /group/leave` - Sair do grupo
 
-### Chats
-Gerenciar conversas
-- `POST /chat/pin` - Fixar conversa
-- `POST /chat/unpin` - Desfixar conversa
-- `POST /chat/archive` - Arquivar conversa
-- `POST /chat/unarchive` - Desarquivar
-- `POST /chat/mute` - Silenciar notificações
-- `POST /chat/unmute` - Reativar notificações
-- `POST /chat/history-sync` - Solicitar sincronização de histórico
+### Conversations
+Use `/conversations` for canonical reads and
+`/conversations/{conversationRef}` for archive, pin, mute, and history-sync
+commands. The former provider `/chat/*` commands have been removed.
 
 ### Labels (Etiquetas)
 Organizar conversas com etiquetas
