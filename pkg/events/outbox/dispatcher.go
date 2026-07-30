@@ -114,7 +114,7 @@ func (r *DatabaseTargetResolver) WebhookTarget(ctx context.Context, destination 
 	if result.Error != nil {
 		return "", &DeliveryError{Code: "target_lookup_failed", Retryable: true, Cause: result.Error}
 	}
-	if strings.TrimSpace(row.Webhook) == "" {
+	if target := strings.TrimSpace(row.Webhook); target == "" || target == "disabled" {
 		return "", &DeliveryError{Code: "destination_disabled", Retryable: false}
 	}
 	return strings.TrimSpace(row.Webhook), nil
@@ -141,7 +141,7 @@ func (r *DatabaseTargetResolver) RabbitMQMode(ctx context.Context, destination D
 	if result.Error != nil {
 		return "", &DeliveryError{Code: "target_lookup_failed", Retryable: true, Cause: result.Error}
 	}
-	if row.RabbitmqEnable != "enabled" {
+	if row.RabbitmqEnable != "enabled" && row.RabbitmqEnable != "true" {
 		return "", &DeliveryError{Code: "destination_disabled", Retryable: false}
 	}
 	return "enabled", nil

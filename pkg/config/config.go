@@ -160,6 +160,7 @@ type WebhookConfig struct {
 
 type ExternalEventOutboxConfig struct {
 	ServeEnabled   bool
+	EmitTransports []string
 	BatchSize      int
 	LeaseDuration  time.Duration
 	PollInterval   time.Duration
@@ -439,6 +440,10 @@ func Load() *Config {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WEBHOOK_RETRY_BASE, err)
 	}
 	externalEventOutboxServeEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED)), "true")
+	externalEventOutboxEmitTransports, err := parseExternalEventOutboxTransports(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_EMIT_TRANSPORTS), externalEventOutboxServeEnabled)
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.EXTERNAL_EVENT_OUTBOX_EMIT_TRANSPORTS, err)
+	}
 	externalEventOutboxBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_BATCH), "4"))
 	if err != nil || externalEventOutboxBatch > 32 {
 		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 32", config_env.EXTERNAL_EVENT_OUTBOX_BATCH)
@@ -851,7 +856,7 @@ func Load() *Config {
 			RetryBase:             webhookRetryBase,
 		},
 		ExternalEventOutbox: ExternalEventOutboxConfig{
-			ServeEnabled: externalEventOutboxServeEnabled, BatchSize: externalEventOutboxBatch,
+			ServeEnabled: externalEventOutboxServeEnabled, EmitTransports: externalEventOutboxEmitTransports, BatchSize: externalEventOutboxBatch,
 			LeaseDuration: externalEventOutboxLease, PollInterval: externalEventOutboxPoll,
 			AttemptTimeout: externalEventOutboxAttemptTimeout, StateTimeout: externalEventOutboxStateTimeout,
 			RetryBase: externalEventOutboxRetryBase, RetryMax: externalEventOutboxRetryMax,
@@ -1021,6 +1026,24 @@ func splitNonEmptyCSV(value string) []string {
 		}
 	}
 	return result
+}
+
+func parseExternalEventOutboxTransports(value string, serveEnabled bool) ([]string, error) {
+	transports := splitNonEmptyCSV(strings.ToLower(value))
+	seen := make(map[string]struct{}, len(transports))
+	for _, transport := range transports {
+		if transport != "webhook" && transport != "rabbitmq" {
+			return nil, errors.New("only webhook and rabbitmq are supported")
+		}
+		if _, duplicate := seen[transport]; duplicate {
+			return nil, errors.New("transports must be unique")
+		}
+		seen[transport] = struct{}{}
+	}
+	if len(transports) > 0 && !serveEnabled {
+		return nil, errors.New("serve mode must be enabled before durable emission")
+	}
+	return transports, nil
 }
 
 func parsePositiveInt64OrFatal(name, fallback string) int64 {

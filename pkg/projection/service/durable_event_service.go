@@ -45,8 +45,25 @@ func NewDurableEventService(repository durableEventWriter, retention time.Durati
 }
 
 func (s *DurableEventService) Record(ctx context.Context, instanceID, eventType string, raw any) (*projection_model.DurableEvent, error) {
+	event, err := s.Build(instanceID, eventType, raw)
+	if err != nil {
+		return nil, err
+	}
+	if ctx == nil {
+		return nil, errors.New("durable event context is required")
+	}
+	if err := s.repository.Append(ctx, event); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+// Build normalizes an event without persisting it. Application emitters use
+// this to assemble durable history and selected delivery routes before one
+// transactional repository boundary.
+func (s *DurableEventService) Build(instanceID, eventType string, raw any) (*projection_model.DurableEvent, error) {
 	eventType = strings.TrimSpace(eventType)
-	if s == nil || s.repository == nil || s.now == nil || s.retention <= 0 || ctx == nil || instanceID == "" || eventType == "" || len(eventType) > 64 {
+	if s == nil || s.repository == nil || s.now == nil || s.retention <= 0 || instanceID == "" || eventType == "" || len(eventType) > 64 {
 		return nil, errors.New("durable event dependencies, identity, type, and retention are required")
 	}
 	now := s.now().UTC()
@@ -58,9 +75,6 @@ func (s *DurableEventService) Record(ctx context.Context, instanceID, eventType 
 	event := &projection_model.DurableEvent{
 		ID: uuid.NewString(), InstanceID: instanceID, Type: eventType,
 		OccurredAt: occurredAt, IngestedAt: now, ExpiresAt: now.Add(s.retention), Summary: payload,
-	}
-	if err := s.repository.Append(ctx, event); err != nil {
-		return nil, err
 	}
 	return event, nil
 }

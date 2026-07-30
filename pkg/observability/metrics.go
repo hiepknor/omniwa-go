@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/evolution-foundation/evolution-go/pkg/events/emission"
 	"github.com/evolution-foundation/evolution-go/pkg/events/outbox"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -77,6 +78,9 @@ type Registry struct {
 	outboxQueue                  *prometheus.GaugeVec
 	outboxOldestPending          prometheus.Gauge
 	outboxInfrastructureFailures *prometheus.CounterVec
+	emitterRecords               *prometheus.CounterVec
+	emitterRouteCount            *prometheus.HistogramVec
+	emitterRoutes                *prometheus.CounterVec
 }
 
 // NewRegistry constructs an isolated registry. Registration failures are
@@ -134,6 +138,18 @@ func NewRegistry() (*Registry, error) {
 			Namespace: "omniwa", Subsystem: "external_event_outbox", Name: "infrastructure_failures_total",
 			Help: "Outbox worker infrastructure failures by bounded code.",
 		}, []string{"code"}),
+		emitterRecords: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "omniwa", Subsystem: "external_event_emitter", Name: "records_total",
+			Help: "Atomic external event record attempts by bounded mode and outcome.",
+		}, []string{"mode", "outcome"}),
+		emitterRouteCount: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "omniwa", Subsystem: "external_event_emitter", Name: "route_count",
+			Help: "Number of selected durable routes per atomic event record.", Buckets: []float64{0, 1, 2, 3, 4},
+		}, []string{"mode", "outcome"}),
+		emitterRoutes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "omniwa", Subsystem: "external_event_emitter", Name: "routes_total",
+			Help: "Successfully recorded durable routes by bounded transport and destination.",
+		}, []string{"transport", "destination"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -142,12 +158,38 @@ func NewRegistry() (*Registry, error) {
 		result.conversationRequests, result.conversationDuration,
 		result.outboxAttempts, result.outboxAttemptDuration, result.outboxClaimed,
 		result.outboxQueue, result.outboxOldestPending, result.outboxInfrastructureFailures,
+		result.emitterRecords, result.emitterRouteCount, result.emitterRoutes,
 	} {
 		if err := result.registry.Register(collector); err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
+}
+
+// ExternalEventEmitter returns aggregate-only acceptance instrumentation.
+func (r *Registry) ExternalEventEmitter() emission.Observer {
+	if r == nil {
+		return nil
+	}
+	return r
+}
+
+func (r *Registry) ObserveEmission(mode, outcome string, routes int) {
+	if r == nil || (mode != "history_only" && mode != "routed") || (outcome != "success" && outcome != "failed") || routes < 0 || routes > 4 {
+		return
+	}
+	r.emitterRecords.WithLabelValues(mode, outcome).Inc()
+	r.emitterRouteCount.WithLabelValues(mode, outcome).Observe(float64(routes))
+}
+
+func (r *Registry) ObserveRoute(transport outbox.Transport, destination outbox.Destination) {
+	transportLabel := boundedOutboxTransport(transport)
+	if r == nil || transportLabel == "" || transport == outbox.TransportNATS ||
+		(destination != outbox.DestinationInstance && destination != outbox.DestinationGlobal) {
+		return
+	}
+	r.emitterRoutes.WithLabelValues(transportLabel, string(destination)).Inc()
 }
 
 // ExternalEventOutbox returns aggregate-only worker instrumentation. Labels

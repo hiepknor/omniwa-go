@@ -124,6 +124,19 @@ func TestRepositoryPostgresLifecycleFencingAndAtomicity(t *testing.T) {
 	if mode, err := resolver.RabbitMQMode(ctx, DestinationInstance, instance.Id); err != nil || mode != "enabled" {
 		t.Fatalf("instance RabbitMQ mode = %q, %v", mode, err)
 	}
+	if err := db.Model(&instance_model.Instance{}).Where("id = ?", instance.Id).Updates(map[string]any{
+		"webhook": "disabled", "rabbitmq_enable": "true",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolver.WebhookTarget(ctx, DestinationInstance, instance.Id)
+	var disabled *DeliveryError
+	if !errors.As(err, &disabled) || disabled.Code != "destination_disabled" || disabled.Retryable {
+		t.Fatalf("disabled webhook classification = %#v, %v", disabled, err)
+	}
+	if mode, err := resolver.RabbitMQMode(ctx, DestinationInstance, instance.Id); err != nil || mode != "enabled" {
+		t.Fatalf("legacy true RabbitMQ mode = %q, %v", mode, err)
+	}
 	if target, err := resolver.WebhookTarget(ctx, DestinationGlobal, instance.Id); err != nil || target != "https://global.example/events" {
 		t.Fatalf("global webhook target = %q, %v", target, err)
 	}

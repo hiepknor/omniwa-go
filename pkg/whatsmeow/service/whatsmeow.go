@@ -36,7 +36,9 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/evolution-foundation/evolution-go/pkg/config"
+	event_emission "github.com/evolution-foundation/evolution-go/pkg/events/emission"
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
+	event_outbox "github.com/evolution-foundation/evolution-go/pkg/events/outbox"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
 	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
@@ -64,7 +66,7 @@ type WhatsmeowService interface {
 	ClearInstanceCache(instanceId string, token string) error
 	CallWebhook(instance *instance_model.Instance, queueName string, jsonData []byte)
 	SendToGlobalQueues(event string, jsonData []byte, userId string)
-	PersistDurableEvent(instanceID, eventType string, raw any) bool
+	EmitExternalEvent(instance *instance_model.Instance, eventType string, raw any, queueName string, payload []byte) bool
 	WaitOutbound(ctx context.Context, instanceID string, cost int) error
 	ForceUpdateJid(instanceId string, number string) error
 	UpdateInstanceSettings(instanceId string) error
@@ -119,7 +121,7 @@ type whatsmeowService struct {
 	identityResolver   projection_service.ContactLIDResolver
 	chatReconciler     *projection_service.ConversationReconciler
 	historySyncer      *projection_service.HistorySyncer
-	durableEvents      *projection_service.DurableEventService
+	externalEvents     *event_emission.Emitter
 	appCtx             context.Context
 }
 
@@ -505,16 +507,6 @@ func (mycli *MyClient) triggerHistoryProjectionSync(event *events.HistorySync) {
 			)
 		}
 	}()
-}
-
-func (mycli *MyClient) persistDurableEvent(raw any, eventType string) bool {
-	if mycli == nil || mycli.service == nil || mycli.userID == "" || eventType == "" {
-		if mycli != nil && mycli.loggerWrapper != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=events action=persist instance_id=%s result=failed error_code=missing_dependency", mycli.userID)
-		}
-		return false
-	}
-	return mycli.service.PersistDurableEvent(mycli.userID, eventType, raw)
 }
 
 func (mycli *MyClient) handleFullSyncAppStateEvent(rawEvent any) bool {
@@ -1164,15 +1156,10 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 				"instanceName": instance.Name,
 			}
 			queueName := strings.ToLower(fmt.Sprintf("%s.%s", instanceID, "QRCode"))
-			if mycli.persistDurableEvent(nil, "QRCode") {
-				if values, err := json.Marshal(postMap); err == nil {
-					go mycli.service.CallWebhook(instance, queueName, values)
-					if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
-						go mycli.service.SendToGlobalQueues("QRCode", values, instanceID)
-					}
-				} else {
-					mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to marshal JSON for queue", instanceID)
-				}
+			if values, err := json.Marshal(postMap); err == nil {
+				mycli.service.EmitExternalEvent(instance, "QRCode", nil, queueName, values)
+			} else {
+				mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to marshal JSON for queue", instanceID)
 			}
 
 			// Rotation timing: first code lives ~60s, subsequent ~20s (whatsmeow native).
@@ -1236,16 +1223,11 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 		"instanceName": instance.Name,
 	}
 	queueName := strings.ToLower(fmt.Sprintf("%s.%s", instanceID, "QRTimeout"))
-	if mycli.persistDurableEvent(nil, "QRTimeout") {
-		values, err := json.Marshal(postMap)
-		if err != nil {
-			mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to marshal JSON for QRTimeout", instanceID)
-		} else {
-			go mycli.service.CallWebhook(instance, queueName, values)
-			if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
-				go mycli.service.SendToGlobalQueues("QRTimeout", values, instanceID)
-			}
-		}
+	values, err := json.Marshal(postMap)
+	if err != nil {
+		mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to marshal JSON for QRTimeout", instanceID)
+	} else {
+		mycli.service.EmitExternalEvent(instance, "QRTimeout", nil, queueName, values)
 	}
 
 	mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] QR timeout — retiring runtime generation=%d", instanceID, mycli.runtimeGeneration)
@@ -2155,18 +2137,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				"instanceName": mycli.Instance.Name,
 			}
 
-			if mycli.persistDurableEvent(evt, "ButtonClick") {
-				buttonClickJSON, err := json.Marshal(buttonClickMap)
-				if err != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to marshal ButtonClick event", mycli.userID)
-				} else {
-					buttonClickQueue := strings.ToLower(fmt.Sprintf("%s.buttonclick", userID))
-					go mycli.service.CallWebhook(mycli.Instance, buttonClickQueue, buttonClickJSON)
-					if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
-						go mycli.service.SendToGlobalQueues("ButtonClick", buttonClickJSON, mycli.userID)
-					}
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== BUTTON CLICK EVENT DISPATCHED ===== Type: %s, ButtonId: %s", mycli.userID, buttonClickData["type"], buttonClickData["buttonId"])
-				}
+			buttonClickJSON, err := json.Marshal(buttonClickMap)
+			if err != nil {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to marshal ButtonClick event", mycli.userID)
+			} else {
+				buttonClickQueue := strings.ToLower(fmt.Sprintf("%s.buttonclick", userID))
+				mycli.service.EmitExternalEvent(mycli.Instance, "ButtonClick", evt, buttonClickQueue, buttonClickJSON)
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== BUTTON CLICK EVENT DISPATCHED ===== Type: %s, ButtonId: %s", mycli.userID, buttonClickData["type"], buttonClickData["buttonId"])
 			}
 		}
 
@@ -2318,26 +2295,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postMap["instanceId"] = mycli.userID
 		postMap["instanceName"] = mycli.Instance.Name
 
-		if mycli.persistDurableEvent(rawEvt, "LoggedOut") {
-			values, err := json.Marshal(postMap)
-			if err != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to marshal JSON for LoggedOut event", mycli.userID)
-			} else {
-				var queueName string
-				if _, ok := postMap["event"]; ok {
-					queueName = strings.ToLower(fmt.Sprintf("%s.%s", mycli.userID, postMap["event"]))
-				}
-
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== DISPATCHING LOGGEDOUT EVENT ===== Queue: %s", mycli.userID, queueName)
-
-				// Enviar para webhook/RabbitMQ
-				go mycli.service.CallWebhook(mycli.Instance, queueName, values)
-
-				if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Sending LoggedOut to global queues - AMQP: %v, NATS: %v", mycli.userID, mycli.config.AmqpGlobalEnabled, mycli.config.NatsGlobalEnabled)
-					go mycli.service.SendToGlobalQueues(postMap["event"].(string), values, mycli.userID)
-				}
-			}
+		values, err := json.Marshal(postMap)
+		if err != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to marshal JSON for LoggedOut event", mycli.userID)
+		} else {
+			queueName := strings.ToLower(fmt.Sprintf("%s.%s", mycli.userID, postMap["event"]))
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== DISPATCHING LOGGEDOUT EVENT ===== Queue: %s", mycli.userID, queueName)
+			mycli.service.EmitExternalEvent(mycli.Instance, "LoggedOut", rawEvt, queueName, values)
 		}
 		doWebhook = false
 
@@ -2514,9 +2478,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=events action=persist instance_id=%s result=failed error_code=missing_event_type", mycli.userID)
 			return
 		}
-		if !mycli.persistDurableEvent(rawEvt, eventType) {
-			return
-		}
 		postMap["instanceId"] = mycli.userID
 		postMap["instanceName"] = mycli.Instance.Name
 
@@ -2534,12 +2495,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		dataSize := len(values)
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== DISPATCHING WEBHOOK ===== Event: %s, Queue: %s, DataSize: %d bytes", mycli.userID, eventType, queueName, dataSize)
 
-		go mycli.service.CallWebhook(mycli.Instance, queueName, values)
-
-		if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Sending to global queues - Event: %s, AMQP: %v, NATS: %v", mycli.userID, eventType, mycli.config.AmqpGlobalEnabled, mycli.config.NatsGlobalEnabled)
-			go mycli.service.SendToGlobalQueues(postMap["event"].(string), values, mycli.userID)
-		}
+		mycli.service.EmitExternalEvent(mycli.Instance, eventType, rawEvt, queueName, values)
 	} else {
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] ===== WEBHOOK SKIPPED ===== doWebhook=false", mycli.userID)
 	}
@@ -2553,6 +2509,12 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 
 	eventType, ok := data["event"].(string)
 	if !ok {
+		return
+	}
+	if w.externalEvents != nil {
+		if event_emission.InstanceSubscribed(instance.Events, eventType, jsonData) {
+			w.sendToQueueOrWebhook(instance, queueName, jsonData)
+		}
 		return
 	}
 
@@ -2712,10 +2674,10 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 	}
 }
 
-func (w *whatsmeowService) PersistDurableEvent(instanceID, eventType string, raw any) bool {
-	if w == nil || w.durableEvents == nil || instanceID == "" || eventType == "" {
+func (w *whatsmeowService) EmitExternalEvent(instance *instance_model.Instance, eventType string, raw any, queueName string, payload []byte) bool {
+	if w == nil || w.externalEvents == nil || instance == nil || instance.Id == "" || eventType == "" || queueName == "" || len(payload) == 0 {
 		if w != nil && w.loggerWrapper != nil {
-			w.loggerWrapper.GetLogger(instanceID).LogError("component=events action=persist instance_id=%s result=failed error_code=missing_dependency", instanceID)
+			w.loggerWrapper.GetLogger("").LogError("component=external_event_emitter action=record result=failed error_code=missing_dependency")
 		}
 		return false
 	}
@@ -2725,9 +2687,15 @@ func (w *whatsmeowService) PersistDurableEvent(instanceID, eventType string, raw
 	}
 	ctx, cancel := context.WithTimeout(parent, durableEventWriteTimeout)
 	defer cancel()
-	if _, err := w.durableEvents.Record(ctx, instanceID, eventType, raw); err != nil {
-		w.loggerWrapper.GetLogger(instanceID).LogError("component=events action=persist instance_id=%s event_type=%s result=failed error_code=durable_write_failed", instanceID, eventType)
+	if err := w.externalEvents.Record(ctx, event_emission.Event{
+		Instance: instance, Type: eventType, QueueName: queueName, Raw: raw, Payload: payload,
+	}); err != nil {
+		w.loggerWrapper.GetLogger(instance.Id).LogError("component=external_event_emitter action=record result=failed error_code=atomic_write_failed")
 		return false
+	}
+	go w.CallWebhook(instance, queueName, payload)
+	if w.config.AmqpGlobalEnabled || w.config.NatsGlobalEnabled {
+		go w.SendToGlobalQueues(eventType, payload, instance.Id)
 	}
 	return true
 }
@@ -2742,7 +2710,8 @@ func contains(subscriptions []string, event string) bool {
 }
 
 func (w *whatsmeowService) sendToQueueOrWebhook(instance *instance_model.Instance, queueName string, jsonData []byte) {
-	if instance.RabbitmqEnable == "enabled" || instance.RabbitmqEnable == "true" {
+	if (w.externalEvents == nil || !w.externalEvents.Uses(event_outbox.TransportRabbitMQ)) &&
+		(instance.RabbitmqEnable == "enabled" || instance.RabbitmqEnable == "true") {
 		err := w.rabbitmqProducer.Produce(queueName, jsonData, instance.RabbitmqEnable, instance.Id)
 		if err != nil {
 			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to rabbitmq: %s", instance.Id, err)
@@ -2769,7 +2738,7 @@ func (w *whatsmeowService) sendToQueueOrWebhook(instance *instance_model.Instanc
 		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to websocket successfully", instance.Id)
 	}
 
-	if instance.Webhook != "" && instance.Webhook != "disabled" {
+	if (w.externalEvents == nil || !w.externalEvents.Uses(event_outbox.TransportWebhook)) && instance.Webhook != "" && instance.Webhook != "disabled" {
 		err := w.webhookProducer.Produce(queueName, jsonData, instance.Webhook, instance.Id)
 		if err != nil {
 			w.loggerWrapper.GetLogger(instance.Id).LogError("component=webhook action=enqueue result=failed error_code=delivery_not_admitted")
@@ -2931,9 +2900,27 @@ func getExtensionFromMimeType(mimeType string) string {
 
 func (w *whatsmeowService) SendToGlobalQueues(eventType string, payload []byte, userId string) {
 	w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Starting sendToGlobalQueues for event: %s", userId, eventType)
+	if w.externalEvents != nil {
+		if !w.externalEvents.Uses(event_outbox.TransportRabbitMQ) {
+			if queueName, enabled := w.externalEvents.GlobalRabbitQueue(eventType); enabled {
+				if err := w.rabbitmqProducer.Produce(queueName, payload, "global", userId); err != nil {
+					w.loggerWrapper.GetLogger(userId).LogError("[%s] Failed to send message to RabbitMQ global queue %s: %v", userId, queueName, err)
+				}
+			}
+		}
+		if w.config.NatsGlobalEnabled {
+			group := event_emission.EventGroup(eventType)
+			if group != "" && utils.Find(w.config.NatsGlobalEvents, group) {
+				if err := w.natsProducer.Produce(strings.ToLower(eventType), payload, "global", userId); err != nil {
+					w.loggerWrapper.GetLogger(userId).LogError("[%s] Failed to send message to NATS global subject: %v", userId, err)
+				}
+			}
+		}
+		return
+	}
 
 	// AMQP: AMQP_SPECIFIC_EVENTS tem prioridade sobre AMQP_GLOBAL_EVENTS
-	if w.config.AmqpGlobalEnabled {
+	if w.config.AmqpGlobalEnabled && (w.externalEvents == nil || !w.externalEvents.Uses(event_outbox.TransportRabbitMQ)) {
 		var shouldSendToAmqp bool
 		var amqpQueueName string
 
@@ -3282,7 +3269,7 @@ func NewWhatsmeowService(
 	contactIdentityResolver projection_service.ContactLIDResolver,
 	conversationReconciler *projection_service.ConversationReconciler,
 	historySyncer *projection_service.HistorySyncer,
-	durableEvents *projection_service.DurableEventService,
+	externalEvents *event_emission.Emitter,
 	appCtx context.Context,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) WhatsmeowService {
@@ -3317,7 +3304,7 @@ func NewWhatsmeowService(
 		identityResolver:   contactIdentityResolver,
 		chatReconciler:     conversationReconciler,
 		historySyncer:      historySyncer,
-		durableEvents:      durableEvents,
+		externalEvents:     externalEvents,
 		appCtx:             appCtx,
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),

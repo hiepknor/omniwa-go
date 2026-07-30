@@ -25,6 +25,10 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 	registry.ExternalEventOutbox().ObserveClaimed(4)
 	registry.ExternalEventOutbox().ObserveHealth(outbox.Health{Pending: 3, Processing: 1, DeadLetter: 2, OldestPendingAge: 5 * time.Second})
 	registry.ExternalEventOutbox().ObserveInfrastructureFailure("repository_error")
+	registry.ExternalEventEmitter().ObserveEmission("history_only", "success", 0)
+	registry.ExternalEventEmitter().ObserveEmission("routed", "failed", 2)
+	registry.ExternalEventEmitter().ObserveRoute(outbox.TransportWebhook, outbox.DestinationInstance)
+	registry.ExternalEventEmitter().ObserveRoute(outbox.TransportRabbitMQ, outbox.DestinationGlobal)
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -48,6 +52,12 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 		`omniwa_external_event_outbox_rows{status="pending"} 3`,
 		`omniwa_external_event_outbox_oldest_pending_age_seconds 5`,
 		`omniwa_external_event_outbox_infrastructure_failures_total{code="repository_error"} 1`,
+		`omniwa_external_event_emitter_records_total{mode="history_only",outcome="success"} 1`,
+		`omniwa_external_event_emitter_records_total{mode="routed",outcome="failed"} 1`,
+		`omniwa_external_event_emitter_route_count_count{mode="routed",outcome="failed"} 1`,
+		`omniwa_external_event_emitter_route_count_sum{mode="routed",outcome="failed"} 2`,
+		`omniwa_external_event_emitter_routes_total{destination="instance",transport="webhook"} 1`,
+		`omniwa_external_event_emitter_routes_total{destination="global",transport="rabbitmq"} 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q", expected)
@@ -72,6 +82,11 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	registry.ExternalEventOutbox().ObserveAttempt(outbox.Transport("instance-123"), "retry", "provider_120363@g.us", time.Second)
 	registry.ExternalEventOutbox().ObserveAttempt(outbox.TransportWebhook, "instance-123", "provider_120363@g.us", time.Second)
 	registry.ExternalEventOutbox().ObserveInfrastructureFailure("provider_120363@g.us")
+	registry.ExternalEventEmitter().ObserveEmission("instance-123", "success", 1)
+	registry.ExternalEventEmitter().ObserveEmission("routed", "provider_120363@g.us", 1)
+	registry.ExternalEventEmitter().ObserveEmission("routed", "success", 99)
+	registry.ExternalEventEmitter().ObserveRoute(outbox.Transport("instance-123"), outbox.DestinationInstance)
+	registry.ExternalEventEmitter().ObserveRoute(outbox.TransportWebhook, outbox.Destination("provider_120363@g.us"))
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -80,7 +95,7 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total", "omniwa_external_event_outbox_attempts_total", "omniwa_external_event_outbox_infrastructure_failures_total"} {
+	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total", "omniwa_external_event_outbox_attempts_total", "omniwa_external_event_outbox_infrastructure_failures_total", "omniwa_external_event_emitter_records_total", "omniwa_external_event_emitter_routes_total"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("invalid metric material was exposed: %q", forbidden)
 		}

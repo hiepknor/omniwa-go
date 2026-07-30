@@ -57,6 +57,20 @@ func TestDurableEventServicePersistsSafeMessageSummary(t *testing.T) {
 	}
 }
 
+func TestDurableEventServiceBuildNormalizesWithoutPersisting(t *testing.T) {
+	t.Parallel()
+	writer := &durableEventWriterStub{}
+	service := NewDurableEventService(writer, time.Hour)
+	service.now = func() time.Time { return time.Unix(2_000, 0).UTC() }
+	event, err := service.Build("instance-a", "Message", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.InstanceID != "instance-a" || event.Type != "Message" || len(writer.events) != 0 {
+		t.Fatalf("built event=%#v persisted=%d", event, len(writer.events))
+	}
+}
+
 func TestDurableEventServiceBoundsReceiptIdentifiersAndUsesSafeDefault(t *testing.T) {
 	messageIDs := make([]types.MessageID, 120)
 	for index := range messageIDs {
