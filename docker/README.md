@@ -38,6 +38,24 @@ curl -s -H "apikey: $GLOBAL_API_KEY" \
 The expected commit, OCI revision label, and `data.revision` response must be
 identical before the deployment is accepted.
 
+### Development external-event rollout
+
+The development stack keeps both outbox controls default-off. Start the worker
+without changing event routing by setting only the serve flag:
+
+```bash
+export EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED=true
+export EXTERNAL_EVENT_OUTBOX_EMIT_TRANSPORTS=
+docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate omniwa-go
+```
+
+After the idle queue and metrics baseline is healthy, canary one confirmed
+transport at a time by setting the emit value to `webhook` or `rabbitmq`.
+Never select a transport while serve mode is false. To roll back a canary,
+clear the emit value first, allow pending and processing rows to drain, and
+only then disable the worker. See ADR 0047 for the acceptance boundary and
+full rollback sequence.
+
 ### Development metrics
 
 The development stack persists Prometheus data in the `prometheus_data` named

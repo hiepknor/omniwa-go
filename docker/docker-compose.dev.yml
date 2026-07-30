@@ -73,6 +73,11 @@ services:
       CONNECT_ON_STARTUP: "false"
       WEBHOOK_FILES: "true"
 
+      # External event durability rollout. Serving can be enabled independently
+      # while emission remains empty to establish an idle operational baseline.
+      EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED: "${EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED:-false}"
+      EXTERNAL_EVENT_OUTBOX_EMIT_TRANSPORTS: "${EXTERNAL_EVENT_OUTBOX_EMIT_TRANSPORTS:-}"
+
       # RabbitMQ
       AMQP_URL: "amqp://admin:admin@rabbitmq:5672/default"
       AMQP_GLOBAL_ENABLED: "true"
