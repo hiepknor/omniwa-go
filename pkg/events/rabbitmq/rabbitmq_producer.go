@@ -1,6 +1,7 @@
 package rabbitmq_producer
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -21,6 +22,12 @@ type rabbitMQProducer struct {
 	connStr            string
 	maxRetries         int
 	loggerWrapper      *logger_wrapper.LoggerManager
+}
+
+const publisherConfirmTimeout = 5 * time.Second
+
+type messagePublisher interface {
+	Publish(string, string, bool, bool, amqp.Publishing) error
 }
 
 func NewRabbitMQProducer(
@@ -131,17 +138,9 @@ func (p *rabbitMQProducer) publishWithRetry(
 	userID string,
 ) error {
 	var err error
+	confirmations := channel.NotifyPublish(make(chan amqp.Confirmation, 1))
 	for i := 0; i < p.maxRetries; i++ {
-		err = channel.Publish(
-			"",        // exchange
-			queueName, // routing key
-			false,     // mandatory
-			false,     // immediate
-			amqp.Publishing{
-				ContentType:  "application/json",
-				Body:         payload,
-				DeliveryMode: amqp.Persistent, // Garante persistência da mensagem
-			})
+		err = publishAndAwaitConfirmation(channel, confirmations, queueName, payload, publisherConfirmTimeout)
 
 		if err == nil {
 			return nil
@@ -161,11 +160,47 @@ func (p *rabbitMQProducer) publishWithRetry(
 			if err != nil {
 				continue
 			}
+			defer channel.Close()
+			if err = channel.Confirm(false); err != nil {
+				continue
+			}
+			confirmations = channel.NotifyPublish(make(chan amqp.Confirmation, 1))
 		}
 
 		time.Sleep(time.Second * time.Duration(i+1))
 	}
 	return err
+}
+
+func publishAndAwaitConfirmation(
+	publisher messagePublisher,
+	confirmations <-chan amqp.Confirmation,
+	queueName string,
+	payload []byte,
+	timeout time.Duration,
+) error {
+	if publisher == nil || confirmations == nil || strings.TrimSpace(queueName) == "" || timeout <= 0 {
+		return errors.New("RabbitMQ publisher, confirmation stream, queue, and timeout are required")
+	}
+	if err := publisher.Publish("", queueName, false, false, amqp.Publishing{
+		ContentType: "application/json", Body: payload, DeliveryMode: amqp.Persistent,
+	}); err != nil {
+		return err
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case confirmation, ok := <-confirmations:
+		if !ok {
+			return errors.New("RabbitMQ publisher confirmation stream closed")
+		}
+		if !confirmation.Ack {
+			return errors.New("RabbitMQ broker rejected publish")
+		}
+		return nil
+	case <-timer.C:
+		return errors.New("RabbitMQ publisher confirmation timed out")
+	}
 }
 
 func (p *rabbitMQProducer) Produce(

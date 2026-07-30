@@ -63,6 +63,38 @@ func TestWebhookRejectsUnconfiguredTarget(t *testing.T) {
 	}
 }
 
+func TestDeliverConfirmedUsesHTTPAcknowledgementAndClassifiesFailure(t *testing.T) {
+	t.Parallel()
+	responses := []struct {
+		status    int
+		retryable bool
+	}{
+		{status: http.StatusNoContent, retryable: false},
+		{status: http.StatusTooManyRequests, retryable: true},
+		{status: http.StatusBadRequest, retryable: false},
+	}
+	for _, response := range responses {
+		requester := requesterFunc(func(context.Context, string, string, http.Header, []byte) (*netguard.Response, error) {
+			return &netguard.Response{StatusCode: response.status}, nil
+		})
+		producer, err := NewWebhookProducer("", requester, nil, testSettings())
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = producer.DeliverConfirmed(context.Background(), "https://configured.example/events", []byte(`{"ok":true}`))
+		if response.status == http.StatusNoContent {
+			if err != nil {
+				t.Fatalf("confirmed status %d returned %v", response.status, err)
+			}
+			continue
+		}
+		var classified *ConfirmedDeliveryError
+		if !errors.As(err, &classified) || classified.StatusCode != response.status || classified.Retryable != response.retryable {
+			t.Fatalf("status %d classification = %#v, %v", response.status, classified, err)
+		}
+	}
+}
+
 func TestProducerEnforcesGlobalAndPerInstanceOutstandingLimits(t *testing.T) {
 	settings := testSettings()
 	settings.QueueCapacity = 3
