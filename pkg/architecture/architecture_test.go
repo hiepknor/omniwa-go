@@ -155,6 +155,52 @@ func TestSensitivePersistenceFieldsAreNotSerializable(t *testing.T) {
 	}
 }
 
+func TestSensitiveConfigurationUsesFileBackedBoundary(t *testing.T) {
+	sensitiveNames := map[string]struct{}{
+		"POSTGRES_AUTH_DB": {}, "POSTGRES_USERS_DB": {}, "POSTGRES_PASSWORD": {},
+		"GLOBAL_API_KEY": {}, "INSTANCE_TOKEN_HMAC_KEY": {}, "AMQP_URL": {},
+		"WEBHOOK_URL": {}, "API_AUDIO_CONVERTER_KEY": {}, "PROXY_PASSWORD": {},
+		"NATS_URL": {}, "MEDIA_DESCRIPTOR_KEY": {}, "MINIO_ACCESS_KEY": {},
+		"MINIO_SECRET_KEY": {},
+	}
+	for _, source := range repositorySources(t) {
+		if source.rel == "pkg/config/secret.go" {
+			continue
+		}
+		osAliases := importAliases(source.file, "os", "os")
+		envAliases := importAliases(source.file, modulePrefix+"pkg/config/env", "env")
+		if len(osAliases) == 0 {
+			continue
+		}
+		ast.Inspect(source.file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || len(call.Args) != 1 {
+				return true
+			}
+			function, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || !isAliasSelector(function, osAliases) || !contains([]string{"Getenv", "LookupEnv"}, function.Sel.Name) {
+				return true
+			}
+			name := ""
+			switch argument := call.Args[0].(type) {
+			case *ast.SelectorExpr:
+				if isAliasSelector(argument, envAliases) {
+					name = argument.Sel.Name
+				}
+			case *ast.BasicLit:
+				if argument.Kind == token.STRING {
+					name, _ = strconv.Unquote(argument.Value)
+				}
+			}
+			if _, sensitive := sensitiveNames[name]; sensitive {
+				position := source.set.Position(call.Pos())
+				t.Errorf("%s:%d: %s must use pkg/config sensitiveValue for NAME_FILE support", source.rel, position.Line, name)
+			}
+			return true
+		})
+	}
+}
+
 func TestWhatsAppRuntimeStateIsRegistryOwned(t *testing.T) {
 	for _, source := range repositorySources(t) {
 		whatsmeowAliases := importAliases(source.file, "go.mau.fi/whatsmeow", "whatsmeow")

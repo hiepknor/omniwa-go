@@ -1,6 +1,5 @@
 # Docker Swarm deployment reference for OmniWA GO.
-# Adjust the domain, GLOBAL_API_KEY, database URL, and the external network/
-# volumes to your environment, then:
+# Adjust the domain, external secret names, network, and volumes, then:
 #   docker stack deploy -c swarm/docker-stack.yml omniwa
 #
 # Assumes an external overlay network (here: network_public) and an existing
@@ -19,11 +18,9 @@ services:
       # Set to false to run without the license activation gate.
       LICENSE_GATE_ENABLED: "true"
 
-      # CHANGE THIS
-      GLOBAL_API_KEY: "change-me"
-
-      POSTGRES_AUTH_DB: "postgresql://postgres:postgres@postgres:5432/omniwa_auth?sslmode=disable"
-      POSTGRES_USERS_DB: "postgresql://postgres:postgres@postgres:5432/omniwa_users?sslmode=disable"
+      GLOBAL_API_KEY_FILE: /run/secrets/omniwa_global_api_key
+      POSTGRES_AUTH_DB_FILE: /run/secrets/omniwa_postgres_auth_dsn
+      POSTGRES_USERS_DB_FILE: /run/secrets/omniwa_postgres_users_dsn
       DATABASE_SAVE_MESSAGES: "false"
 
       WADEBUG: "INFO"
@@ -37,6 +34,10 @@ services:
       EVENT_IGNORE_STATUS: "true"
 
       MINIO_ENABLED: "false"
+    secrets:
+      - omniwa_global_api_key
+      - omniwa_postgres_auth_dsn
+      - omniwa_postgres_users_dsn
     volumes:
       - omniwa_data:/app/dbdata
       - omniwa_logs:/app/logs
@@ -74,3 +75,14 @@ networks:
   network_public:
     external: true
     name: network_public
+
+secrets:
+  omniwa_global_api_key:
+    external: true
+    name: ${OMNIWA_GLOBAL_API_KEY_SECRET_NAME:-omniwa_global_api_key}
+  omniwa_postgres_auth_dsn:
+    external: true
+    name: ${OMNIWA_POSTGRES_AUTH_DSN_SECRET_NAME:-omniwa_postgres_auth_dsn}
+  omniwa_postgres_users_dsn:
+    external: true
+    name: ${OMNIWA_POSTGRES_USERS_DSN_SECRET_NAME:-omniwa_postgres_users_dsn}

@@ -11,9 +11,9 @@ services:
       CLIENT_NAME: omniwa-smoke
       OS_NAME: OmniWA GO smoke test
       LICENSE_GATE_ENABLED: "false"
-      GLOBAL_API_KEY: ${SMOKE_API_KEY:?Set SMOKE_API_KEY}
-      POSTGRES_AUTH_DB: postgresql://postgres:postgres@postgres:5432/omniwa_auth?sslmode=disable
-      POSTGRES_USERS_DB: postgresql://postgres:postgres@postgres:5432/omniwa_users?sslmode=disable
+      GLOBAL_API_KEY_FILE: /run/secrets/smoke_api_key
+      POSTGRES_AUTH_DB_FILE: /run/secrets/smoke_postgres_auth_dsn
+      POSTGRES_USERS_DB_FILE: /run/secrets/smoke_postgres_users_dsn
       DATABASE_SAVE_MESSAGES: "false"
       CONNECT_ON_STARTUP: "false"
       AMQP_URL: ""
@@ -22,6 +22,10 @@ services:
       NATS_GLOBAL_ENABLED: "false"
       MINIO_ENABLED: "false"
       LOGTYPE: console
+    secrets:
+      - smoke_api_key
+      - smoke_postgres_auth_dsn
+      - smoke_postgres_users_dsn
     ports:
       - "127.0.0.1::4000"
     depends_on:
@@ -39,3 +43,11 @@ services:
       interval: 2s
       timeout: 5s
       retries: 30
+
+secrets:
+  smoke_api_key:
+    environment: SMOKE_API_KEY
+  smoke_postgres_auth_dsn:
+    environment: SMOKE_POSTGRES_AUTH_DSN
+  smoke_postgres_users_dsn:
+    environment: SMOKE_POSTGRES_USERS_DSN

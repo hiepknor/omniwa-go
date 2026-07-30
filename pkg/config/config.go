@@ -296,14 +296,14 @@ func (c *Config) CreateAuthDB() (*sql.DB, error) {
 }
 
 func Load() *Config {
-	postgresAuthDB := os.Getenv(config_env.POSTGRES_AUTH_DB)
+	postgresAuthDB := sensitiveValue(config_env.POSTGRES_AUTH_DB)
 
-	postgresUsersDB := os.Getenv(config_env.POSTGRES_USERS_DB)
+	postgresUsersDB := sensitiveValue(config_env.POSTGRES_USERS_DB)
 
 	postgresHost := os.Getenv(config_env.POSTGRES_HOST)
 	postgresPort := os.Getenv(config_env.POSTGRES_PORT)
 	postgresUser := os.Getenv(config_env.POSTGRES_USER)
-	postgresPassword := os.Getenv(config_env.POSTGRES_PASSWORD)
+	postgresPassword := sensitiveValue(config_env.POSTGRES_PASSWORD)
 	postgresDB := os.Getenv(config_env.POSTGRES_DB)
 
 	if postgresUsersDB == "" && (postgresHost == "" || postgresPort == "" || postgresUser == "" || postgresPassword == "" || postgresDB == "") {
@@ -313,11 +313,11 @@ func Load() *Config {
 	databaseSaveMessages := os.Getenv(config_env.DATABASE_SAVE_MESSAGES)
 	panicIfEmpty(config_env.DATABASE_SAVE_MESSAGES, databaseSaveMessages)
 
-	globalApiKey := os.Getenv(config_env.GLOBAL_API_KEY)
+	globalApiKey := sensitiveValue(config_env.GLOBAL_API_KEY)
 	httpAllowedOrigins := splitNonEmptyCSV(os.Getenv(config_env.HTTP_ALLOWED_ORIGINS))
 	panicIfEmpty(config_env.GLOBAL_API_KEY, globalApiKey)
 
-	instanceTokenHMACKey, err := parseOptionalBase64Key(os.Getenv(config_env.INSTANCE_TOKEN_HMAC_KEY), 32)
+	instanceTokenHMACKey, err := parseOptionalBase64Key(sensitiveValue(config_env.INSTANCE_TOKEN_HMAC_KEY), 32)
 	if err != nil {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.INSTANCE_TOKEN_HMAC_KEY, err)
 	}
@@ -380,7 +380,7 @@ func Load() *Config {
 
 	osName := os.Getenv(config_env.OS_NAME)
 
-	amqpUrl := os.Getenv(config_env.AMQP_URL)
+	amqpUrl := sensitiveValue(config_env.AMQP_URL)
 
 	// Validate AMQP URL format
 	if err := validateAMQPURL(amqpUrl); err != nil {
@@ -389,7 +389,7 @@ func Load() *Config {
 
 	amqpGlobalEnabled := os.Getenv(config_env.AMQP_GLOBAL_ENABLED)
 
-	webhookUrl := os.Getenv(config_env.WEBHOOK_URL)
+	webhookUrl := sensitiveValue(config_env.WEBHOOK_URL)
 	webhookAllowedHosts := splitNonEmptyCSV(os.Getenv(config_env.WEBHOOK_ALLOWED_HOSTS))
 	webhookAllowedPorts := splitNonEmptyCSV(os.Getenv(config_env.WEBHOOK_ALLOWED_PORTS))
 	if len(webhookAllowedPorts) == 0 {
@@ -428,7 +428,7 @@ func Load() *Config {
 	}
 
 	apiAudioConverter := os.Getenv(config_env.API_AUDIO_CONVERTER)
-	apiAudioConverterKey := os.Getenv(config_env.API_AUDIO_CONVERTER_KEY)
+	apiAudioConverterKey := sensitiveValue(config_env.API_AUDIO_CONVERTER_KEY)
 
 	whatsappVersionMajor := os.Getenv(config_env.WHATSAPP_VERSION_MAJOR)
 	whatsappVersionMinor := os.Getenv(config_env.WHATSAPP_VERSION_MINOR)
@@ -438,7 +438,7 @@ func Load() *Config {
 	proxyHost := os.Getenv(config_env.PROXY_HOST)
 	proxyPort := os.Getenv(config_env.PROXY_PORT)
 	proxyUsername := os.Getenv(config_env.PROXY_USERNAME)
-	proxyPassword := os.Getenv(config_env.PROXY_PASSWORD)
+	proxyPassword := sensitiveValue(config_env.PROXY_PASSWORD)
 
 	eventIgnoreGroup := os.Getenv(config_env.EVENT_IGNORE_GROUP)
 	eventIgnoreStatus := os.Getenv(config_env.EVENT_IGNORE_STATUS)
@@ -619,7 +619,7 @@ func Load() *Config {
 	if err != nil {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.MEDIA_ASSET_UNBOUND_TTL, err)
 	}
-	mediaDescriptorKey, err := parseOptionalBase64Key(strings.TrimSpace(os.Getenv(config_env.MEDIA_DESCRIPTOR_KEY)), 32)
+	mediaDescriptorKey, err := parseOptionalBase64Key(strings.TrimSpace(sensitiveValue(config_env.MEDIA_DESCRIPTOR_KEY)), 32)
 	if err != nil || len(mediaDescriptorKey) != 0 && len(mediaDescriptorKey) != 32 {
 		logger.LogFatal("[CONFIG] invalid %s: must be base64 for exactly 32 bytes", config_env.MEDIA_DESCRIPTOR_KEY)
 	}
@@ -742,7 +742,7 @@ func Load() *Config {
 		amqpSpecificEvents = []string{}
 	}
 
-	natsUrl := os.Getenv(config_env.NATS_URL)
+	natsUrl := sensitiveValue(config_env.NATS_URL)
 	natsGlobalEnabled := os.Getenv(config_env.NATS_GLOBAL_ENABLED)
 	natsGlobalEvents := strings.Split(os.Getenv(config_env.NATS_GLOBAL_EVENTS), ",")
 	if len(natsGlobalEvents) == 1 && natsGlobalEvents[0] == "" {
@@ -1005,10 +1005,10 @@ func loadMinioConfig(config *Config) {
 	minioEndpoint := os.Getenv(config_env.MINIO_ENDPOINT)
 	panicIfEmpty(config_env.MINIO_ENDPOINT, minioEndpoint)
 
-	minioAccessKey := os.Getenv(config_env.MINIO_ACCESS_KEY)
+	minioAccessKey := sensitiveValue(config_env.MINIO_ACCESS_KEY)
 	panicIfEmpty(config_env.MINIO_ACCESS_KEY, minioAccessKey)
 
-	minioSecretKey := os.Getenv(config_env.MINIO_SECRET_KEY)
+	minioSecretKey := sensitiveValue(config_env.MINIO_SECRET_KEY)
 	panicIfEmpty(config_env.MINIO_SECRET_KEY, minioSecretKey)
 
 	minioBucket := os.Getenv(config_env.MINIO_BUCKET)

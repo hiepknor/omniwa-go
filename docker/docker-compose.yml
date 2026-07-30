@@ -12,7 +12,15 @@ services:
     ports:
       - "4000:4000"
     env_file:
-      - .env
+      - ${OMNIWA_ENV_FILE:-.env}
+    environment:
+      GLOBAL_API_KEY_FILE: /run/secrets/omniwa_global_api_key
+      POSTGRES_AUTH_DB_FILE: /run/secrets/omniwa_postgres_auth_dsn
+      POSTGRES_USERS_DB_FILE: /run/secrets/omniwa_postgres_users_dsn
+    secrets:
+      - omniwa_global_api_key
+      - omniwa_postgres_auth_dsn
+      - omniwa_postgres_users_dsn
     volumes:
       - omniwa_data:/app/dbdata
       - omniwa_logs:/app/logs
@@ -23,19 +31,19 @@ services:
         condition: service_healthy
 
   postgres:
-    image: postgres:15-alpine
+    image: ${POSTGRES_IMAGE:?Set POSTGRES_IMAGE to an immutable sha256 digest}
     container_name: omniwa-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD_FILE: /run/secrets/omniwa_postgres_password
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    secrets:
+      - omniwa_postgres_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -50,3 +58,13 @@ volumes:
 networks:
   omniwa_network:
     driver: bridge
+
+secrets:
+  omniwa_global_api_key:
+    file: ${OMNIWA_GLOBAL_API_KEY_FILE:?Set OMNIWA_GLOBAL_API_KEY_FILE to a readable secret file}
+  omniwa_postgres_auth_dsn:
+    file: ${OMNIWA_POSTGRES_AUTH_DSN_FILE:?Set OMNIWA_POSTGRES_AUTH_DSN_FILE to a readable secret file}
+  omniwa_postgres_users_dsn:
+    file: ${OMNIWA_POSTGRES_USERS_DSN_FILE:?Set OMNIWA_POSTGRES_USERS_DSN_FILE to a readable secret file}
+  omniwa_postgres_password:
+    file: ${OMNIWA_POSTGRES_PASSWORD_FILE:?Set OMNIWA_POSTGRES_PASSWORD_FILE to a readable secret file}

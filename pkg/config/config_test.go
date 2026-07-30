@@ -397,6 +397,24 @@ func TestParsePositiveInt(t *testing.T) {
 	}
 }
 
+func TestLoadReadsRequiredSensitiveValuesFromFiles(t *testing.T) {
+	setRequiredConfigEnv(t)
+	apiKeyFile := writeSecretFixture(t, "file-api-key\n")
+	usersDSNFile := writeSecretFixture(t, "postgres://file-user:file-password@localhost:5432/file-db\n")
+	t.Setenv(config_env.GLOBAL_API_KEY, "")
+	t.Setenv(config_env.GLOBAL_API_KEY+"_FILE", apiKeyFile)
+	t.Setenv(config_env.POSTGRES_USERS_DB, "")
+	t.Setenv(config_env.POSTGRES_USERS_DB+"_FILE", usersDSNFile)
+
+	loaded := Load()
+	if loaded.GlobalApiKey != "file-api-key" {
+		t.Fatalf("GlobalApiKey=%q", loaded.GlobalApiKey)
+	}
+	if loaded.postgresUsersDB != "postgres://file-user:file-password@localhost:5432/file-db" {
+		t.Fatalf("postgresUsersDB=%q", loaded.postgresUsersDB)
+	}
+}
+
 func setRequiredConfigEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv(config_env.POSTGRES_USERS_DB, "postgres://user:password@localhost:5432/test")

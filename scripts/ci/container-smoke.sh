@@ -7,6 +7,8 @@ compose_file="$repository_root/docker/docker-compose.smoke.yml"
 source_sha="${SOURCE_SHA:-$(git -C "$repository_root" rev-parse HEAD)}"
 smoke_version="${SMOKE_VERSION:-ci-smoke}"
 smoke_api_key="${SMOKE_API_KEY:-omniwa-container-smoke-key}"
+smoke_postgres_auth_dsn="postgresql://postgres:postgres@postgres:5432/omniwa_auth?sslmode=disable"
+smoke_postgres_users_dsn="postgresql://postgres:postgres@postgres:5432/omniwa_users?sslmode=disable"
 project_suffix="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${PPID}"
 project_name="omniwa-smoke-${project_suffix//[^a-zA-Z0-9_-]/-}"
 expected_migrations="38:38"
@@ -19,6 +21,8 @@ fi
 export SOURCE_SHA="$source_sha"
 export SMOKE_VERSION="$smoke_version"
 export SMOKE_API_KEY="$smoke_api_key"
+export SMOKE_POSTGRES_AUTH_DSN="$smoke_postgres_auth_dsn"
+export SMOKE_POSTGRES_USERS_DSN="$smoke_postgres_users_dsn"
 
 compose=(docker compose --project-name "$project_name" --file "$compose_file")
 
