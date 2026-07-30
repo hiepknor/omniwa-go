@@ -483,15 +483,22 @@ func (c *chatHandler) HistorySyncRequest(ctx *gin.Context) {
 		return
 	}
 
-	var data *chat_service.HistorySyncRequestStruct
-	err := ctx.ShouldBindBodyWithJSON(&data)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	var data chat_service.HistorySyncRequestStruct
+	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_history_sync_request", "invalid history sync request")
+		return
+	}
+	if err := data.Validate(); err != nil {
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_history_sync_request", "invalid history sync request")
 		return
 	}
 
-	resp, err := c.chatService.HistorySyncRequest(data, instance)
+	resp, err := c.chatService.HistorySyncRequest(&data, instance)
 	if err != nil {
+		if errors.Is(err, chat_service.ErrInvalidHistorySyncRequest) {
+			httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_history_sync_request", "invalid history sync request")
+			return
+		}
 		if httpapi.WriteRateLimit(ctx, err) {
 			return
 		}

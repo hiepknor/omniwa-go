@@ -23,11 +23,19 @@ const (
 	EligibilityStateUnavailable = "unavailable"
 	EligibilityStateUnknown     = "unknown"
 
-	ConversationContractCanonical = "conversation"
-	ConversationOperationList     = "list"
-	ConversationOperationGet      = "get"
-	ConversationOperationMessages = "messages"
-	ConversationOperationMessage  = "message"
+	ConversationContractCanonical    = "conversation"
+	ConversationContractProvider     = "provider_chat"
+	ConversationOperationList        = "list"
+	ConversationOperationGet         = "get"
+	ConversationOperationMessages    = "messages"
+	ConversationOperationMessage     = "message"
+	ConversationOperationArchive     = "archive"
+	ConversationOperationUnarchive   = "unarchive"
+	ConversationOperationMute        = "mute"
+	ConversationOperationUnmute      = "unmute"
+	ConversationOperationPin         = "pin"
+	ConversationOperationUnpin       = "unpin"
+	ConversationOperationHistorySync = "history_sync"
 )
 
 var eligibilityBatchSizeBuckets = []float64{1, 10, 25, 50, 100, 500, 1_000, 2_500, 5_000, 10_000}
@@ -89,11 +97,11 @@ func NewRegistry() (*Registry, error) {
 		}, []string{"operation", "code"}),
 		conversationRequests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "omniwa", Subsystem: "conversation_api", Name: "requests_total",
-			Help: "Canonical Conversation read requests by bounded operation and HTTP status class.",
+			Help: "Conversation API requests by bounded contract, operation, and HTTP status class.",
 		}, []string{"contract", "operation", "status"}),
 		conversationDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "omniwa", Subsystem: "conversation_api", Name: "request_duration_seconds",
-			Help: "Canonical Conversation read latency by bounded operation.",
+			Help: "Conversation API latency by bounded contract and operation.",
 		}, []string{"contract", "operation"}),
 	}
 	for _, collector := range []prometheus.Collector{
@@ -182,12 +190,14 @@ func mutationRejectionCode(value string) bool {
 }
 
 func conversationContract(value string) bool {
-	return value == ConversationContractCanonical
+	return value == ConversationContractCanonical || value == ConversationContractProvider
 }
 
 func conversationOperation(value string) bool {
 	switch value {
-	case ConversationOperationList, ConversationOperationGet, ConversationOperationMessages, ConversationOperationMessage:
+	case ConversationOperationList, ConversationOperationGet, ConversationOperationMessages, ConversationOperationMessage,
+		ConversationOperationArchive, ConversationOperationUnarchive, ConversationOperationMute, ConversationOperationUnmute,
+		ConversationOperationPin, ConversationOperationUnpin, ConversationOperationHistorySync:
 		return true
 	default:
 		return false
