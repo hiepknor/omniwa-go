@@ -71,18 +71,16 @@ func TestGeneratedOpenAPIContainsCanonicalConversationContract(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/chat/list", "/chat/info/{chatId}", "/chat/{chatId}/messages", "/message/{messageId}"} {
+	for _, path := range []string{
+		"/chat/list", "/chat/info/{chatId}", "/chat/{chatId}/messages", "/message/{messageId}",
+		"/chat/archive", "/chat/unarchive", "/chat/mute", "/chat/unmute", "/chat/pin", "/chat/unpin", "/chat/history-sync",
+	} {
 		if _, ok := paths[path]; ok {
-			t.Fatalf("retired legacy read remains in OpenAPI: %s", path)
+			t.Fatalf("retired legacy Chat operation remains in OpenAPI: %s", path)
 		}
 	}
 	if _, ok := object(t, paths, "/message/{messageId}/delivery")["get"]; !ok {
 		t.Fatal("message delivery receipt read was removed")
-	}
-	for _, path := range []string{"/chat/archive", "/chat/unarchive", "/chat/mute", "/chat/unmute", "/chat/pin", "/chat/unpin", "/chat/history-sync"} {
-		if _, ok := object(t, paths, path)["post"]; !ok {
-			t.Fatalf("provider Chat command %s was removed", path)
-		}
 	}
 	commandOperations := []struct {
 		path, method, operationID string
@@ -142,6 +140,9 @@ func TestGeneratedOpenAPIContainsCanonicalConversationContract(t *testing.T) {
 	for name := range definitions {
 		if strings.HasSuffix(name, ".ProjectedChat") || strings.HasSuffix(name, ".ProjectedMessage") {
 			t.Fatalf("retired legacy schema remains in OpenAPI: %s", name)
+		}
+		if strings.HasSuffix(name, "pkg_chat_service.BodyStruct") || strings.HasSuffix(name, "pkg_chat_service.HistorySyncRequestStruct") {
+			t.Fatalf("retired legacy Chat command schema remains in OpenAPI: %s", name)
 		}
 	}
 

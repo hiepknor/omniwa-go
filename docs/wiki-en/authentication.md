@@ -9,7 +9,7 @@ key.
 | Tier | Header value | Grants access to | Source |
 |---|---|---|---|
 | **Global admin key** | value of the `GLOBAL_API_KEY` env var | Instance lifecycle: `POST /instance/create`, `GET /instance/all`, `GET /instance/info/{id}`, `DELETE /instance/delete/{id}`, `POST /instance/proxy/{id}`, `POST /instance/forcereconnect/{id}`, `GET /instance/logs/{id}`, Prometheus `GET /metrics`, and the WebSocket `/ws`. | Set by the server operator. |
-| **Instance token** | the `token` returned by `POST /instance/create` | Everything scoped to one WhatsApp account: `/instance/connect`, `/instance/qr`, `/instance/status`, all `/send/*`, `/message/*`, `/chat/*`, `/conversations*`, `/group/*`, `/user/*`, `/community/*`, `/newsletter/*`, `/label/*`, `/call/*`, `/polls/*`. | Chosen by you in the create request and echoed back. |
+| **Instance token** | the `token` returned by `POST /instance/create` | Everything scoped to one WhatsApp account: `/instance/connect`, `/instance/qr`, `/instance/status`, all `/send/*`, `/message/*`, `/conversations*`, `/group/*`, `/user/*`, `/community/*`, `/newsletter/*`, `/label/*`, `/call/*`, `/polls/*`. | Chosen by you in the create request and echoed back. |
 
 The header name is case-insensitive; `apikey` and `ApiKey` both work.
 

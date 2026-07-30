@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
@@ -16,16 +15,6 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
-type ChatService interface {
-	ChatPin(data *BodyStruct, instance *instance_model.Instance) (string, error)
-	ChatUnpin(data *BodyStruct, instance *instance_model.Instance) (string, error)
-	ChatArchive(data *BodyStruct, instance *instance_model.Instance) (string, error)
-	ChatUnarchive(data *BodyStruct, instance *instance_model.Instance) (string, error)
-	ChatMute(data *BodyStruct, instance *instance_model.Instance) (string, error)
-	ChatUnmute(data *BodyStruct, instance *instance_model.Instance) (string, error)
-	HistorySyncRequest(data *HistorySyncRequestStruct, instance *instance_model.Instance) (*whatsmeow.SendResponse, error)
-}
-
 type ConversationCommandProvider interface {
 	SetArchived(context.Context, string, string, bool) error
 	SetPinned(context.Context, string, string, bool) error
@@ -34,7 +23,6 @@ type ConversationCommandProvider interface {
 }
 
 type Service interface {
-	ChatService
 	ConversationCommandProvider
 }
 
@@ -44,24 +32,9 @@ type chatService struct {
 	loggerWrapper    *logger_wrapper.LoggerManager
 }
 
-type BodyStruct struct {
-	Chat string `json:"chat"`
-}
-
-type HistorySyncRequestStruct struct {
-	MessageInfo *types.MessageInfo `json:"messageInfo"`
-	Count       int                `json:"count"`
-}
+var _ ConversationCommandProvider = (*chatService)(nil)
 
 var ErrInvalidHistorySyncRequest = errors.New("invalid history sync request")
-
-func (data *HistorySyncRequestStruct) Validate() error {
-	if data == nil || data.MessageInfo == nil || data.MessageInfo.Chat.IsEmpty() ||
-		strings.TrimSpace(data.MessageInfo.ID) == "" || data.MessageInfo.Timestamp.IsZero() || data.Count < 1 {
-		return ErrInvalidHistorySyncRequest
-	}
-	return nil
-}
 
 func (c *chatService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
 	client := c.clients.Get(instanceId)
@@ -100,54 +73,6 @@ func (c *chatService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 
 	c.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
 	return client, nil
-}
-
-func (c *chatService) ChatPin(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	var ts time.Time
-	if err := c.SetPinned(context.Background(), instance.Id, data.Chat, true); err != nil {
-		return "", err
-	}
-	return ts.String(), nil
-}
-
-func (c *chatService) ChatUnpin(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	var ts time.Time
-	if err := c.SetPinned(context.Background(), instance.Id, data.Chat, false); err != nil {
-		return "", err
-	}
-	return ts.String(), nil
-}
-
-func (c *chatService) ChatArchive(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	var ts time.Time
-	if err := c.SetArchived(context.Background(), instance.Id, data.Chat, true); err != nil {
-		return "", err
-	}
-	return ts.String(), nil
-}
-
-func (c *chatService) ChatUnarchive(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	var ts time.Time
-	if err := c.SetArchived(context.Background(), instance.Id, data.Chat, false); err != nil {
-		return "", err
-	}
-	return ts.String(), nil
-}
-
-func (c *chatService) ChatMute(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	var ts time.Time
-	if err := c.SetMuted(context.Background(), instance.Id, data.Chat, time.Hour); err != nil {
-		return "", err
-	}
-	return ts.String(), nil
-}
-
-func (c *chatService) ChatUnmute(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	var ts time.Time
-	if err := c.SetMuted(context.Background(), instance.Id, data.Chat, 0); err != nil {
-		return "", err
-	}
-	return ts.String(), nil
 }
 
 func (c *chatService) SetArchived(ctx context.Context, instanceID, target string, archived bool) error {
@@ -200,25 +125,6 @@ func (c *chatService) commandTarget(instanceID, target string) (*whatsmeow.Clien
 	}
 	client, err := c.ensureClientConnected(instanceID)
 	return client, recipient, err
-}
-
-func (c *chatService) HistorySyncRequest(data *HistorySyncRequestStruct, instance *instance_model.Instance) (*whatsmeow.SendResponse, error) {
-	if err := data.Validate(); err != nil {
-		return nil, err
-	}
-	if instance == nil || instance.Id == "" {
-		return nil, errors.New("history sync instance identity is required")
-	}
-	messageInfo := types.MessageInfo{
-		MessageSource: types.MessageSource{
-			Chat:     data.MessageInfo.Chat,
-			IsFromMe: data.MessageInfo.IsFromMe,
-			IsGroup:  data.MessageInfo.IsGroup,
-		},
-		ID:        data.MessageInfo.ID,
-		Timestamp: data.MessageInfo.Timestamp,
-	}
-	return c.RequestHistorySync(context.Background(), instance.Id, messageInfo, data.Count)
 }
 
 func (c *chatService) RequestHistorySync(ctx context.Context, instanceID string, messageInfo types.MessageInfo, count int) (*whatsmeow.SendResponse, error) {

@@ -530,7 +530,7 @@ Labels são **privadas** - apenas você vê suas labels. O destinatário não v�
 
 ## Próximos Passos
 
-- [API de Chats](./api-chats.md) - Gerenciar conversas (pin, archive, mute)
+- [Conversation API](./api-chats.md) - Inspect and manage canonical Conversations
 - [API de Mensagens](./api-messages.md) - Enviar e gerenciar mensagens
 - [API de Usuários](./api-user.md) - Gerenciar perfil e contatos
 - [Visão Geral da API](./api-overview.md)

@@ -800,7 +800,7 @@ Ao criar grupo, sempre verifique o campo `failed` na resposta:
 
 - [API de Mensagens](./api-messages.md) - Enviar mensagens em grupos
 - [API de Usuários](./api-user.md) - Gerenciar contatos
-- [API de Chats](./api-chats.md) - Gerenciar conversas
+- [Conversation API](./api-chats.md) - Inspect and manage canonical Conversations
 - [Visão Geral da API](./api-overview.md)
 
 ---

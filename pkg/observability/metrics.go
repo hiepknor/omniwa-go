@@ -24,7 +24,6 @@ const (
 	EligibilityStateUnknown     = "unknown"
 
 	ConversationContractCanonical    = "conversation"
-	ConversationContractProvider     = "provider_chat"
 	ConversationOperationList        = "list"
 	ConversationOperationGet         = "get"
 	ConversationOperationMessages    = "messages"
@@ -190,7 +189,7 @@ func mutationRejectionCode(value string) bool {
 }
 
 func conversationContract(value string) bool {
-	return value == ConversationContractCanonical || value == ConversationContractProvider
+	return value == ConversationContractCanonical
 }
 
 func conversationOperation(value string) bool {

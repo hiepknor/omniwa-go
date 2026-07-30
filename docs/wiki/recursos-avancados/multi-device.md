@@ -209,22 +209,16 @@ Chaves únicas para cada conversa que mudam automaticamente a cada mensagem envi
 **Solicitação de histórico** (implementado via API):
 
 ```bash
-POST /chat/history-sync-request
+POST /conversations/{conversationRef}/history-sync
 {
-  "messageInfo": {
-    "Chat": "5511999999999@s.whatsapp.net",
-    "IsFromMe": false,
-    "IsGroup": false,
-    "ID": "3EB0C5A277F7F9B6C599",
-    "Timestamp": "2025-11-11T10:00:00Z"
-  },
+  "anchorMessageId": "3EB0C5A277F7F9B6C599",
   "count": 50
 }
 ```
 
-**Parâmetros**:
-- `messageInfo`: Mensagem de referência (ponto de partida)
-- `count`: Número de mensagens para buscar (máx 100)
+**Parameters**:
+- `anchorMessageId`: authoritative projected anchor in the Conversation
+- `count`: number of older messages to request (maximum 1000)
 
 **Uso**: Carregar mensagens antigas de uma conversa.
 
