@@ -3,6 +3,7 @@ package chat_service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -38,6 +39,16 @@ type BodyStruct struct {
 type HistorySyncRequestStruct struct {
 	MessageInfo *types.MessageInfo `json:"messageInfo"`
 	Count       int                `json:"count"`
+}
+
+var ErrInvalidHistorySyncRequest = errors.New("invalid history sync request")
+
+func (data *HistorySyncRequestStruct) Validate() error {
+	if data == nil || data.MessageInfo == nil || data.MessageInfo.Chat.IsEmpty() ||
+		strings.TrimSpace(data.MessageInfo.ID) == "" || data.MessageInfo.Timestamp.IsZero() || data.Count < 1 {
+		return ErrInvalidHistorySyncRequest
+	}
+	return nil
 }
 
 func (c *chatService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
@@ -218,6 +229,12 @@ func (c *chatService) ChatUnmute(data *BodyStruct, instance *instance_model.Inst
 }
 
 func (c *chatService) HistorySyncRequest(data *HistorySyncRequestStruct, instance *instance_model.Instance) (*whatsmeow.SendResponse, error) {
+	if err := data.Validate(); err != nil {
+		return nil, err
+	}
+	if instance == nil || instance.Id == "" {
+		return nil, errors.New("history sync instance identity is required")
+	}
 	client, err := c.ensureClientConnected(instance.Id)
 	if err != nil {
 		return nil, err
