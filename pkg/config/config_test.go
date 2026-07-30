@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
@@ -73,6 +74,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_MAX_ATTEMPTS, "")
 	t.Setenv(config_env.WEBHOOK_RETRY_BASE, "")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED, "")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_EMIT_TRANSPORTS, "")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_BATCH, "")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_LEASE, "")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_POLL_INTERVAL, "")
@@ -155,7 +157,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.Webhook.Timeout != 10*time.Second || config.Webhook.MaxRequestBytes != 4*1024*1024 || config.Webhook.MaxResponseBytes != 64*1024 || config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 0 || len(config.Webhook.AllowedPorts) != 2 || config.Webhook.Workers != 4 || config.Webhook.QueueCapacity != 256 || config.Webhook.MaxPendingPerInstance != 32 || config.Webhook.MaxAttempts != 3 || config.Webhook.RetryBase != time.Second {
 		t.Fatalf("webhook defaults are invalid")
 	}
-	if config.ExternalEventOutbox.ServeEnabled || config.ExternalEventOutbox.BatchSize != 4 ||
+	if config.ExternalEventOutbox.ServeEnabled || len(config.ExternalEventOutbox.EmitTransports) != 0 || config.ExternalEventOutbox.BatchSize != 4 ||
 		config.ExternalEventOutbox.LeaseDuration != 45*time.Second || config.ExternalEventOutbox.PollInterval != time.Second ||
 		config.ExternalEventOutbox.AttemptTimeout != 15*time.Second || config.ExternalEventOutbox.StateTimeout != 5*time.Second ||
 		config.ExternalEventOutbox.RetryBase != 5*time.Second || config.ExternalEventOutbox.RetryMax != 15*time.Minute {
@@ -175,6 +177,26 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	}
 	if config.ConversationAppStateCommandsEnabled || config.ConversationHistorySyncEnabled {
 		t.Fatal("expected canonical Conversation commands to be disabled by default")
+	}
+}
+
+func TestParseExternalEventOutboxTransportsRequiresSafeServingCutover(t *testing.T) {
+	t.Parallel()
+	if transports, err := parseExternalEventOutboxTransports("", false); err != nil || len(transports) != 0 {
+		t.Fatalf("empty direct mode = %#v, %v", transports, err)
+	}
+	if _, err := parseExternalEventOutboxTransports("webhook", false); err == nil {
+		t.Fatal("durable emission without serve mode was accepted")
+	}
+	if _, err := parseExternalEventOutboxTransports("nats", true); err == nil {
+		t.Fatal("NATS durable emission was accepted")
+	}
+	if _, err := parseExternalEventOutboxTransports("webhook,WEBHOOK", true); err == nil {
+		t.Fatal("duplicate durable transport was accepted")
+	}
+	transports, err := parseExternalEventOutboxTransports(" WebHook, RabbitMQ ", true)
+	if err != nil || !reflect.DeepEqual(transports, []string{"webhook", "rabbitmq"}) {
+		t.Fatalf("normalized transports = %#v, %v", transports, err)
 	}
 }
 
@@ -240,6 +262,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_MAX_ATTEMPTS, "4")
 	t.Setenv(config_env.WEBHOOK_RETRY_BASE, "250ms")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED, "true")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_EMIT_TRANSPORTS, " WebHook, RabbitMQ ")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_BATCH, "12")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_LEASE, "50s")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_POLL_INTERVAL, "2s")
@@ -268,7 +291,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	if config.Webhook.Timeout != 4*time.Second || config.Webhook.MaxRequestBytes != 2048 || config.Webhook.MaxResponseBytes != 1024 || !config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 2 || len(config.Webhook.AllowedPorts) != 2 || config.Webhook.Workers != 8 || config.Webhook.QueueCapacity != 100 || config.Webhook.MaxPendingPerInstance != 20 || config.Webhook.MaxAttempts != 4 || config.Webhook.RetryBase != 250*time.Millisecond {
 		t.Fatalf("webhook overrides are invalid")
 	}
-	if !config.ExternalEventOutbox.ServeEnabled || config.ExternalEventOutbox.BatchSize != 12 ||
+	if !config.ExternalEventOutbox.ServeEnabled || !reflect.DeepEqual(config.ExternalEventOutbox.EmitTransports, []string{"webhook", "rabbitmq"}) || config.ExternalEventOutbox.BatchSize != 12 ||
 		config.ExternalEventOutbox.LeaseDuration != 50*time.Second || config.ExternalEventOutbox.PollInterval != 2*time.Second ||
 		config.ExternalEventOutbox.AttemptTimeout != 20*time.Second || config.ExternalEventOutbox.StateTimeout != 10*time.Second ||
 		config.ExternalEventOutbox.RetryBase != 3*time.Second || config.ExternalEventOutbox.RetryMax != 10*time.Minute {
@@ -450,4 +473,6 @@ func setRequiredConfigEnv(t *testing.T) {
 	t.Setenv(config_env.GLOBAL_API_KEY, "test-api-key")
 	t.Setenv(config_env.AMQP_URL, "")
 	t.Setenv(config_env.MINIO_ENABLED, "false")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED, "false")
+	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_EMIT_TRANSPORTS, "")
 }

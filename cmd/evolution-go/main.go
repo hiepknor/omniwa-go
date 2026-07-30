@@ -34,6 +34,7 @@ import (
 	community_service "github.com/evolution-foundation/evolution-go/pkg/community/service"
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
 	"github.com/evolution-foundation/evolution-go/pkg/core"
+	event_emission "github.com/evolution-foundation/evolution-go/pkg/events/emission"
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	nats_producer "github.com/evolution-foundation/evolution-go/pkg/events/nats"
 	event_outbox "github.com/evolution-foundation/evolution-go/pkg/events/outbox"
@@ -223,6 +224,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		logger.LogFatal("component=webhook action=initialize result=failed error=%v", err)
 	}
 	startBackground(backgroundWorkers, "webhook.deliveries", webhookProducer.Run)
+	outboxRepository := event_outbox.NewRepository(db)
 	if config.ExternalEventOutbox.ServeEnabled {
 		rabbitOutbox, ok := rabbitmqProducer.(event_outbox.RabbitMQDeliverer)
 		if !ok {
@@ -237,7 +239,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=dispatcher_unavailable")
 		}
 		outboxWorker, workerErr := event_outbox.NewWorker(
-			event_outbox.NewRepository(db), dispatcher,
+			outboxRepository, dispatcher,
 			event_outbox.Settings{
 				BatchSize: config.ExternalEventOutbox.BatchSize, LeaseDuration: config.ExternalEventOutbox.LeaseDuration,
 				PollInterval: config.ExternalEventOutbox.PollInterval, AttemptTimeout: config.ExternalEventOutbox.AttemptTimeout,
@@ -517,6 +519,19 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	durableEventRepository := projection_repository.NewDurableEventRepository(db)
 	durableEventService := projection_service.NewDurableEventService(durableEventRepository, config.EventRetention)
+	externalEventEmitter, err := event_emission.NewEmitter(durableEventService, outboxRepository, event_emission.Settings{
+		DurableTransports: config.ExternalEventOutbox.EmitTransports, GlobalWebhookEnabled: config.WebhookUrl != "",
+		GlobalRabbitEnabled: config.AmqpGlobalEnabled, AMQPGlobalEvents: config.AmqpGlobalEvents,
+		AMQPSpecificEvents: config.AmqpSpecificEvents,
+	}, metricsRegistry.ExternalEventEmitter())
+	if err != nil {
+		logger.LogFatal("component=external_event_emitter action=initialize result=failed error_code=invalid_configuration")
+	}
+	if len(config.ExternalEventOutbox.EmitTransports) == 0 {
+		logger.LogInfo("component=external_event_emitter action=initialize result=success mode=direct")
+	} else {
+		logger.LogInfo("component=external_event_emitter action=initialize result=success mode=durable transports=%s", strings.Join(config.ExternalEventOutbox.EmitTransports, ","))
+	}
 	durableEventReader := projection_service.NewDurableEventReader(durableEventRepository, config.EventRetention)
 	projectionFailureService := projection_service.NewFailureService(projection_repository.NewFailureRepository(db))
 	overviewService := projection_service.NewOverviewService(projection_repository.NewOverviewRepository(db))
@@ -660,7 +675,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		contactIdentityResolver,
 		conversationReconciler,
 		historySyncer,
-		durableEventService,
+		externalEventEmitter,
 		appCtx,
 		loggerWrapper,
 	)
