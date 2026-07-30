@@ -603,3 +603,30 @@ func TestCanonicalConversationUnreadMigrationIsAdditiveAndFailClosed(t *testing.
 		}
 	}
 }
+
+func TestExternalEventOutboxMigrationIsAdditiveAndFenced(t *testing.T) {
+	migration := registeredMigration(t, 39)
+	if migration.Name != "create_external_event_outbox" {
+		t.Fatalf("external event outbox migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"CREATE TABLE external_event_outbox", "FOREIGN KEY (instance_id)",
+		"FOREIGN KEY (durable_event_id)", "ON DELETE CASCADE",
+		"transport IN ('webhook', 'rabbitmq', 'nats')",
+		"destination IN ('instance', 'global')",
+		"status IN ('pending', 'processing', 'delivered', 'dead_letter')",
+		"external_event_outbox_claim_check", "external_event_outbox_terminal_check",
+		"external_event_outbox_route_unique", "external_event_outbox_work_idx",
+		"external_event_outbox_expired_lease_idx", "external_event_outbox_health_idx",
+		"OCTET_LENGTH(payload::text) <= 1048576",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("external event outbox migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP COLUMN", "DROP TABLE", "TRUNCATE", "DELETE FROM"} {
+		if strings.Contains(migration.SQL, forbidden) {
+			t.Fatalf("external event outbox migration contains unsafe SQL %q", forbidden)
+		}
+	}
+}
