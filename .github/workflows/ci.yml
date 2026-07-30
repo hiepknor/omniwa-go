@@ -75,10 +75,10 @@ jobs:
         # the repository tests and by the separate race suite.
         run: go test -p=1 ./... -count=1
 
-      - name: Test RabbitMQ publisher confirmation
+      - name: Test RabbitMQ confirmed delivery metadata
         env:
           TEST_RABBITMQ_URL: amqp://omniwa:omniwa@localhost:5672/omniwa_ci
-        run: go test -run TestPublishAndAwaitConfirmationWithRabbitMQ -count=1 ./pkg/events/rabbitmq
+        run: go test -run 'Test(PublishAndAwaitConfirmationWithRabbitMQ|DeliverConfirmedWithRabbitMQCarriesStableMessageID)' -count=1 ./pkg/events/rabbitmq
 
       - name: Test with race detector
         run: go test -race ./...

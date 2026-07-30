@@ -1,8 +1,10 @@
 package rabbitmq_producer
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -11,10 +13,12 @@ import (
 	eventpayload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"github.com/gomessguii/logger"
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type rabbitMQProducer struct {
+	connGate           chan struct{}
 	conn               *amqp.Connection
 	amqpGlobalEnabled  bool
 	amqpGlobalEvents   []string
@@ -25,6 +29,17 @@ type rabbitMQProducer struct {
 }
 
 const publisherConfirmTimeout = 5 * time.Second
+
+type ConfirmedDeliveryError struct {
+	Code      string
+	Retryable bool
+	Cause     error
+}
+
+func (e *ConfirmedDeliveryError) Error() string           { return "RabbitMQ delivery was not confirmed" }
+func (e *ConfirmedDeliveryError) Unwrap() error           { return e.Cause }
+func (e *ConfirmedDeliveryError) DeliveryCode() string    { return e.Code }
+func (e *ConfirmedDeliveryError) DeliveryRetryable() bool { return e.Retryable }
 
 type messagePublisher interface {
 	Publish(string, string, bool, bool, amqp.Publishing) error
@@ -39,6 +54,7 @@ func NewRabbitMQProducer(
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) producer_interfaces.Producer {
 	producer := &rabbitMQProducer{
+		connGate:           make(chan struct{}, 1),
 		conn:               conn,
 		amqpGlobalEnabled:  amqpGlobalEnabled,
 		amqpGlobalEvents:   amqpGlobalEvents,
@@ -73,13 +89,13 @@ func (p *rabbitMQProducer) maskConnectionString(connStr string) string {
 }
 
 // handleConnectionClose monitors connection close events and logs them
-func (p *rabbitMQProducer) handleConnectionClose() {
-	if p.conn == nil {
+func (p *rabbitMQProducer) handleConnectionClose(connection *amqp.Connection) {
+	if connection == nil {
 		return
 	}
 
 	closeChan := make(chan *amqp.Error)
-	p.conn.NotifyClose(closeChan)
+	connection.NotifyClose(closeChan)
 
 	closeErr := <-closeChan
 	if closeErr != nil {
@@ -90,7 +106,8 @@ func (p *rabbitMQProducer) handleConnectionClose() {
 	}
 }
 
-func (p *rabbitMQProducer) reconnect() error {
+// reconnectLocked replaces p.conn while the connection gate is held.
+func (p *rabbitMQProducer) reconnectLocked(ctx context.Context) error {
 	if p.connStr == "" {
 		return fmt.Errorf("connection string is empty - RabbitMQ URL not configured")
 	}
@@ -105,30 +122,77 @@ func (p *rabbitMQProducer) reconnect() error {
 		config := amqp.Config{
 			Heartbeat: 30 * time.Second, // Send heartbeat every 30 seconds
 			Locale:    "en_US",
+			Dial: func(network, address string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, address)
+			},
 		}
 
-		p.conn, err = amqp.DialConfig(p.connStr, config)
+		connection, dialErr := amqp.DialConfig(p.connStr, config)
+		err = dialErr
 		if err == nil {
+			p.conn = connection
 			logger.LogInfo("Reconectado com sucesso ao RabbitMQ com heartbeat de 30s")
 
 			// Set up connection close notification
-			go p.handleConnectionClose()
+			go p.handleConnectionClose(connection)
 			return nil
 		}
 
 		logger.LogError("Falha na tentativa %d/3 de reconexão: %v", i+1, err)
 		if i < 2 { // Don't sleep on the last attempt
-			time.Sleep(time.Second * 2)
+			timer := time.NewTimer(2 * time.Second)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				return ctx.Err()
+			case <-timer.C:
+			}
 		}
 	}
 	return fmt.Errorf("falha ao reconectar após 3 tentativas: %v", err)
 }
 
 func (p *rabbitMQProducer) ensureConnection() error {
+	return p.ensureConnectionContext(context.Background())
+}
+
+func (p *rabbitMQProducer) ensureConnectionContext(ctx context.Context) error {
+	if p == nil || ctx == nil || p.connGate == nil {
+		return errors.New("RabbitMQ producer is not configured")
+	}
+	select {
+	case p.connGate <- struct{}{}:
+		defer func() { <-p.connGate }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	if p.conn == nil || p.conn.IsClosed() {
-		return p.reconnect()
+		return p.reconnectLocked(ctx)
 	}
 	return nil
+}
+
+func (p *rabbitMQProducer) channel(ctx context.Context) (*amqp.Channel, error) {
+	if p == nil || ctx == nil || p.connGate == nil {
+		return nil, errors.New("RabbitMQ producer is not configured")
+	}
+	select {
+	case p.connGate <- struct{}{}:
+		defer func() { <-p.connGate }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if p.conn == nil || p.conn.IsClosed() {
+		if err := p.reconnectLocked(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return p.conn.Channel()
 }
 
 func (p *rabbitMQProducer) publishWithRetry(
@@ -140,7 +204,7 @@ func (p *rabbitMQProducer) publishWithRetry(
 	var err error
 	confirmations := channel.NotifyPublish(make(chan amqp.Confirmation, 1))
 	for i := 0; i < p.maxRetries; i++ {
-		err = publishAndAwaitConfirmation(channel, confirmations, queueName, payload, publisherConfirmTimeout)
+		err = publishAndAwaitConfirmation(context.Background(), channel, confirmations, queueName, payload, "", publisherConfirmTimeout)
 
 		if err == nil {
 			return nil
@@ -151,12 +215,8 @@ func (p *rabbitMQProducer) publishWithRetry(
 
 		// Se o erro for de conexão, tenta reconectar
 		if err.Error() == "Exception (504) Reason: \"channel/connection is not open\"" {
-			if err := p.ensureConnection(); err != nil {
-				continue
-			}
-
 			// Cria novo canal após reconexão
-			channel, err = p.conn.Channel()
+			channel, err = p.channel(context.Background())
 			if err != nil {
 				continue
 			}
@@ -173,23 +233,27 @@ func (p *rabbitMQProducer) publishWithRetry(
 }
 
 func publishAndAwaitConfirmation(
+	ctx context.Context,
 	publisher messagePublisher,
 	confirmations <-chan amqp.Confirmation,
 	queueName string,
 	payload []byte,
+	deliveryID string,
 	timeout time.Duration,
 ) error {
-	if publisher == nil || confirmations == nil || strings.TrimSpace(queueName) == "" || timeout <= 0 {
+	if ctx == nil || publisher == nil || confirmations == nil || strings.TrimSpace(queueName) == "" || timeout <= 0 {
 		return errors.New("RabbitMQ publisher, confirmation stream, queue, and timeout are required")
 	}
 	if err := publisher.Publish("", queueName, false, false, amqp.Publishing{
-		ContentType: "application/json", Body: payload, DeliveryMode: amqp.Persistent,
+		ContentType: "application/json", Body: payload, DeliveryMode: amqp.Persistent, MessageId: deliveryID,
 	}); err != nil {
 		return err
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
+	case <-ctx.Done():
+		return ctx.Err()
 	case confirmation, ok := <-confirmations:
 		if !ok {
 			return errors.New("RabbitMQ publisher confirmation stream closed")
@@ -201,6 +265,38 @@ func publishAndAwaitConfirmation(
 	case <-timer.C:
 		return errors.New("RabbitMQ publisher confirmation timed out")
 	}
+}
+
+// DeliverConfirmed performs exactly one durable publish attempt. PostgreSQL
+// owns retry scheduling; a stable delivery ID is attached for consumer-side
+// deduplication.
+func (p *rabbitMQProducer) DeliverConfirmed(ctx context.Context, queueName string, payload []byte, mode, deliveryID string) error {
+	if p == nil || ctx == nil || strings.TrimSpace(queueName) == "" || uuid.Validate(deliveryID) != nil ||
+		(mode != "enabled" && mode != "global") {
+		return &ConfirmedDeliveryError{Code: "invalid_delivery", Retryable: false}
+	}
+	safePayload, err := eventpayload.SanitizeJSON(payload)
+	if err != nil {
+		return &ConfirmedDeliveryError{Code: "invalid_payload", Retryable: false, Cause: err}
+	}
+	channel, err := p.channel(ctx)
+	if err != nil {
+		return &ConfirmedDeliveryError{Code: "connection_unavailable", Retryable: true, Cause: err}
+	}
+	defer channel.Close()
+	if err := channel.Confirm(false); err != nil {
+		return &ConfirmedDeliveryError{Code: "confirm_unavailable", Retryable: true, Cause: err}
+	}
+	if _, err := channel.QueueDeclare(queueName, true, false, false, false, amqp.Table{
+		"x-queue-type": "quorum", "x-ha-policy": "all",
+	}); err != nil {
+		return &ConfirmedDeliveryError{Code: "queue_declare_failed", Retryable: true, Cause: err}
+	}
+	confirmations := channel.NotifyPublish(make(chan amqp.Confirmation, 1))
+	if err := publishAndAwaitConfirmation(ctx, channel, confirmations, queueName, safePayload, deliveryID, publisherConfirmTimeout); err != nil {
+		return &ConfirmedDeliveryError{Code: "publish_not_confirmed", Retryable: true, Cause: err}
+	}
+	return nil
 }
 
 func (p *rabbitMQProducer) Produce(
@@ -219,13 +315,9 @@ func (p *rabbitMQProducer) Produce(
 		return fmt.Errorf("RabbitMQ connection string is empty - check AMQP_URL configuration")
 	}
 
-	if err := p.ensureConnection(); err != nil {
-		p.loggerWrapper.GetLogger(userID).LogError("[%s] Failed to ensure RabbitMQ connection: %v", userID, err)
-		return fmt.Errorf("falha ao garantir conexão: %v", err)
-	}
-
-	channel, err := p.conn.Channel()
+	channel, err := p.channel(context.Background())
 	if err != nil {
+		p.loggerWrapper.GetLogger(userID).LogError("[%s] Failed to open RabbitMQ connection/channel: %v", userID, err)
 		return fmt.Errorf("falha ao abrir canal: %v", err)
 	}
 	defer channel.Close()
@@ -272,11 +364,7 @@ func (p *rabbitMQProducer) CreateGlobalQueues() error {
 
 	p.loggerWrapper.GetLogger("system").LogInfo("Creating global queues for enabled events")
 
-	if err := p.ensureConnection(); err != nil {
-		return fmt.Errorf("failed to ensure connection: %v", err)
-	}
-
-	channel, err := p.conn.Channel()
+	channel, err := p.channel(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to open channel: %v", err)
 	}

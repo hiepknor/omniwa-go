@@ -29,6 +29,16 @@ type Repository interface {
 	MarkDelivered(context.Context, *Delivery) error
 	MarkRetry(context.Context, *Delivery, string, time.Time) error
 	MarkDeadLetter(context.Context, *Delivery, string) error
+	Health(context.Context) (Health, error)
+}
+
+// Health is an aggregate-only operational view. It deliberately excludes
+// instance identifiers, routing keys, and payload data.
+type Health struct {
+	Pending          int64
+	Processing       int64
+	DeadLetter       int64
+	OldestPendingAge time.Duration
 }
 
 type repository struct {
@@ -81,20 +91,31 @@ func (r *repository) ClaimReady(ctx context.Context, limit int, leaseDuration ti
 	claimToken := uuid.NewString()
 	leaseUntil := now.Add(leaseDuration)
 	var deliveries []Delivery
-	err := r.db.WithContext(ctx).Raw(`WITH candidates AS (
-    SELECT id
-    FROM external_event_outbox
-    WHERE (status = 'pending' AND available_at <= ?)
-       OR (status = 'processing' AND lease_until <= ?)
-    ORDER BY available_at ASC, created_at ASC, id ASC
-    FOR UPDATE SKIP LOCKED
-    LIMIT ?
+	err := r.db.WithContext(ctx).Raw(`WITH exhausted AS (
+	UPDATE external_event_outbox
+	SET status = 'dead_letter', dead_lettered_at = ?, last_attempt_at = ?,
+	    last_error_code = 'attempt_budget_exhausted', claim_token = NULL,
+	    lease_until = NULL, updated_at = ?
+	WHERE attempt_count >= max_attempts
+	  AND ((status = 'pending' AND available_at <= ?)
+	    OR (status = 'processing' AND lease_until <= ?))
+	RETURNING id
+), candidates AS (
+	    SELECT id
+	    FROM external_event_outbox
+	    WHERE attempt_count < max_attempts
+	      AND ((status = 'pending' AND available_at <= ?)
+	       OR (status = 'processing' AND lease_until <= ?))
+	    ORDER BY available_at ASC, created_at ASC, id ASC
+	    FOR UPDATE SKIP LOCKED
+	    LIMIT ?
 )
 UPDATE external_event_outbox AS outbox
-SET status = 'processing', claim_token = ?, lease_until = ?, updated_at = ?
+SET status = 'processing', claim_token = ?, lease_until = ?,
+    attempt_count = outbox.attempt_count + 1, updated_at = ?
 FROM candidates
 WHERE outbox.id = candidates.id
-RETURNING outbox.*`, now, now, limit, claimToken, leaseUntil, now).Scan(&deliveries).Error
+RETURNING outbox.*`, now, now, now, now, now, now, now, limit, claimToken, leaseUntil, now).Scan(&deliveries).Error
 	return deliveries, err
 }
 
@@ -117,11 +138,11 @@ func (r *repository) MarkRetry(ctx context.Context, delivery *Delivery, errorCod
 	if !safeErrorCode.MatchString(errorCode) || !retryAt.After(now) {
 		return errors.New("safe error code and future retry time are required")
 	}
-	if delivery.AttemptCount+1 >= delivery.MaxAttempts {
+	if delivery.AttemptCount >= delivery.MaxAttempts {
 		return errors.New("delivery attempt budget is exhausted")
 	}
 	return claimResult(r.claimed(ctx, delivery).Updates(map[string]any{
-		"status": StatusPending, "available_at": retryAt.UTC(), "attempt_count": gorm.Expr("attempt_count + 1"),
+		"status": StatusPending, "available_at": retryAt.UTC(),
 		"last_attempt_at": now, "last_error_code": errorCode, "claim_token": nil, "lease_until": nil, "updated_at": now,
 	}))
 }
@@ -135,9 +156,38 @@ func (r *repository) MarkDeadLetter(ctx context.Context, delivery *Delivery, err
 	}
 	now := r.now().UTC()
 	return claimResult(r.claimed(ctx, delivery).Updates(map[string]any{
-		"status": StatusDeadLetter, "dead_lettered_at": now, "attempt_count": gorm.Expr("attempt_count + 1"),
+		"status": StatusDeadLetter, "dead_lettered_at": now,
 		"last_attempt_at": now, "last_error_code": errorCode, "claim_token": nil, "lease_until": nil, "updated_at": now,
 	}))
+}
+
+func (r *repository) Health(ctx context.Context) (Health, error) {
+	if r == nil || r.db == nil || r.now == nil || ctx == nil {
+		return Health{}, errors.New("external event outbox repository and context are required")
+	}
+	var row struct {
+		Pending         int64
+		Processing      int64
+		DeadLetter      int64
+		OldestPendingAt *time.Time
+	}
+	err := r.db.WithContext(ctx).Raw(`SELECT
+	COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+	COUNT(*) FILTER (WHERE status = 'processing') AS processing,
+	COUNT(*) FILTER (WHERE status = 'dead_letter') AS dead_letter,
+	MIN(created_at) FILTER (WHERE status = 'pending') AS oldest_pending_at
+FROM external_event_outbox`).Scan(&row).Error
+	if err != nil {
+		return Health{}, err
+	}
+	health := Health{Pending: row.Pending, Processing: row.Processing, DeadLetter: row.DeadLetter}
+	if row.OldestPendingAt != nil {
+		health.OldestPendingAge = r.now().UTC().Sub(row.OldestPendingAt.UTC())
+		if health.OldestPendingAge < 0 {
+			health.OldestPendingAge = 0
+		}
+	}
+	return health, nil
 }
 
 func (r *repository) validateClaimMutation(ctx context.Context, delivery *Delivery) error {

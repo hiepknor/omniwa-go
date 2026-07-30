@@ -32,7 +32,10 @@ func TestRepositoryPostgresLifecycleFencingAndAtomicity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	instance := instance_model.Instance{Name: "outbox-test-" + uuid.NewString(), Token: "outbox-token-" + uuid.NewString()}
+	instance := instance_model.Instance{
+		Name: "outbox-test-" + uuid.NewString(), Token: "outbox-token-" + uuid.NewString(),
+		Webhook: "https://instance.example/events", RabbitmqEnable: "enabled",
+	}
 	if err := db.Create(&instance).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +59,7 @@ func TestRepositoryPostgresLifecycleFencingAndAtomicity(t *testing.T) {
 	}
 
 	claimed, err := repository.ClaimReady(ctx, 1, time.Minute)
-	if err != nil || len(claimed) != 1 || claimed[0].ClaimToken == nil {
+	if err != nil || len(claimed) != 1 || claimed[0].ClaimToken == nil || claimed[0].AttemptCount != 1 {
 		t.Fatalf("initial claim = %#v, %v", claimed, err)
 	}
 	stale := claimed[0]
@@ -73,7 +76,7 @@ func TestRepositoryPostgresLifecycleFencingAndAtomicity(t *testing.T) {
 	}
 	now = now.Add(2 * time.Minute)
 	claimed, err = repository.ClaimReady(ctx, 1, time.Minute)
-	if err != nil || len(claimed) != 1 || claimed[0].AttemptCount != 1 {
+	if err != nil || len(claimed) != 1 || claimed[0].AttemptCount != 2 {
 		t.Fatalf("due retry claim = %#v, %v", claimed, err)
 	}
 	if err := repository.MarkDelivered(ctx, &claimed[0]); err != nil {
@@ -95,21 +98,39 @@ func TestRepositoryPostgresLifecycleFencingAndAtomicity(t *testing.T) {
 	}
 	now = now.Add(2 * time.Minute)
 	reclaimed, err := repository.ClaimReady(ctx, 1, time.Minute)
-	if err != nil || len(reclaimed) != 1 || reclaimed[0].ID != firstClaim[0].ID || *reclaimed[0].ClaimToken == *firstClaim[0].ClaimToken {
+	if err != nil || len(reclaimed) != 0 {
 		t.Fatalf("expired lease recovery = %#v, %v", reclaimed, err)
 	}
 	if err := repository.MarkDelivered(ctx, &firstClaim[0]); !errors.Is(err, ErrClaimLost) {
 		t.Fatalf("superseded claim error = %v", err)
 	}
-	if err := repository.MarkRetry(ctx, &reclaimed[0], "temporary_unavailable", now.Add(time.Minute)); err == nil {
-		t.Fatal("exhausted delivery was scheduled for another retry")
+	stored = Delivery{}
+	if err := db.First(&stored, "id = ?", expiringDelivery.ID).Error; err != nil || stored.Status != StatusDeadLetter ||
+		stored.DeadLetteredAt == nil || stored.LastErrorCode == nil || *stored.LastErrorCode != "attempt_budget_exhausted" {
+		t.Fatalf("dead-letter row = %#v, %v", stored, err)
 	}
-	if err := repository.MarkDeadLetter(ctx, &reclaimed[0], "permanent_rejection"); err != nil {
+
+	health, err := repository.Health(ctx)
+	if err != nil || health.DeadLetter < 1 {
+		t.Fatalf("outbox health = %#v, %v", health, err)
+	}
+	resolver, err := NewDatabaseTargetResolver(db, "https://global.example/events", true)
+	if err != nil {
 		t.Fatal(err)
 	}
-	stored = Delivery{}
-	if err := db.First(&stored, "id = ?", expiringDelivery.ID).Error; err != nil || stored.Status != StatusDeadLetter || stored.DeadLetteredAt == nil {
-		t.Fatalf("dead-letter row = %#v, %v", stored, err)
+	if target, err := resolver.WebhookTarget(ctx, DestinationInstance, instance.Id); err != nil || target != instance.Webhook {
+		t.Fatalf("instance webhook target = %q, %v", target, err)
+	}
+	if mode, err := resolver.RabbitMQMode(ctx, DestinationInstance, instance.Id); err != nil || mode != "enabled" {
+		t.Fatalf("instance RabbitMQ mode = %q, %v", mode, err)
+	}
+	if target, err := resolver.WebhookTarget(ctx, DestinationGlobal, instance.Id); err != nil || target != "https://global.example/events" {
+		t.Fatalf("global webhook target = %q, %v", target, err)
+	}
+	_, err = resolver.WebhookTarget(ctx, DestinationInstance, uuid.NewString())
+	var missing *DeliveryError
+	if !errors.As(err, &missing) || missing.Code != "instance_not_found" || missing.Retryable {
+		t.Fatalf("missing instance classification = %#v, %v", missing, err)
 	}
 
 	rollbackEvent := testDurableEvent(instance.Id, now)

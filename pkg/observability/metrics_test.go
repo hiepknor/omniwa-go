@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/evolution-foundation/evolution-go/pkg/events/outbox"
 )
 
 func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
@@ -19,6 +21,10 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 	observer.ObserveMutationRejection(EligibilityOperationUpdate, "projection_not_ready")
 	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, ConversationOperationList, 200, 25*time.Millisecond)
 	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, ConversationOperationMessages, 503, 50*time.Millisecond)
+	registry.ExternalEventOutbox().ObserveAttempt(outbox.TransportWebhook, "retry", "destination-with-secret-value", 75*time.Millisecond)
+	registry.ExternalEventOutbox().ObserveClaimed(4)
+	registry.ExternalEventOutbox().ObserveHealth(outbox.Health{Pending: 3, Processing: 1, DeadLetter: 2, OldestPendingAge: 5 * time.Second})
+	registry.ExternalEventOutbox().ObserveInfrastructureFailure("repository_error")
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -38,6 +44,10 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 		`omniwa_conversation_api_requests_total{contract="conversation",operation="list",status="2xx"} 1`,
 		`omniwa_conversation_api_requests_total{contract="conversation",operation="messages",status="5xx"} 1`,
 		`omniwa_conversation_api_request_duration_seconds_count{contract="conversation",operation="list"} 1`,
+		`omniwa_external_event_outbox_attempts_total{code="other",outcome="retry",transport="webhook"} 1`,
+		`omniwa_external_event_outbox_rows{status="pending"} 3`,
+		`omniwa_external_event_outbox_oldest_pending_age_seconds 5`,
+		`omniwa_external_event_outbox_infrastructure_failures_total{code="repository_error"} 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q", expected)
@@ -59,6 +69,9 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, "provider_120363@g.us", 200, time.Second)
 	registry.ConversationAPI().ObserveConversationRequest(ConversationContractCanonical, ConversationOperationList, 999, time.Second)
 	registry.ConversationAPI().ObserveConversationRequest("provider_chat", "provider_120363@g.us", 200, time.Second)
+	registry.ExternalEventOutbox().ObserveAttempt(outbox.Transport("instance-123"), "retry", "provider_120363@g.us", time.Second)
+	registry.ExternalEventOutbox().ObserveAttempt(outbox.TransportWebhook, "instance-123", "provider_120363@g.us", time.Second)
+	registry.ExternalEventOutbox().ObserveInfrastructureFailure("provider_120363@g.us")
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -67,7 +80,7 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total"} {
+	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total", "omniwa_external_event_outbox_attempts_total", "omniwa_external_event_outbox_infrastructure_failures_total"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("invalid metric material was exposed: %q", forbidden)
 		}
@@ -88,6 +101,7 @@ func TestEligibilityObserverIsConcurrentSafe(t *testing.T) {
 			registry.ObserveRequest(EligibilityOperationAggregate, time.Millisecond, 1, EligibilityCounts{Eligible: 1})
 			registry.ObserveMutationRejection(EligibilityOperationCampaignCreate, "group_list_group_unavailable")
 			registry.ObserveConversationRequest(ConversationContractCanonical, ConversationOperationGet, 200, time.Millisecond)
+			registry.ObserveAttempt(outbox.TransportRabbitMQ, "delivered", "", time.Millisecond)
 		}()
 	}
 	wait.Wait()
@@ -99,6 +113,7 @@ func TestEligibilityObserverIsConcurrentSafe(t *testing.T) {
 		`omniwa_group_list_eligibility_request_duration_seconds_count{operation="aggregate"} 32`,
 		`omniwa_group_list_mutation_rejections_total{code="group_list_group_unavailable",operation="campaign_create"} 32`,
 		`omniwa_conversation_api_requests_total{contract="conversation",operation="get",status="2xx"} 32`,
+		`omniwa_external_event_outbox_attempts_total{code="none",outcome="delivered",transport="rabbitmq"} 32`,
 	} {
 		if !strings.Contains(response.Body.String(), expected) {
 			t.Fatalf("concurrent metrics missing %q", expected)

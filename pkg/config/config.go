@@ -43,6 +43,7 @@ type Config struct {
 	AmqpGlobalEnabled               bool
 	WebhookUrl                      string
 	Webhook                         WebhookConfig
+	ExternalEventOutbox             ExternalEventOutboxConfig
 	ClientName                      string
 	ApiAudioConverter               string
 	ApiAudioConverterKey            string
@@ -155,6 +156,17 @@ type WebhookConfig struct {
 	MaxPendingPerInstance int
 	MaxAttempts           int
 	RetryBase             time.Duration
+}
+
+type ExternalEventOutboxConfig struct {
+	ServeEnabled   bool
+	BatchSize      int
+	LeaseDuration  time.Duration
+	PollInterval   time.Duration
+	AttemptTimeout time.Duration
+	StateTimeout   time.Duration
+	RetryBase      time.Duration
+	RetryMax       time.Duration
 }
 
 // EnsureDBExists connects to postgres (without the target database) and creates it if it doesn't exist.
@@ -425,6 +437,38 @@ func Load() *Config {
 	webhookRetryBase, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.WEBHOOK_RETRY_BASE), "1s"))
 	if err != nil {
 		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.WEBHOOK_RETRY_BASE, err)
+	}
+	externalEventOutboxServeEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED)), "true")
+	externalEventOutboxBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_BATCH), "4"))
+	if err != nil || externalEventOutboxBatch > 32 {
+		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 32", config_env.EXTERNAL_EVENT_OUTBOX_BATCH)
+	}
+	externalEventOutboxLease, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_LEASE), "45s"))
+	if err != nil || externalEventOutboxLease > 30*time.Minute {
+		logger.LogFatal("[CONFIG] invalid %s: must be a positive duration no greater than 30m", config_env.EXTERNAL_EVENT_OUTBOX_LEASE)
+	}
+	externalEventOutboxPoll, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_POLL_INTERVAL), "1s"))
+	if err != nil || externalEventOutboxPoll > time.Minute {
+		logger.LogFatal("[CONFIG] invalid %s: must be a positive duration no greater than 1m", config_env.EXTERNAL_EVENT_OUTBOX_POLL_INTERVAL)
+	}
+	externalEventOutboxAttemptTimeout, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_ATTEMPT_TIMEOUT), "15s"))
+	if err != nil || externalEventOutboxAttemptTimeout > 10*time.Minute {
+		logger.LogFatal("[CONFIG] invalid %s: must be a positive duration no greater than 10m", config_env.EXTERNAL_EVENT_OUTBOX_ATTEMPT_TIMEOUT)
+	}
+	externalEventOutboxStateTimeout, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_STATE_TIMEOUT), "5s"))
+	if err != nil || externalEventOutboxStateTimeout > time.Minute {
+		logger.LogFatal("[CONFIG] invalid %s: must be a positive duration no greater than 1m", config_env.EXTERNAL_EVENT_OUTBOX_STATE_TIMEOUT)
+	}
+	if externalEventOutboxLease <= externalEventOutboxAttemptTimeout+externalEventOutboxStateTimeout+5*time.Second {
+		logger.LogFatal("[CONFIG] invalid %s: must exceed attempt and state timeouts by more than 5s", config_env.EXTERNAL_EVENT_OUTBOX_LEASE)
+	}
+	externalEventOutboxRetryBase, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_RETRY_BASE), "5s"))
+	if err != nil || externalEventOutboxRetryBase > 24*time.Hour {
+		logger.LogFatal("[CONFIG] invalid %s: must be a positive duration no greater than 24h", config_env.EXTERNAL_EVENT_OUTBOX_RETRY_BASE)
+	}
+	externalEventOutboxRetryMax, err := parsePositiveDuration(defaultIfEmpty(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_RETRY_MAX), "15m"))
+	if err != nil || externalEventOutboxRetryMax < externalEventOutboxRetryBase || externalEventOutboxRetryMax > 24*time.Hour {
+		logger.LogFatal("[CONFIG] invalid %s: must be at least %s", config_env.EXTERNAL_EVENT_OUTBOX_RETRY_MAX, config_env.EXTERNAL_EVENT_OUTBOX_RETRY_BASE)
 	}
 
 	apiAudioConverter := os.Getenv(config_env.API_AUDIO_CONVERTER)
@@ -805,6 +849,12 @@ func Load() *Config {
 			MaxPendingPerInstance: webhookMaxPendingPerInstance,
 			MaxAttempts:           webhookMaxAttempts,
 			RetryBase:             webhookRetryBase,
+		},
+		ExternalEventOutbox: ExternalEventOutboxConfig{
+			ServeEnabled: externalEventOutboxServeEnabled, BatchSize: externalEventOutboxBatch,
+			LeaseDuration: externalEventOutboxLease, PollInterval: externalEventOutboxPoll,
+			AttemptTimeout: externalEventOutboxAttemptTimeout, StateTimeout: externalEventOutboxStateTimeout,
+			RetryBase: externalEventOutboxRetryBase, RetryMax: externalEventOutboxRetryMax,
 		},
 		ClientName:                  clientName,
 		ApiAudioConverter:           apiAudioConverter,
