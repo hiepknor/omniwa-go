@@ -6,18 +6,23 @@ name: omniwa-go
 
 services:
   omniwa-go:
-    # Point the app at the extra services (overrides .env values).
+    # Point the app at the extra services without exposing their credentials in
+    # the container environment.
     environment:
-      AMQP_URL: "amqp://admin:admin@rabbitmq:5672/default"
+      AMQP_URL_FILE: /run/secrets/omniwa_amqp_url
       AMQP_GLOBAL_ENABLED: "true"
       AMQP_GLOBAL_EVENTS: "messages.upsert,messages.update,connection.update"
       MINIO_ENABLED: "true"
       MINIO_ENDPOINT: "minio:9000"
-      MINIO_ACCESS_KEY: "minioadmin"
-      MINIO_SECRET_KEY: "minioadmin"
+      MINIO_ACCESS_KEY_FILE: /run/secrets/omniwa_minio_root_user
+      MINIO_SECRET_KEY_FILE: /run/secrets/omniwa_minio_root_password
       MINIO_BUCKET: "omniwa-media"
       MINIO_USE_SSL: "false"
       MINIO_REGION: "us-east-1"
+    secrets:
+      - omniwa_amqp_url
+      - omniwa_minio_root_user
+      - omniwa_minio_root_password
     depends_on:
       postgres:
         condition: service_healthy
@@ -27,16 +32,16 @@ services:
         condition: service_started
 
   rabbitmq:
-    image: rabbitmq:3-management-alpine
+    image: ${RABBITMQ_IMAGE:?Set RABBITMQ_IMAGE to an immutable sha256 digest}
     container_name: omniwa-rabbitmq
     restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: admin
-      RABBITMQ_DEFAULT_VHOST: default
+    secrets:
+      - source: omniwa_rabbitmq_config
+        target: /etc/rabbitmq/conf.d/20-omniwa.conf
+        mode: 0444
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -48,16 +53,19 @@ services:
       - omniwa_network
 
   minio:
-    image: minio/minio:latest
+    image: ${MINIO_IMAGE:?Set MINIO_IMAGE to an immutable sha256 digest}
     container_name: omniwa-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER_FILE: /run/secrets/omniwa_minio_root_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/omniwa_minio_root_password
+    secrets:
+      - omniwa_minio_root_user
+      - omniwa_minio_root_password
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
     networks:
@@ -66,3 +74,13 @@ services:
 volumes:
   rabbitmq_data:
   minio_data:
+
+secrets:
+  omniwa_amqp_url:
+    file: ${OMNIWA_AMQP_URL_FILE:?Set OMNIWA_AMQP_URL_FILE to a readable secret file}
+  omniwa_rabbitmq_config:
+    file: ${OMNIWA_RABBITMQ_CONFIG_FILE:?Set OMNIWA_RABBITMQ_CONFIG_FILE to a readable secret file}
+  omniwa_minio_root_user:
+    file: ${OMNIWA_MINIO_ROOT_USER_FILE:?Set OMNIWA_MINIO_ROOT_USER_FILE to a readable secret file}
+  omniwa_minio_root_password:
+    file: ${OMNIWA_MINIO_ROOT_PASSWORD_FILE:?Set OMNIWA_MINIO_ROOT_PASSWORD_FILE to a readable secret file}

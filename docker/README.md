@@ -69,13 +69,21 @@ installation that has root-owned application volumes, follow the
 ## Production (base)
 
 ```bash
-cp .env.example .env      # then set OMNIWA_IMAGE to a digest and edit secrets
+cp .env.example .env      # set immutable image digests and secret file paths
 docker compose up -d
 ```
 
 Production Compose has no mutable tag fallback. `OMNIWA_IMAGE` must use the
 verified `ghcr.io/hiepknor/omniwa-go@sha256:...` value recorded by the publish
-workflow. Keep the previous digest as the rollback target.
+workflow, and `POSTGRES_IMAGE` must also identify an immutable digest. Keep the
+previous digests as rollback targets.
+
+The production stack does not accept built-in credentials. Before rendering it,
+materialize the global API key, PostgreSQL password, and both application DSNs
+at the paths configured by `OMNIWA_*_FILE`. Files under `docker/secrets/` are
+ignored by Git, but the operator must still restrict their host permissions.
+See the [production secrets runbook](../docs/runbooks/production-secrets.md) for
+initial migration, verification, rotation, and rollback.
 
 ## Production with RabbitMQ + MinIO
 
@@ -84,10 +92,15 @@ cp .env.example .env
 docker compose -f docker-compose.yml -f docker-compose.full.yml up -d
 ```
 
+The full override additionally requires immutable `RABBITMQ_IMAGE` and
+`MINIO_IMAGE` values plus the AMQP URL, RabbitMQ configuration, and MinIO root
+secret files listed in `.env.example`. RabbitMQ and MinIO management ports bind
+to loopback; PostgreSQL is available only on the private Compose network.
+
 ## Swarm
 
-Edit `swarm/docker-stack.yml` (domain, secrets, external network/volumes), set
-the verified image digest, then:
+Create the three external secrets referenced by `swarm/docker-stack.yml`, edit
+the domain and external network/volumes, set the verified image digest, then:
 
 ```bash
 export OMNIWA_IMAGE=ghcr.io/hiepknor/omniwa-go@sha256:<verified-digest>
@@ -123,4 +136,9 @@ Use stop-first/Recreate upgrades, not start-first or surge rollouts. See the
   handshakes; same-host requests and clients without an `Origin` header remain
   allowed. Wildcards, URL paths, credentials, queries, and fragments are
   rejected during startup.
-- Ports: API `4000`, Prometheus `127.0.0.1:9090`, Postgres `5432`, RabbitMQ `5672` (+UI `15672`), MinIO `9000` (+console `9001`).
+- Sensitive application settings support `NAME_FILE` as an additive alternative
+  to `NAME`. Configuring both with non-empty values fails startup.
+- Ports: API `4000`; development Prometheus `127.0.0.1:9090`; production full
+  RabbitMQ `127.0.0.1:5672` (+UI `127.0.0.1:15672`) and MinIO
+  `127.0.0.1:9000` (+console `127.0.0.1:9001`). Production PostgreSQL is not
+  host-published.

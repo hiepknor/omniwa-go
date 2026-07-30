@@ -1,4 +1,5 @@
 .env
+/docker/secrets/
 logs/*
 build/
 *.prof

@@ -98,6 +98,9 @@ jobs:
             exit 1
           fi
 
+      - name: Validate production deployment manifests
+        run: bash scripts/ci/validate-production-manifests.sh
+
       - name: Smoke test container startup
         env:
           SOURCE_SHA: ${{ github.sha }}
