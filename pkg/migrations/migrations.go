@@ -1753,6 +1753,66 @@ FROM (
 WHERE conversations.instance_id = unread.instance_id
   AND conversations.conversation_id = unread.conversation_id;`,
 	},
+	{
+		Version: 39,
+		Name:    "create_external_event_outbox",
+		SQL: `CREATE TABLE external_event_outbox (
+    id UUID PRIMARY KEY,
+    durable_event_id UUID NOT NULL,
+    instance_id UUID NOT NULL,
+    transport VARCHAR(16) NOT NULL,
+    destination VARCHAR(16) NOT NULL,
+    routing_key VARCHAR(255) NOT NULL,
+    payload JSONB NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    claim_token UUID NULL,
+    lease_until TIMESTAMPTZ NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    retry_policy_version INTEGER NOT NULL DEFAULT 1,
+    max_attempts INTEGER NOT NULL DEFAULT 12,
+    last_attempt_at TIMESTAMPTZ NULL,
+    last_error_code VARCHAR(64) NULL,
+    delivered_at TIMESTAMPTZ NULL,
+    dead_lettered_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT external_event_outbox_instance_fk
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT external_event_outbox_durable_event_fk
+        FOREIGN KEY (durable_event_id) REFERENCES durable_events(id) ON DELETE CASCADE,
+    CONSTRAINT external_event_outbox_transport_check
+        CHECK (transport IN ('webhook', 'rabbitmq', 'nats')),
+    CONSTRAINT external_event_outbox_destination_check
+        CHECK (destination IN ('instance', 'global')),
+    CONSTRAINT external_event_outbox_status_check
+        CHECK (status IN ('pending', 'processing', 'delivered', 'dead_letter')),
+    CONSTRAINT external_event_outbox_attempts_check
+        CHECK (attempt_count >= 0 AND max_attempts > 0 AND retry_policy_version > 0),
+    CONSTRAINT external_event_outbox_payload_size_check
+        CHECK (OCTET_LENGTH(payload::text) <= 1048576),
+    CONSTRAINT external_event_outbox_claim_check CHECK (
+        (status = 'processing' AND claim_token IS NOT NULL AND lease_until IS NOT NULL)
+        OR (status <> 'processing' AND claim_token IS NULL AND lease_until IS NULL)
+    ),
+    CONSTRAINT external_event_outbox_terminal_check CHECK (
+        (status = 'delivered' AND delivered_at IS NOT NULL AND dead_lettered_at IS NULL)
+        OR (status = 'dead_letter' AND dead_lettered_at IS NOT NULL AND delivered_at IS NULL)
+        OR (status IN ('pending', 'processing') AND delivered_at IS NULL AND dead_lettered_at IS NULL)
+    ),
+    CONSTRAINT external_event_outbox_route_unique
+        UNIQUE (durable_event_id, transport, destination, routing_key)
+);
+
+CREATE INDEX external_event_outbox_work_idx
+ON external_event_outbox (available_at, created_at, id)
+WHERE status = 'pending';
+CREATE INDEX external_event_outbox_expired_lease_idx
+ON external_event_outbox (lease_until, id)
+WHERE status = 'processing';
+CREATE INDEX external_event_outbox_health_idx
+ON external_event_outbox (instance_id, status, updated_at);`,
+	},
 }
 
 func Run(db *gorm.DB) error {
