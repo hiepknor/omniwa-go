@@ -145,6 +145,34 @@ func recomputeConversationSummary(tx *gorm.DB, instanceID, conversationID string
 		return errors.New("canonical conversation has no active chat aliases")
 	}
 	primary := chats[0]
+	archivedSource, err := latestConversationSettingSource(chats, ChatAspectArchived, ChatAspectSettings)
+	if err != nil {
+		return err
+	}
+	pinnedSource, err := latestConversationSettingSource(chats, ChatAspectPinned, ChatAspectSettings)
+	if err != nil {
+		return err
+	}
+	mutedSource, err := latestConversationSettingSource(chats, ChatAspectMuted, ChatAspectSettings)
+	if err != nil {
+		return err
+	}
+	disappearingSource, err := latestConversationSettingSource(chats, ChatAspectSettings)
+	if err != nil {
+		return err
+	}
+	if archivedSource == nil {
+		archivedSource = &primary
+	}
+	if pinnedSource == nil {
+		pinnedSource = &primary
+	}
+	if mutedSource == nil {
+		mutedSource = &primary
+	}
+	if disappearingSource == nil {
+		disappearingSource = &primary
+	}
 	lastSyncedAt := primary.LastSyncedAt
 	for index := range chats {
 		if chats[index].LastSyncedAt.After(lastSyncedAt) {
@@ -156,8 +184,8 @@ func recomputeConversationSummary(tx *gorm.DB, instanceID, conversationID string
 		"display_name": primary.DisplayName, "display_name_source": primary.DisplayNameSource,
 		"display_name_updated_at": primary.DisplayNameUpdatedAt, "last_message_id": primary.LastMessageID,
 		"last_message_at": primary.LastMessageAt, "last_activity_at": primary.LastActivityAt,
-		"archived": primary.Archived, "pinned": primary.Pinned, "muted_until": primary.MutedUntil,
-		"disappearing_timer": primary.DisappearingTimer, "field_versions": primary.FieldVersions,
+		"archived": archivedSource.Archived, "pinned": pinnedSource.Pinned, "muted_until": mutedSource.MutedUntil,
+		"disappearing_timer": disappearingSource.DisappearingTimer, "field_versions": primary.FieldVersions,
 		"last_synced_at": lastSyncedAt.UTC(), "tombstoned_at": nil, "updated_at": now.UTC(),
 	}
 	if primary.Type == projection_model.ChatTypeDirect && primary.ContactID != nil {
@@ -176,6 +204,29 @@ func recomputeConversationSummary(tx *gorm.DB, instanceID, conversationID string
 		return err
 	}
 	return recomputeConversationUnread(tx, instanceID, conversationID, now)
+}
+
+func latestConversationSettingSource(chats []projection_model.Chat, aspects ...ChatAspect) (*projection_model.Chat, error) {
+	var selected *projection_model.Chat
+	var selectedVersion projectionFieldVersion
+	for index := range chats {
+		versions, err := decodeProjectionVersions(chats[index].FieldVersions)
+		if err != nil {
+			return nil, fmt.Errorf("decode conversation setting versions: %w", err)
+		}
+		var candidate projectionFieldVersion
+		found := false
+		for _, aspect := range aspects {
+			version, exists := versions[string(aspect)]
+			if exists && (!found || projectionVersionLess(candidate, version)) {
+				candidate, found = version, true
+			}
+		}
+		if found && (selected == nil || projectionVersionLess(selectedVersion, candidate)) {
+			selected, selectedVersion = &chats[index], candidate
+		}
+	}
+	return selected, nil
 }
 
 func recomputeConversationUnread(tx *gorm.DB, instanceID, conversationID string, now time.Time) error {

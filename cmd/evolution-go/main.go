@@ -407,6 +407,20 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			canonicalChatReadiness.Ready,
 		))
 	}
+	if config.ConversationAppStateCommandsEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
+			projection_service.CapabilityConversationAppStateCommands,
+			[]string{"contacts", "chats", "messages"},
+			canonicalChatReadiness.Ready,
+		))
+	}
+	if config.ConversationHistorySyncEnabled {
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
+			projection_service.CapabilityConversationHistorySync,
+			[]string{"contacts", "chats", "messages"},
+			canonicalChatReadiness.Ready,
+		))
+	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(
 		projection_repository.NewStateRepository(db),
 		projection_repository.NewWorkHealthRepository(db),
@@ -445,19 +459,20 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	chatMessageProjectionRepository := projection_repository.NewChatMessageRepository(db)
 	chatMessageProjector := projection_service.NewChatMessageProjector(chatMessageProjectionRepository, projectionStateService, config.MessageRetention)
 	chatMessageReader := projection_service.NewChatMessageReader(chatMessageProjectionRepository, projectionStateService, config.MessageRetention)
+	canonicalConversationServing := func(instanceID string) (bool, error) {
+		capabilities, err := projectionStateService.Capabilities(instanceID)
+		if err != nil {
+			return false, err
+		}
+		for _, capability := range capabilities {
+			if capability == projection_service.CapabilityCanonicalConversationIdentity {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
 	if config.CanonicalChatIdentityEnabled {
-		chatMessageReader.EnableCanonicalConversations(func(instanceID string) (bool, error) {
-			capabilities, err := projectionStateService.Capabilities(instanceID)
-			if err != nil {
-				return false, err
-			}
-			for _, capability := range capabilities {
-				if capability == projection_service.CapabilityCanonicalConversationIdentity {
-					return true, nil
-				}
-			}
-			return false, nil
-		})
+		chatMessageReader.EnableCanonicalConversations(canonicalConversationServing)
 	}
 	historySyncer := projection_service.NewHistorySyncer(projectionEventService, projectionStateService)
 	historyReadinessProjector := projection_service.NewHistoryReadinessProjector(projectionStateService, projectionReadinessRepository)
@@ -523,7 +538,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	)
 	startBackground(backgroundWorkers, "projection.contacts", contactWorker.Run)
 	chatMessageWorker := projection_service.NewWorker(
-		projectionEventService, "messages", []string{"message", "receipt", "history_chat", "history_message"}, 50, time.Second, chatMessageProjector.Handle,
+		projectionEventService, "messages", []string{"message", "receipt", "history_chat", "history_message", "chat_archived", "chat_pinned", "chat_muted"}, 50, time.Second, chatMessageProjector.Handle,
 		func(result projection_service.EventBatchResult, err error) {
 			if err != nil {
 				logger.LogError("component=projection action=process resource=messages result=failed error_code=batch_failed")
@@ -858,6 +873,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		Timeout:  config.MediaDownloadTimeout,
 	}, loggerWrapper, messageServiceOptions...)
 	chatService := chat_service.NewChatService(runtimeRegistry, whatsmeowService, loggerWrapper)
+	conversationCommandService := chat_service.NewConversationCommandService(chatMessageProjectionRepository, chatService, canonicalConversationServing)
 	groupManagementCommandRepository := group_repository.NewManagementCommandRepository(db)
 	var groupPhotoAssets *group_service.GroupPhotoAssetService
 	if config.GroupPhotoAssetsEnabled {
@@ -930,7 +946,15 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		user_handler.NewUserHandler(userService),
 		send_handler.NewSendHandler(sendMessageService, sendHandlerOptions...),
 		message_handler.NewMessageHandler(messageService, chatMessageReader),
-		chat_handler.NewChatHandler(chatService, chatMessageReader),
+		chat_handler.NewChatHandler(
+			chatService,
+			chatMessageReader,
+			chat_handler.WithConversationCommands(
+				conversationCommandService,
+				config.ConversationAppStateCommandsEnabled,
+				config.ConversationHistorySyncEnabled,
+			),
+		),
 		group_handler.NewGroupHandler(groupService, group_handler.WithManagementContract(config.GroupManagementEnabled), group_handler.WithPhotoAssets(config.GroupPhotoAssetsEnabled)),
 		groupListHandler,
 		call_handler.NewCallHandler(callService),

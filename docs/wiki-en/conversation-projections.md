@@ -154,10 +154,25 @@ authoritative alias and deduplicates by the instance-scoped provider message
 key. Version-2 cursors remain opaque and canonical-conversation scoped; legacy
 or cross-conversation cursors return `invalid_cursor`.
 
-The archive, pin, mute, and HistorySync endpoints remain provider-Chat commands.
-They do not currently accept a canonical Conversation UUID. Resolve and use the
-published `addressingJid` only where the command contract explicitly accepts a
-provider JID.
+Canonical Conversation commands are published independently behind
+`conversation_app_state_commands` and `conversation_history_sync`:
+
+- `POST` and `DELETE /conversations/{conversationRef}/archive`
+- `POST` and `DELETE /conversations/{conversationRef}/pin`
+- `PUT` and `DELETE /conversations/{conversationRef}/mute`
+- `POST /conversations/{conversationRef}/history-sync`
+
+Archive, pin, and finite mute resolve the authoritative `addressingJid` after
+resolving the canonical or absorbed reference. History sync accepts a projected
+anchor message and derives the provider Chat alias from that message, which may
+differ from `addressingJid` for PN/LID direct Conversations. Direct and group
+Conversations are supported; newsletter, broadcast, unknown, and infinite mute
+semantics fail closed. A provider acknowledgement returns HTTP 202 and the
+projection is updated only from subsequent authoritative app-state events.
+
+The legacy provider commands remain under `/chat/*` during the measured
+compatibility window. They accept provider metadata and must not be given a
+canonical UUID.
 
 ### Removed Chat-read contract
 

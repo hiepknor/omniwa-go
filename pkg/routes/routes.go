@@ -251,6 +251,17 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.GET("/:conversationRef", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationGet), r.chatHandler.GetConversation)
 			routes.GET("/:conversationRef/messages", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMessages), r.chatHandler.ConversationMessages)
 			routes.GET("/:conversationRef/messages/:messageId", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMessage), r.chatHandler.ConversationMessage)
+			if r.chatHandler.ConversationAppStateCommandsEnabled() {
+				routes.POST("/:conversationRef/archive", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationArchive), r.chatHandler.ArchiveConversation)
+				routes.DELETE("/:conversationRef/archive", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationUnarchive), r.chatHandler.UnarchiveConversation)
+				routes.POST("/:conversationRef/pin", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationPin), r.chatHandler.PinConversation)
+				routes.DELETE("/:conversationRef/pin", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationUnpin), r.chatHandler.UnpinConversation)
+				routes.PUT("/:conversationRef/mute", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationMute), r.chatHandler.MuteConversation)
+				routes.DELETE("/:conversationRef/mute", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationUnmute), r.chatHandler.UnmuteConversation)
+			}
+			if r.chatHandler.ConversationHistorySyncEnabled() {
+				routes.POST("/:conversationRef/history-sync", r.observeConversationAPI(observability.ConversationContractCanonical, observability.ConversationOperationHistorySync), r.chatHandler.ConversationHistorySync)
+			}
 		}
 	}
 	routes = eng.Group("/group")

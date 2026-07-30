@@ -227,6 +227,53 @@ func TestCanonicalConversationCapabilityFollowsAuthoritativeReadiness(t *testing
 	}
 }
 
+func TestConversationCommandCapabilitiesShareCanonicalReadiness(t *testing.T) {
+	ready := false
+	condition := func(instanceID string) (bool, error) { return instanceID == "instance-a" && ready, nil }
+	resources := []string{"contacts", "chats", "messages"}
+	service := NewStateService(newMemoryRepository(),
+		WithConditionalCapability(CapabilityCanonicalConversationIdentity, resources, condition),
+		WithConditionalCapability(CapabilityConversationAppStateCommands, resources, condition),
+		WithConditionalCapability(CapabilityConversationHistorySync, resources, condition),
+	)
+	for resource, version := range map[string]int64{"contacts": ContactsProjectionSchemaVersion, "chats": ChatsProjectionSchemaVersion, "messages": MessagesProjectionSchemaVersion} {
+		if err := service.MarkReady("instance-a", resource, version, time.Unix(100, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range []string{CapabilityCanonicalConversationIdentity, CapabilityConversationAppStateCommands, CapabilityConversationHistorySync} {
+		if containsCapability(capabilities, capability) {
+			t.Fatalf("%s advertised before canonical readiness: %v", capability, capabilities)
+		}
+	}
+	ready = true
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range []string{CapabilityCanonicalConversationIdentity, CapabilityConversationAppStateCommands, CapabilityConversationHistorySync} {
+		if !containsCapability(capabilities, capability) {
+			t.Fatalf("%s missing after canonical readiness: %v", capability, capabilities)
+		}
+	}
+	if err := service.MarkFailed("instance-a", "messages", MessagesProjectionSchemaVersion); err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range []string{CapabilityCanonicalConversationIdentity, CapabilityConversationAppStateCommands, CapabilityConversationHistorySync} {
+		if containsCapability(capabilities, capability) {
+			t.Fatalf("%s survived failed projection: %v", capability, capabilities)
+		}
+	}
+}
+
 func TestContactsCapabilityRequiresReadyCurrentSchema(t *testing.T) {
 	service := NewStateService(newMemoryRepository())
 	if err := service.MarkReady("instance-a", "contacts", ContactsProjectionSchemaVersion-1, time.Unix(100, 0)); err != nil {

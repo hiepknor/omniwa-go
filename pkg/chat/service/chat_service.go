@@ -26,6 +26,18 @@ type ChatService interface {
 	HistorySyncRequest(data *HistorySyncRequestStruct, instance *instance_model.Instance) (*whatsmeow.SendResponse, error)
 }
 
+type ConversationCommandProvider interface {
+	SetArchived(context.Context, string, string, bool) error
+	SetPinned(context.Context, string, string, bool) error
+	SetMuted(context.Context, string, string, time.Duration) error
+	RequestHistorySync(context.Context, string, types.MessageInfo, int) (*whatsmeow.SendResponse, error)
+}
+
+type Service interface {
+	ChatService
+	ConversationCommandProvider
+}
+
 type chatService struct {
 	clients          instance_runtime.ClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
@@ -91,141 +103,103 @@ func (c *chatService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 }
 
 func (c *chatService) ChatPin(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	client, err := c.ensureClientConnected(instance.Id)
-	if err != nil {
-		return "", err
-	}
-
 	var ts time.Time
-
-	recipient, ok := utils.ParseJID(data.Chat)
-	if !ok {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid phone number")
-	}
-
-	err = client.SendAppState(context.Background(), appstate.BuildPin(recipient, true))
-	if err != nil {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error pin chat: %v", instance.Id, err)
+	if err := c.SetPinned(context.Background(), instance.Id, data.Chat, true); err != nil {
 		return "", err
 	}
-
 	return ts.String(), nil
 }
 
 func (c *chatService) ChatUnpin(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	client, err := c.ensureClientConnected(instance.Id)
-	if err != nil {
-		return "", err
-	}
-
 	var ts time.Time
-
-	recipient, ok := utils.ParseJID(data.Chat)
-	if !ok {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid phone number")
-	}
-
-	err = client.SendAppState(context.Background(), appstate.BuildPin(recipient, false))
-	if err != nil {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error unpin chat: %v", instance.Id, err)
+	if err := c.SetPinned(context.Background(), instance.Id, data.Chat, false); err != nil {
 		return "", err
 	}
-
 	return ts.String(), nil
 }
 
 func (c *chatService) ChatArchive(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	client, err := c.ensureClientConnected(instance.Id)
-	if err != nil {
-		return "", err
-	}
-
 	var ts time.Time
-
-	recipient, ok := utils.ParseJID(data.Chat)
-	if !ok {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid phone number")
-	}
-
-	err = client.SendAppState(context.Background(), appstate.BuildArchive(recipient, true, time.Time{}, nil))
-	if err != nil {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error archive chat: %v", instance.Id, err)
+	if err := c.SetArchived(context.Background(), instance.Id, data.Chat, true); err != nil {
 		return "", err
 	}
-
 	return ts.String(), nil
 }
 
 func (c *chatService) ChatUnarchive(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	client, err := c.ensureClientConnected(instance.Id)
-	if err != nil {
-		return "", err
-	}
-
 	var ts time.Time
-
-	recipient, ok := utils.ParseJID(data.Chat)
-	if !ok {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid phone number")
-	}
-
-	err = client.SendAppState(context.Background(), appstate.BuildArchive(recipient, false, time.Time{}, nil))
-	if err != nil {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error unarchive chat: %v", instance.Id, err)
+	if err := c.SetArchived(context.Background(), instance.Id, data.Chat, false); err != nil {
 		return "", err
 	}
-
 	return ts.String(), nil
 }
 
 func (c *chatService) ChatMute(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	client, err := c.ensureClientConnected(instance.Id)
-	if err != nil {
-		return "", err
-	}
-
 	var ts time.Time
-
-	recipient, ok := utils.ParseJID(data.Chat)
-	if !ok {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid phone number")
-	}
-
-	err = client.SendAppState(context.Background(), appstate.BuildMute(recipient, true, 1*time.Hour))
-	if err != nil {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error mute chat: %v", instance.Id, err)
+	if err := c.SetMuted(context.Background(), instance.Id, data.Chat, time.Hour); err != nil {
 		return "", err
 	}
-
 	return ts.String(), nil
 }
 
 func (c *chatService) ChatUnmute(data *BodyStruct, instance *instance_model.Instance) (string, error) {
-	client, err := c.ensureClientConnected(instance.Id)
-	if err != nil {
-		return "", err
-	}
-
 	var ts time.Time
-
-	recipient, ok := utils.ParseJID(data.Chat)
-	if !ok {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid phone number")
-	}
-
-	err = client.SendAppState(context.Background(), appstate.BuildMute(recipient, false, 0*time.Hour))
-	if err != nil {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error unmute chat: %v", instance.Id, err)
+	if err := c.SetMuted(context.Background(), instance.Id, data.Chat, 0); err != nil {
 		return "", err
 	}
-
 	return ts.String(), nil
+}
+
+func (c *chatService) SetArchived(ctx context.Context, instanceID, target string, archived bool) error {
+	client, recipient, err := c.commandTarget(instanceID, target)
+	if err != nil {
+		return err
+	}
+	if err := client.SendAppState(ctx, appstate.BuildArchive(recipient, archived, time.Time{}, nil)); err != nil {
+		c.loggerWrapper.GetLogger(instanceID).LogError("[%s] error update archive state: %v", instanceID, err)
+		return err
+	}
+	return nil
+}
+
+func (c *chatService) SetPinned(ctx context.Context, instanceID, target string, pinned bool) error {
+	client, recipient, err := c.commandTarget(instanceID, target)
+	if err != nil {
+		return err
+	}
+	if err := client.SendAppState(ctx, appstate.BuildPin(recipient, pinned)); err != nil {
+		c.loggerWrapper.GetLogger(instanceID).LogError("[%s] error update pin state: %v", instanceID, err)
+		return err
+	}
+	return nil
+}
+
+func (c *chatService) SetMuted(ctx context.Context, instanceID, target string, duration time.Duration) error {
+	if duration < 0 {
+		return errors.New("mute duration must not be negative")
+	}
+	client, recipient, err := c.commandTarget(instanceID, target)
+	if err != nil {
+		return err
+	}
+	if err := client.SendAppState(ctx, appstate.BuildMute(recipient, duration > 0, duration)); err != nil {
+		c.loggerWrapper.GetLogger(instanceID).LogError("[%s] error update mute state: %v", instanceID, err)
+		return err
+	}
+	return nil
+}
+
+func (c *chatService) commandTarget(instanceID, target string) (*whatsmeow.Client, types.JID, error) {
+	if instanceID == "" {
+		return nil, types.JID{}, errors.New("provider command instance identity is required")
+	}
+	recipient, ok := utils.ParseJID(target)
+	if !ok {
+		c.loggerWrapper.GetLogger(instanceID).LogError("[%s] Error validating message fields", instanceID)
+		return nil, types.JID{}, errors.New("invalid phone number")
+	}
+	client, err := c.ensureClientConnected(instanceID)
+	return client, recipient, err
 }
 
 func (c *chatService) HistorySyncRequest(data *HistorySyncRequestStruct, instance *instance_model.Instance) (*whatsmeow.SendResponse, error) {
@@ -235,11 +209,6 @@ func (c *chatService) HistorySyncRequest(data *HistorySyncRequestStruct, instanc
 	if instance == nil || instance.Id == "" {
 		return nil, errors.New("history sync instance identity is required")
 	}
-	client, err := c.ensureClientConnected(instance.Id)
-	if err != nil {
-		return nil, err
-	}
-
 	messageInfo := types.MessageInfo{
 		MessageSource: types.MessageSource{
 			Chat:     data.MessageInfo.Chat,
@@ -249,18 +218,26 @@ func (c *chatService) HistorySyncRequest(data *HistorySyncRequestStruct, instanc
 		ID:        data.MessageInfo.ID,
 		Timestamp: data.MessageInfo.Timestamp,
 	}
+	return c.RequestHistorySync(context.Background(), instance.Id, messageInfo, data.Count)
+}
 
-	histRequest := client.BuildHistorySyncRequest(&messageInfo, data.Count)
-
-	if err := c.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
-		return nil, err
+func (c *chatService) RequestHistorySync(ctx context.Context, instanceID string, messageInfo types.MessageInfo, count int) (*whatsmeow.SendResponse, error) {
+	if instanceID == "" || messageInfo.Chat.IsEmpty() || strings.TrimSpace(messageInfo.ID) == "" || messageInfo.Timestamp.IsZero() || count < 1 {
+		return nil, ErrInvalidHistorySyncRequest
 	}
-	res, err := client.SendMessage(context.Background(), messageInfo.Chat, histRequest, whatsmeow.SendRequestExtra{Peer: true})
+	client, err := c.ensureClientConnected(instanceID)
 	if err != nil {
-		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error history sync request: %v", instance.Id, err)
 		return nil, err
 	}
-
+	histRequest := client.BuildHistorySyncRequest(&messageInfo, count)
+	if err := c.whatsmeowService.WaitOutbound(ctx, instanceID, 1); err != nil {
+		return nil, err
+	}
+	res, err := client.SendMessage(ctx, messageInfo.Chat, histRequest, whatsmeow.SendRequestExtra{Peer: true})
+	if err != nil {
+		c.loggerWrapper.GetLogger(instanceID).LogError("[%s] error history sync request: %v", instanceID, err)
+		return nil, err
+	}
 	return &res, nil
 }
 
@@ -268,7 +245,7 @@ func NewChatService(
 	clients instance_runtime.ClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	loggerWrapper *logger_wrapper.LoggerManager,
-) ChatService {
+) Service {
 	return &chatService{
 		clients:          clients,
 		whatsmeowService: whatsmeowService,

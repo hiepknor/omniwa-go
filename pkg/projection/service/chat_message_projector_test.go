@@ -9,6 +9,7 @@ import (
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	waE2E "go.mau.fi/whatsmeow/proto/waE2E"
+	waSyncAction "go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -21,6 +22,29 @@ type captureChatMessageWrites struct {
 	messageParts [][]projection_repository.MessageAspect
 	receipts     []*projection_model.MessageReceipt
 	readMessages []string
+}
+
+func TestChatMessageProjectorUpdatesOnlyTheAuthoritativeSettingAspect(t *testing.T) {
+	occurredAt := time.Unix(950, 0).UTC()
+	event, relevant, err := NormalizeChatMessageEvent("instance-a", &events.Archive{
+		JID: types.NewJID("15550001", types.DefaultUserServer), Timestamp: occurredAt,
+		Action: &waSyncAction.ArchiveChatAction{Archived: proto.Bool(true)},
+	})
+	if err != nil || !relevant {
+		t.Fatalf("event=%+v relevant=%t err=%v", event, relevant, err)
+	}
+	writes, state := &captureChatMessageWrites{}, &captureChatMessageState{}
+	if err := NewChatMessageProjector(writes, state).Handle(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if len(writes.chats) != 2 || len(writes.chatAspects[0]) != 1 || writes.chatAspects[0][0] != projection_repository.ChatAspectIdentity ||
+		len(writes.chatAspects[1]) != 1 || writes.chatAspects[1][0] != projection_repository.ChatAspectArchived ||
+		writes.chats[1].Archived == nil || !*writes.chats[1].Archived || writes.chats[1].Pinned != nil || writes.chats[1].MutedUntil != nil {
+		t.Fatalf("writes=%+v aspects=%+v", writes.chats, writes.chatAspects)
+	}
+	if len(state.records) != 1 || state.records[0].resource != "chats" {
+		t.Fatalf("state=%+v", state.records)
+	}
 }
 
 func (c *captureChatMessageWrites) ApplyChat(_ context.Context, chat *projection_model.Chat, aspects ...projection_repository.ChatAspect) (bool, error) {

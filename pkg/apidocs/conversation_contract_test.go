@@ -84,13 +84,32 @@ func TestGeneratedOpenAPIContainsCanonicalConversationContract(t *testing.T) {
 			t.Fatalf("provider Chat command %s was removed", path)
 		}
 	}
-	for path, rawPath := range paths {
-		if !strings.HasPrefix(path, "/conversations") {
-			continue
+	commandOperations := []struct {
+		path, method, operationID string
+		invalidInput              bool
+	}{
+		{path: "/conversations/{conversationRef}/archive", method: "post", operationID: "archiveConversation"},
+		{path: "/conversations/{conversationRef}/archive", method: "delete", operationID: "unarchiveConversation"},
+		{path: "/conversations/{conversationRef}/pin", method: "post", operationID: "pinConversation"},
+		{path: "/conversations/{conversationRef}/pin", method: "delete", operationID: "unpinConversation"},
+		{path: "/conversations/{conversationRef}/mute", method: "put", operationID: "muteConversation", invalidInput: true},
+		{path: "/conversations/{conversationRef}/mute", method: "delete", operationID: "unmuteConversation"},
+		{path: "/conversations/{conversationRef}/history-sync", method: "post", operationID: "requestConversationHistorySync", invalidInput: true},
+	}
+	for _, expected := range commandOperations {
+		operation := object(t, object(t, paths, expected.path), expected.method)
+		if operation["operationId"] != expected.operationID {
+			t.Fatalf("%s %s operationId=%v", expected.method, expected.path, operation["operationId"])
 		}
-		for method := range rawPath.(map[string]any) {
-			if method != "get" {
-				t.Fatalf("non-authoritative Conversation command was published: %s %s", method, path)
+		responses := object(t, operation, "responses")
+		for _, status := range []string{"202", "404", "422", "429", "500", "502", "503"} {
+			if _, ok := responses[status]; !ok {
+				t.Fatalf("%s %s missing response %s", expected.method, expected.path, status)
+			}
+		}
+		if expected.invalidInput {
+			if _, ok := responses["400"]; !ok {
+				t.Fatalf("%s %s missing response 400", expected.method, expected.path)
 			}
 		}
 	}
@@ -143,6 +162,11 @@ func TestGeneratedOpenAPIContainsCanonicalConversationContract(t *testing.T) {
 	}
 	if seen["canonical_chat_identity"] {
 		t.Fatal("retired canonical_chat_identity remains in capability example")
+	}
+	for _, capability := range []string{"conversation_app_state_commands", "conversation_history_sync"} {
+		if !seen[capability] {
+			t.Fatalf("capability example missing %s", capability)
+		}
 	}
 }
 
