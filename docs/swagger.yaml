@@ -72,6 +72,8 @@ definitions:
         - chats_projection
         - canonical_contact_identity
         - canonical_conversation_identity
+        - conversation_app_state_commands
+        - conversation_history_sync
         - group_lists
         - group_list_eligibility
         - campaign_group_targets
@@ -128,6 +130,17 @@ definitions:
       message:
         example: success
         type: string
+    type: object
+  apidocs.ConversationCommandResponse:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationCommandResult'
+      message:
+        example: accepted
+        type: string
+    required:
+    - data
+    - message
     type: object
   apidocs.DownloadMediaData:
     properties:
@@ -901,6 +914,51 @@ definitions:
     properties:
       chat:
         type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationCommandResult:
+    properties:
+      conversationId:
+        format: uuid
+        type: string
+      operation:
+        enum:
+        - archive
+        - unarchive
+        - pin
+        - unpin
+        - mute
+        - unmute
+        - history_sync
+        type: string
+      status:
+        enum:
+        - accepted
+        type: string
+    required:
+    - conversationId
+    - operation
+    - status
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationHistorySyncInput:
+    properties:
+      anchorMessageId:
+        type: string
+      count:
+        maximum: 1000
+        minimum: 1
+        type: integer
+    required:
+    - anchorMessageId
+    - count
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationMuteInput:
+    properties:
+      durationSeconds:
+        maximum: 31536000
+        minimum: 60
+        type: integer
+    required:
+    - durationSeconds
     type: object
   github_com_evolution-foundation_evolution-go_pkg_chat_service.HistorySyncRequestStruct:
     properties:
@@ -10596,6 +10654,160 @@ paths:
       summary: Get a canonical conversation
       tags:
       - Conversation
+  /conversations/{conversationRef}/archive:
+    delete:
+      description: Resolves a canonical or absorbed conversation reference to its
+        authoritative provider addressing JID.
+      operationId: unarchiveConversation
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider identifier
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apidocs.ConversationCommandResponse'
+        "404":
+          description: Conversation not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Unsupported conversation type
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Outbound rate limited
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "502":
+          description: Provider command failed
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Unarchive a canonical conversation
+      tags:
+      - Conversations
+    post:
+      description: Resolves a canonical or absorbed conversation reference to its
+        authoritative provider addressing JID. Direct and group conversations are
+        supported; projection state is refreshed from provider app-state events.
+      operationId: archiveConversation
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider identifier
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apidocs.ConversationCommandResponse'
+        "404":
+          description: Conversation not found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Unsupported conversation type
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Outbound rate limited
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "502":
+          description: Provider command failed
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Projection not ready
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Archive a canonical conversation
+      tags:
+      - Conversations
+  /conversations/{conversationRef}/history-sync:
+    post:
+      consumes:
+      - application/json
+      description: The anchor message must belong to the resolved canonical conversation.
+        The backend derives provider Chat JID, direction, group status, and timestamp;
+        callers never supply provider addressing metadata.
+      operationId: requestConversationHistorySync
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider identifier
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      - description: Projected anchor message and bounded count
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationHistorySyncInput'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apidocs.ConversationCommandResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Request history sync for a canonical conversation
+      tags:
+      - Conversations
   /conversations/{conversationRef}/messages:
     get:
       description: conversationRef accepts a canonical or absorbed identifier. Results
@@ -10698,6 +10910,199 @@ paths:
       summary: Get a message in a canonical conversation
       tags:
       - Conversation
+  /conversations/{conversationRef}/mute:
+    delete:
+      operationId: unmuteConversation
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider identifier
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apidocs.ConversationCommandResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Unmute a canonical conversation
+      tags:
+      - Conversations
+    put:
+      consumes:
+      - application/json
+      description: durationSeconds must be between 60 and 31536000. Infinite mute
+        is deliberately not exposed because the canonical projection does not represent
+        it authoritatively.
+      operationId: muteConversation
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider identifier
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      - description: Finite mute duration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationMuteInput'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apidocs.ConversationCommandResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Mute a canonical conversation
+      tags:
+      - Conversations
+  /conversations/{conversationRef}/pin:
+    delete:
+      operationId: unpinConversation
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider identifier
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apidocs.ConversationCommandResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Unpin a canonical conversation
+      tags:
+      - Conversations
+    post:
+      operationId: pinConversation
+      parameters:
+      - description: Canonical conversation UUID or absorbed provider identifier
+        in: path
+        name: conversationRef
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apidocs.ConversationCommandResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/apidocs.OutboundRateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Pin a canonical conversation
+      tags:
+      - Conversations
   /events:
     get:
       parameters:

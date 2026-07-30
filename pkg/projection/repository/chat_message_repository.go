@@ -22,6 +22,9 @@ const (
 	ChatAspectIdentity       ChatAspect = "identity"
 	ChatAspectActivity       ChatAspect = "activity"
 	ChatAspectSettings       ChatAspect = "settings"
+	ChatAspectArchived       ChatAspect = "archived"
+	ChatAspectPinned         ChatAspect = "pinned"
+	ChatAspectMuted          ChatAspect = "muted"
 	ChatAspectUnreadSnapshot ChatAspect = "unreadSnapshot"
 	ChatAspectDeletion       ChatAspect = "deletion"
 )
@@ -753,6 +756,12 @@ func applyChatAspect(stored, incoming *projection_model.Chat, aspect ChatAspect)
 	case ChatAspectSettings:
 		stored.UnreadCount, stored.Archived, stored.Pinned = incoming.UnreadCount, incoming.Archived, incoming.Pinned
 		stored.MutedUntil, stored.DisappearingTimer = incoming.MutedUntil, incoming.DisappearingTimer
+	case ChatAspectArchived:
+		stored.Archived = incoming.Archived
+	case ChatAspectPinned:
+		stored.Pinned = incoming.Pinned
+	case ChatAspectMuted:
+		stored.MutedUntil = incoming.MutedUntil
 	case ChatAspectUnreadSnapshot:
 		stored.UnreadAuthoritative, stored.UnreadSnapshotSyncID = incoming.UnreadAuthoritative, incoming.UnreadSnapshotSyncID
 	case ChatAspectDeletion:
@@ -826,6 +835,7 @@ func hasDuplicateOrInvalidChatAspects(aspects []ChatAspect) bool {
 	seen := make(map[ChatAspect]struct{}, len(aspects))
 	for _, aspect := range aspects {
 		if aspect != ChatAspectIdentity && aspect != ChatAspectActivity && aspect != ChatAspectSettings &&
+			aspect != ChatAspectArchived && aspect != ChatAspectPinned && aspect != ChatAspectMuted &&
 			aspect != ChatAspectUnreadSnapshot && aspect != ChatAspectDeletion {
 			return true
 		}

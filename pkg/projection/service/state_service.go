@@ -31,6 +31,8 @@ const (
 	CapabilityGroupSummary                  = "group_summary"
 	CapabilityCanonicalContactIdentity      = "canonical_contact_identity"
 	CapabilityCanonicalConversationIdentity = "canonical_conversation_identity"
+	CapabilityConversationAppStateCommands  = "conversation_app_state_commands"
+	CapabilityConversationHistorySync       = "conversation_history_sync"
 )
 
 var resourceCapabilities = map[string]string{

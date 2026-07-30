@@ -155,6 +155,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.CanonicalChatIdentityEnabled || config.ConversationBackfillBatch != 100 || config.ConversationBackfillMaxBatches != 10 {
 		t.Fatalf("canonical chat identity defaults are invalid")
 	}
+	if config.ConversationAppStateCommandsEnabled || config.ConversationHistorySyncEnabled {
+		t.Fatal("expected canonical Conversation commands to be disabled by default")
+	}
 }
 
 func TestLoadWAInfoGuardOverrides(t *testing.T) {
@@ -226,6 +229,8 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH, "25")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES, "4")
 	t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "true")
+	t.Setenv(config_env.WA_CONVERSATION_APP_STATE_COMMANDS_ENABLED, "true")
+	t.Setenv(config_env.WA_CONVERSATION_HISTORY_SYNC_ENABLED, "true")
 	t.Setenv(config_env.CONVERSATION_BACKFILL_BATCH, "20")
 	t.Setenv(config_env.CONVERSATION_BACKFILL_MAX_BATCHES, "3")
 
@@ -294,6 +299,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if !config.CanonicalChatIdentityEnabled || config.ConversationBackfillBatch != 20 || config.ConversationBackfillMaxBatches != 3 {
 		t.Fatalf("canonical chat identity overrides are invalid")
+	}
+	if !config.ConversationAppStateCommandsEnabled || !config.ConversationHistorySyncEnabled {
+		t.Fatal("expected canonical Conversation command overrides to be enabled")
 	}
 }
 

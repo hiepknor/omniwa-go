@@ -13,10 +13,16 @@ import (
 
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	campaign_service "github.com/evolution-foundation/evolution-go/pkg/campaign/service"
+	chat_service "github.com/evolution-foundation/evolution-go/pkg/chat/service"
 	group_list_repository "github.com/evolution-foundation/evolution-go/pkg/groupList/repository"
 	group_list_service "github.com/evolution-foundation/evolution-go/pkg/groupList/service"
 	media_model "github.com/evolution-foundation/evolution-go/pkg/media/model"
 )
+
+type ConversationCommandResponse struct {
+	Message string                                  `json:"message" binding:"required" example:"accepted"`
+	Data    *chat_service.ConversationCommandResult `json:"data" binding:"required"`
+}
 
 // SuccessResponse is the standard success envelope returned by most endpoints:
 //
@@ -164,7 +170,7 @@ type GroupListAuditEvent struct {
 type CapabilitiesData struct {
 	Version         string   `json:"version" example:"1.2.3"`
 	Revision        string   `json:"revision" example:"0123456789abcdef0123456789abcdef01234567"`
-	Capabilities    []string `json:"capabilities" example:"campaign_orchestration,rate_limit_retry_after,groups_projection,contacts_projection,chats_projection,canonical_contact_identity,canonical_conversation_identity,group_lists,group_list_eligibility,campaign_group_targets,campaign_image_content,instance_metadata_views,instance_credential_health,instance_token_rotation"`
+	Capabilities    []string `json:"capabilities" example:"campaign_orchestration,rate_limit_retry_after,groups_projection,contacts_projection,chats_projection,canonical_contact_identity,canonical_conversation_identity,conversation_app_state_commands,conversation_history_sync,group_lists,group_list_eligibility,campaign_group_targets,campaign_image_content,instance_metadata_views,instance_credential_health,instance_token_rotation"`
 	CredentialScope string   `json:"credentialScope" binding:"required" enums:"admin,instance" example:"instance"`
 	InstanceID      *string  `json:"instanceId,omitempty" format:"uuid" example:"0bca2c34-ef2a-463c-98fd-e2afb6978457"`
 }

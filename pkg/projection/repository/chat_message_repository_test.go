@@ -57,6 +57,38 @@ func TestProjectionAspectsAreIndependent(t *testing.T) {
 	}
 }
 
+func TestChatSettingAspectsDoNotClobberEachOther(t *testing.T) {
+	archived, pinned := false, true
+	mutedUntil := time.Unix(500, 0).UTC()
+	chat := projection_model.Chat{Archived: &archived, Pinned: &pinned, MutedUntil: &mutedUntil}
+	newArchived := true
+	applyChatAspect(&chat, &projection_model.Chat{Archived: &newArchived}, ChatAspectArchived)
+	if chat.Archived == nil || !*chat.Archived || chat.Pinned == nil || !*chat.Pinned || chat.MutedUntil == nil || !chat.MutedUntil.Equal(mutedUntil) {
+		t.Fatalf("archive patch changed another setting: %#v", chat)
+	}
+	applyChatAspect(&chat, &projection_model.Chat{}, ChatAspectMuted)
+	if chat.MutedUntil != nil || chat.Archived == nil || !*chat.Archived || chat.Pinned == nil || !*chat.Pinned {
+		t.Fatalf("unmute patch changed another setting: %#v", chat)
+	}
+}
+
+func TestCanonicalSettingsChooseNewestAspectAcrossAliases(t *testing.T) {
+	archivedPN, archivedLID := false, true
+	chats := []projection_model.Chat{
+		{ChatID: "15550001@s.whatsapp.net", Archived: &archivedPN, FieldVersions: json.RawMessage(`{"settings":{"occurredAt":"1970-01-01T00:03:20Z","eventKey":"snapshot"}}`)},
+		{ChatID: "123456@lid", Archived: &archivedLID, FieldVersions: json.RawMessage(`{"archived":{"occurredAt":"1970-01-01T00:01:40Z","eventKey":"event"}}`)},
+	}
+	source, err := latestConversationSettingSource(chats, ChatAspectArchived, ChatAspectSettings)
+	if err != nil || source == nil || source.ChatID != "15550001@s.whatsapp.net" || source.Archived == nil || *source.Archived {
+		t.Fatalf("newer snapshot source=%+v err=%v", source, err)
+	}
+	chats[1].FieldVersions = json.RawMessage(`{"archived":{"occurredAt":"1970-01-01T00:05:00Z","eventKey":"event"}}`)
+	source, err = latestConversationSettingSource(chats, ChatAspectArchived, ChatAspectSettings)
+	if err != nil || source == nil || source.ChatID != "123456@lid" || source.Archived == nil || !*source.Archived {
+		t.Fatalf("newer exact source=%+v err=%v", source, err)
+	}
+}
+
 func TestNonDirectChatNamesKeepTypeSpecificSources(t *testing.T) {
 	for chatType, expected := range map[projection_model.ChatType]string{
 		projection_model.ChatTypeGroup:      "group_subject",

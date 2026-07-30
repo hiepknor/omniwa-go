@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	waE2E "go.mau.fi/whatsmeow/proto/waE2E"
+	waSyncAction "go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -52,6 +53,56 @@ func TestNormalizeMessageEventStoresBoundedNormalizedMetadata(t *testing.T) {
 		payload.MediaSize == nil || *payload.MediaSize != 2048 || payload.MediaWidth == nil || *payload.MediaWidth != 640 ||
 		payload.QuotedMessageID == nil || *payload.QuotedMessageID != "quoted-1" || payload.Caption == nil || len(*payload.Caption) > 8*1024 || !utf8.ValidString(*payload.Caption) {
 		t.Fatalf("normalized message payload = %#v", payload)
+	}
+}
+
+func TestNormalizeChatSettingEventsPreservesAuthoritativeState(t *testing.T) {
+	jid := types.NewJID("15550001", types.DefaultUserServer)
+	occurredAt := time.Unix(900, 0).UTC()
+	muteEnd := occurredAt.Add(2 * time.Hour)
+	tests := []struct {
+		name      string
+		raw       any
+		eventType string
+		assert    func(*messageEventPayload)
+	}{
+		{name: "archive", raw: &events.Archive{JID: jid, Timestamp: occurredAt, Action: &waSyncAction.ArchiveChatAction{Archived: proto.Bool(true)}}, eventType: "chat_archived", assert: func(payload *messageEventPayload) {
+			if payload.Archived == nil || !*payload.Archived {
+				t.Fatalf("payload=%+v", payload)
+			}
+		}},
+		{name: "pin", raw: &events.Pin{JID: jid, Timestamp: occurredAt, Action: &waSyncAction.PinAction{Pinned: proto.Bool(false)}}, eventType: "chat_pinned", assert: func(payload *messageEventPayload) {
+			if payload.Pinned == nil || *payload.Pinned {
+				t.Fatalf("payload=%+v", payload)
+			}
+		}},
+		{name: "finite mute", raw: &events.Mute{JID: jid, Timestamp: occurredAt, Action: &waSyncAction.MuteAction{Muted: proto.Bool(true), MuteEndTimestamp: proto.Int64(muteEnd.UnixMilli())}}, eventType: "chat_muted", assert: func(payload *messageEventPayload) {
+			if payload.MutedUntil == nil || !payload.MutedUntil.Equal(muteEnd) {
+				t.Fatalf("payload=%+v", payload)
+			}
+		}},
+		{name: "unmute", raw: &events.Mute{JID: jid, Timestamp: occurredAt, Action: &waSyncAction.MuteAction{Muted: proto.Bool(false)}}, eventType: "chat_muted", assert: func(payload *messageEventPayload) {
+			if payload.MutedUntil != nil {
+				t.Fatalf("payload=%+v", payload)
+			}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			event, relevant, err := NormalizeChatMessageEvent("instance-a", test.raw)
+			if err != nil || !relevant || event.EventType != test.eventType || event.EntityKey != jid.String() || !event.OccurredAt.Equal(occurredAt) {
+				t.Fatalf("event=%+v relevant=%t err=%v", event, relevant, err)
+			}
+			var payload messageEventPayload
+			if err := json.Unmarshal(event.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			test.assert(&payload)
+		})
+	}
+	infinite, relevant, err := NormalizeChatMessageEvent("instance-a", &events.Mute{JID: jid, Timestamp: occurredAt, Action: &waSyncAction.MuteAction{Muted: proto.Bool(true)}})
+	if err != nil || relevant || infinite != nil {
+		t.Fatalf("infinite mute entered finite canonical projection: event=%+v relevant=%t err=%v", infinite, relevant, err)
 	}
 }
 

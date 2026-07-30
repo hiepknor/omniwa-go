@@ -1475,6 +1475,235 @@ const docTemplate = `{
                 }
             }
         },
+        "/conversations/{conversationRef}/archive": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Resolves a canonical or absorbed conversation reference to its authoritative provider addressing JID. Direct and group conversations are supported; projection state is refreshed from provider app-state events.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Archive a canonical conversation",
+                "operationId": "archiveConversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical conversation UUID or absorbed provider identifier",
+                        "name": "conversationRef",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ConversationCommandResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Conversation not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unsupported conversation type",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Outbound rate limited",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Provider command failed",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Resolves a canonical or absorbed conversation reference to its authoritative provider addressing JID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Unarchive a canonical conversation",
+                "operationId": "unarchiveConversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical conversation UUID or absorbed provider identifier",
+                        "name": "conversationRef",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ConversationCommandResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Conversation not found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unsupported conversation type",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Outbound rate limited",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Provider command failed",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Projection not ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/conversations/{conversationRef}/history-sync": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "The anchor message must belong to the resolved canonical conversation. The backend derives provider Chat JID, direction, group status, and timestamp; callers never supply provider addressing metadata.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Request history sync for a canonical conversation",
+                "operationId": "requestConversationHistorySync",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical conversation UUID or absorbed provider identifier",
+                        "name": "conversationRef",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Projected anchor message and bounded count",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationHistorySyncInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ConversationCommandResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/conversations/{conversationRef}/messages": {
             "get": {
                 "security": [
@@ -1626,6 +1855,301 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "Canonical conversation projection not ready",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/conversations/{conversationRef}/mute": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "durationSeconds must be between 60 and 31536000. Infinite mute is deliberately not exposed because the canonical projection does not represent it authoritatively.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Mute a canonical conversation",
+                "operationId": "muteConversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical conversation UUID or absorbed provider identifier",
+                        "name": "conversationRef",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Finite mute duration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationMuteInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ConversationCommandResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Unmute a canonical conversation",
+                "operationId": "unmuteConversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical conversation UUID or absorbed provider identifier",
+                        "name": "conversationRef",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ConversationCommandResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/conversations/{conversationRef}/pin": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Pin a canonical conversation",
+                "operationId": "pinConversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical conversation UUID or absorbed provider identifier",
+                        "name": "conversationRef",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ConversationCommandResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Unpin a canonical conversation",
+                "operationId": "unpinConversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical conversation UUID or absorbed provider identifier",
+                        "name": "conversationRef",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ConversationCommandResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.OutboundRateLimitResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
@@ -8718,6 +9242,8 @@ const docTemplate = `{
                         "chats_projection",
                         "canonical_contact_identity",
                         "canonical_conversation_identity",
+                        "conversation_app_state_commands",
+                        "conversation_history_sync",
                         "group_lists",
                         "group_list_eligibility",
                         "campaign_group_targets",
@@ -8788,6 +9314,22 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "success"
+                }
+            }
+        },
+        "apidocs.ConversationCommandResponse": {
+            "type": "object",
+            "required": [
+                "data",
+                "message"
+            ],
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationCommandResult"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "accepted"
                 }
             }
         },
@@ -9916,6 +10458,68 @@ const docTemplate = `{
             "properties": {
                 "chat": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationCommandResult": {
+            "type": "object",
+            "required": [
+                "conversationId",
+                "operation",
+                "status"
+            ],
+            "properties": {
+                "conversationId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "operation": {
+                    "type": "string",
+                    "enum": [
+                        "archive",
+                        "unarchive",
+                        "pin",
+                        "unpin",
+                        "mute",
+                        "unmute",
+                        "history_sync"
+                    ]
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "accepted"
+                    ]
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationHistorySyncInput": {
+            "type": "object",
+            "required": [
+                "anchorMessageId",
+                "count"
+            ],
+            "properties": {
+                "anchorMessageId": {
+                    "type": "string"
+                },
+                "count": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_chat_service.ConversationMuteInput": {
+            "type": "object",
+            "required": [
+                "durationSeconds"
+            ],
+            "properties": {
+                "durationSeconds": {
+                    "type": "integer",
+                    "maximum": 31536000,
+                    "minimum": 60
                 }
             }
         },

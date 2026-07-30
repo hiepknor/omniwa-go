@@ -25,11 +25,23 @@ type ChatHandler interface {
 	GetConversation(ctx *gin.Context)
 	ConversationMessages(ctx *gin.Context)
 	ConversationMessage(ctx *gin.Context)
+	ArchiveConversation(ctx *gin.Context)
+	UnarchiveConversation(ctx *gin.Context)
+	PinConversation(ctx *gin.Context)
+	UnpinConversation(ctx *gin.Context)
+	MuteConversation(ctx *gin.Context)
+	UnmuteConversation(ctx *gin.Context)
+	ConversationHistorySync(ctx *gin.Context)
+	ConversationAppStateCommandsEnabled() bool
+	ConversationHistorySyncEnabled() bool
 }
 
 type chatHandler struct {
-	chatService chat_service.ChatService
-	reader      *projection_service.ChatMessageReader
+	chatService             chat_service.ChatService
+	reader                  *projection_service.ChatMessageReader
+	commands                conversationCommandService
+	appStateCommandsEnabled bool
+	historySyncEnabled      bool
 }
 
 const defaultProjectionPageSize = 50
@@ -509,12 +521,29 @@ func (c *chatHandler) HistorySyncRequest(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": resp})
 }
 
+type Option func(*chatHandler)
+
+func WithConversationCommands(service conversationCommandService, appStateEnabled, historySyncEnabled bool) Option {
+	return func(handler *chatHandler) {
+		handler.commands = service
+		handler.appStateCommandsEnabled = appStateEnabled && service != nil
+		handler.historySyncEnabled = historySyncEnabled && service != nil
+	}
+}
+
 func NewChatHandler(
 	chatService chat_service.ChatService,
 	reader *projection_service.ChatMessageReader,
+	options ...Option,
 ) ChatHandler {
-	return &chatHandler{
+	handler := &chatHandler{
 		chatService: chatService,
 		reader:      reader,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(handler)
+		}
+	}
+	return handler
 }

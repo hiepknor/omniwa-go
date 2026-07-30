@@ -71,9 +71,49 @@ func NormalizeChatMessageEvent(instanceID string, rawEvent any) (*projection_mod
 		return normalizeLiveMessageEvent(instanceID, event)
 	case *events.Receipt:
 		return normalizeReceiptEvent(instanceID, event)
+	case *events.Archive:
+		if event == nil || event.Action == nil {
+			return nil, true, errors.New("archive event is incomplete")
+		}
+		archived := event.Action.GetArchived()
+		return normalizeChatSettingEvent(instanceID, "chat_archived", event.JID, event.Timestamp, messageEventPayload{Archived: &archived})
+	case *events.Pin:
+		if event == nil || event.Action == nil {
+			return nil, true, errors.New("pin event is incomplete")
+		}
+		pinned := event.Action.GetPinned()
+		return normalizeChatSettingEvent(instanceID, "chat_pinned", event.JID, event.Timestamp, messageEventPayload{Pinned: &pinned})
+	case *events.Mute:
+		if event == nil || event.Action == nil {
+			return nil, true, errors.New("mute event is incomplete")
+		}
+		muted := event.Action.GetMuted()
+		var mutedUntil *time.Time
+		if muted {
+			end := event.Action.GetMuteEndTimestamp()
+			if end <= 0 {
+				// The canonical contract intentionally exposes only finite mutes.
+				return nil, false, nil
+			}
+			value := time.UnixMilli(end).UTC()
+			mutedUntil = &value
+		}
+		return normalizeChatSettingEvent(instanceID, "chat_muted", event.JID, event.Timestamp, messageEventPayload{MutedUntil: mutedUntil})
 	default:
 		return nil, false, nil
 	}
+}
+
+func normalizeChatSettingEvent(instanceID, eventType string, jid types.JID, occurredAt time.Time, payload messageEventPayload) (*projection_model.Event, bool, error) {
+	if jid.IsEmpty() || occurredAt.IsZero() {
+		return nil, true, errors.New("chat setting event is incomplete")
+	}
+	payload.ChatID = jid.ToNonAD().String()
+	payload.ChatType = projectedChatType(jid)
+	if len(payload.ChatID) > 255 {
+		return nil, true, errors.New("chat setting event identity exceeds storage limits")
+	}
+	return newMessageProjectionEvent(instanceID, eventType, payload.ChatID, occurredAt.UTC(), payload)
 }
 
 func normalizeLiveMessageEvent(instanceID string, event *events.Message) (*projection_model.Event, bool, error) {

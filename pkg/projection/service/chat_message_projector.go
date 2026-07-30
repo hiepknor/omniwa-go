@@ -66,10 +66,47 @@ func (p *ChatMessageProjector) Handle(ctx context.Context, event *projection_mod
 			return err
 		}
 		return p.state.RecordEvent(event.InstanceID, "chats", ChatsProjectionSchemaVersion, event.OccurredAt)
+	case "chat_archived", "chat_pinned", "chat_muted":
+		if err := p.applyChatSetting(ctx, event, &payload); err != nil {
+			return err
+		}
+		return p.state.RecordEvent(event.InstanceID, "chats", ChatsProjectionSchemaVersion, event.OccurredAt)
 	default:
 		return permanentProjectionFailure(errorCodeUnsupportedEvent)
 	}
 	return p.state.RecordEvent(event.InstanceID, messageResource, MessagesProjectionSchemaVersion, event.OccurredAt)
+}
+
+func (p *ChatMessageProjector) applyChatSetting(ctx context.Context, event *projection_model.Event, payload *messageEventPayload) error {
+	if payload.ChatID == "" || payload.ChatID != event.EntityKey || payload.ChatType == "" {
+		return permanentProjectionFailure(errorCodeIncompletePayload)
+	}
+	chat := &projection_model.Chat{
+		InstanceID: event.InstanceID, ChatID: payload.ChatID, Type: payload.ChatType,
+		SourceOccurredAt: event.OccurredAt, SourceEventKey: event.EventKey,
+	}
+	if _, err := p.repository.ApplyChat(ctx, chat, projection_repository.ChatAspectIdentity); err != nil {
+		return err
+	}
+	var aspect projection_repository.ChatAspect
+	switch event.EventType {
+	case "chat_archived":
+		if payload.Archived == nil {
+			return permanentProjectionFailure(errorCodeIncompletePayload)
+		}
+		chat.Archived, aspect = payload.Archived, projection_repository.ChatAspectArchived
+	case "chat_pinned":
+		if payload.Pinned == nil {
+			return permanentProjectionFailure(errorCodeIncompletePayload)
+		}
+		chat.Pinned, aspect = payload.Pinned, projection_repository.ChatAspectPinned
+	case "chat_muted":
+		chat.MutedUntil, aspect = payload.MutedUntil, projection_repository.ChatAspectMuted
+	default:
+		return permanentProjectionFailure(errorCodeUnsupportedEvent)
+	}
+	_, err := p.repository.ApplyChat(ctx, chat, aspect)
+	return err
 }
 
 func (p *ChatMessageProjector) applyMessage(ctx context.Context, event *projection_model.Event, payload *messageEventPayload) error {
