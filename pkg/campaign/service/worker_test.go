@@ -9,6 +9,7 @@ import (
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
 	"github.com/evolution-foundation/evolution-go/pkg/outbound"
+	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	"github.com/google/uuid"
 )
@@ -90,6 +91,13 @@ func (f *workerRepositoryFake) Transition(_ context.Context, _, _ string, target
 type senderFake struct {
 	providerID string
 	err        error
+}
+
+type cancelingUnknownSender struct{ cancel context.CancelFunc }
+
+func (f cancelingUnknownSender) Send(context.Context, *campaign_model.Campaign, *campaign_model.Recipient) (string, error) {
+	f.cancel()
+	return "", &send_service.ProviderSendError{Cause: context.Canceled}
 }
 
 func (f senderFake) Send(context.Context, *campaign_model.Campaign, *campaign_model.Recipient) (string, error) {
@@ -221,6 +229,25 @@ func TestGroupWorkerHandlesRateLimitAndUnknownOutcome(t *testing.T) {
 				t.Fatalf("group failure result = %#v, %v; repository=%#v", result, err, repository)
 			}
 		})
+	}
+}
+
+func TestDirectWorkerDoesNotRetryUnknownProviderOutcome(t *testing.T) {
+	repository, _ := workerFixture(0)
+	worker := newTestWorker(repository, senderFake{err: &send_service.ProviderSendError{Cause: errors.New("acknowledgement lost")}})
+	result, err := worker.RunOnce(context.Background())
+	if err != nil || result.Failed != 1 || repository.unknownOutcome != 1 || repository.retried != 0 || repository.deferred != 0 {
+		t.Fatalf("unknown direct outcome result = %#v, %v; repository=%#v", result, err, repository)
+	}
+}
+
+func TestDirectWorkerPersistsUnknownOutcomeAfterRequestCancellation(t *testing.T) {
+	repository, _ := workerFixture(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	worker := newTestWorker(repository, cancelingUnknownSender{cancel: cancel})
+	result, err := worker.RunOnce(ctx)
+	if !errors.Is(err, context.Canceled) || result.Failed != 1 || repository.unknownOutcome != 1 || repository.retried != 0 {
+		t.Fatalf("cancelled unknown outcome result = %#v, %v; repository=%#v", result, err, repository)
 	}
 }
 

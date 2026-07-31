@@ -126,6 +126,63 @@ func TestChatMessageProjectionPostgresReceiptBeforeMessageConverges(t *testing.T
 		t.Fatalf("write-through/echo message = %#v, %v", storedWriteThrough, err)
 	}
 
+	groupChat := types.NewJID("120363000001", types.GroupServer)
+	selfParticipant := types.NewJID("36232981651679", types.HiddenUserServer)
+	groupAt := time.Unix(1_100, 0).UTC()
+	groupInfo := types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: groupChat, Sender: selfParticipant, IsFromMe: true, IsGroup: true},
+		ID:            "group-message-write-through", Type: "ExtendedTextMessage", Timestamp: groupAt,
+	}
+	groupMessage := &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("same text")}}
+	if err := NewMessageWriteThrough(projector).WriteSent(context.Background(), instance.Id, groupInfo, groupMessage); err != nil {
+		t.Fatal(err)
+	}
+	groupEcho, _, err := NormalizeChatMessageEvent(instance.Id, &events.Message{Info: groupInfo, Message: groupMessage})
+	if err != nil || groupEcho.EntityKey != string(groupInfo.ID) {
+		t.Fatalf("group echo identity = %#v, %v", groupEcho, err)
+	}
+	for replay := 0; replay < 3; replay++ {
+		if err := projector.Handle(context.Background(), groupEcho); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var groupCount int64
+	if err := db.Table("projected_messages").Where("instance_id = ? AND message_id = ?", instance.Id, groupInfo.ID).Count(&groupCount).Error; err != nil || groupCount != 1 {
+		t.Fatalf("group write-through/echo/replay count = %d, %v", groupCount, err)
+	}
+	storedGroup, err := projectionRepository.GetMessage(context.Background(), instance.Id, string(groupInfo.ID))
+	if err != nil || storedGroup.Direction != projection_model.MessageDirectionOutgoing || storedGroup.ParticipantJID == nil || *storedGroup.ParticipantJID != selfParticipant.String() {
+		t.Fatalf("converged group message = %#v, %v", storedGroup, err)
+	}
+
+	otherParticipant := types.NewJID("97796690604084", types.HiddenUserServer)
+	incomingInfo := types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: groupChat, Sender: otherParticipant, IsGroup: true},
+		ID:            "group-message-incoming", Type: "ExtendedTextMessage", Timestamp: groupAt.Add(time.Second),
+	}
+	incomingEvent, _, err := NormalizeChatMessageEvent(instance.Id, &events.Message{Info: incomingInfo, Message: groupMessage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := projector.Handle(context.Background(), incomingEvent); err != nil {
+		t.Fatal(err)
+	}
+	storedIncoming, err := projectionRepository.GetMessage(context.Background(), instance.Id, string(incomingInfo.ID))
+	if err != nil || storedIncoming.Direction != projection_model.MessageDirectionIncoming || storedIncoming.ParticipantJID == nil || *storedIncoming.ParticipantJID != otherParticipant.String() {
+		t.Fatalf("incoming group participant = %#v, %v", storedIncoming, err)
+	}
+
+	secondOutgoing := groupInfo
+	secondOutgoing.ID = "group-message-same-content"
+	secondOutgoing.Timestamp = groupAt.Add(2 * time.Second)
+	if err := NewMessageWriteThrough(projector).WriteSent(context.Background(), instance.Id, secondOutgoing, groupMessage); err != nil {
+		t.Fatal(err)
+	}
+	var sameContentCount int64
+	if err := db.Table("projected_messages").Where("instance_id = ? AND chat_id = ? AND content_text = ?", instance.Id, groupChat.String(), "same text").Count(&sameContentCount).Error; err != nil || sameContentCount != 3 {
+		t.Fatalf("distinct same-content group messages count = %d, %v", sameContentCount, err)
+	}
+
 	historySyncer := NewHistorySyncer(eventsService, stateService)
 	if err := historySyncer.Sync(context.Background(), instance.Id, testHistorySync(waHistorySync.HistorySync_RECENT, 100), testHistoryMessageParser); err != nil {
 		t.Fatal(err)

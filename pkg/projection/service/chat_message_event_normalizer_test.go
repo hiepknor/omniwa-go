@@ -56,6 +56,43 @@ func TestNormalizeMessageEventStoresBoundedNormalizedMetadata(t *testing.T) {
 	}
 }
 
+func TestNormalizeMessageDirectionsPreserveProviderConversationKinds(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		chat            types.JID
+		sender          types.JID
+		fromMe          bool
+		isGroup         bool
+		wantType        string
+		wantDirection   string
+		wantParticipant bool
+	}{
+		{name: "direct outgoing", chat: types.NewJID("15550001", types.DefaultUserServer), sender: types.NewJID("self", types.DefaultUserServer), fromMe: true, wantType: "direct", wantDirection: "outgoing"},
+		{name: "group outgoing", chat: types.NewJID("120363000001", types.GroupServer), sender: types.NewJID("self", types.HiddenUserServer), fromMe: true, isGroup: true, wantType: "group", wantDirection: "outgoing", wantParticipant: true},
+		{name: "group incoming", chat: types.NewJID("120363000001", types.GroupServer), sender: types.NewJID("other", types.HiddenUserServer), isGroup: true, wantType: "group", wantDirection: "incoming", wantParticipant: true},
+		{name: "newsletter incoming", chat: types.NewJID("120363000001", types.NewsletterServer), sender: types.NewJID("120363000001", types.NewsletterServer), wantType: "newsletter", wantDirection: "incoming"},
+		{name: "broadcast outgoing", chat: types.NewJID("status", types.BroadcastServer), sender: types.NewJID("self", types.DefaultUserServer), fromMe: true, wantType: "broadcast", wantDirection: "outgoing"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			raw := &events.Message{
+				Info:    types.MessageInfo{MessageSource: types.MessageSource{Chat: test.chat, Sender: test.sender, IsFromMe: test.fromMe, IsGroup: test.isGroup}, ID: "message-kind", Type: "text", Timestamp: time.Unix(700, 0)},
+				Message: &waE2E.Message{Conversation: proto.String("payload")},
+			}
+			event, relevant, err := NormalizeChatMessageEvent("instance-a", raw)
+			if err != nil || !relevant {
+				t.Fatalf("NormalizeChatMessageEvent() = %#v, %t, %v", event, relevant, err)
+			}
+			var payload messageEventPayload
+			if err := json.Unmarshal(event.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if string(payload.ChatType) != test.wantType || string(payload.Direction) != test.wantDirection || (payload.ParticipantJID != nil) != test.wantParticipant {
+				t.Fatalf("normalized payload = %#v", payload)
+			}
+		})
+	}
+}
+
 func TestNormalizeChatSettingEventsPreservesAuthoritativeState(t *testing.T) {
 	jid := types.NewJID("15550001", types.DefaultUserServer)
 	occurredAt := time.Unix(900, 0).UTC()

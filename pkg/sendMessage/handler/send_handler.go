@@ -93,7 +93,7 @@ func (s *sendHandler) SendText(ctx *gin.Context) {
 		return
 	}
 
-	message, err := s.sendMessageService.SendText(data, instance)
+	message, err := s.sendMessageService.SendTextOnce(ctx.Request.Context(), data, instance)
 	if err != nil {
 		writeServiceError(ctx, err)
 		return

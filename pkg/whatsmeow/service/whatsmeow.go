@@ -468,7 +468,11 @@ func (mycli *MyClient) ingestProjectionEvent(rawEvent any) (assetID string) {
 	if inserted {
 		result = "inserted"
 	}
-	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=ingest instance_id=%s resource=%s event_type=%s result=%s", mycli.userID, event.Resource, event.EventType, result)
+	correlation := ""
+	if event.Resource == "messages" {
+		correlation = logger_wrapper.OpaqueCorrelationID(event.EntityKey)
+	}
+	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=ingest instance_id=%s resource=%s event_type=%s correlation=%s result=%s", mycli.userID, event.Resource, event.EventType, correlation, result)
 	return assetID
 }
 
