@@ -29,8 +29,6 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 	registry.ExternalEventEmitter().ObserveEmission("routed", "failed", 2)
 	registry.ExternalEventEmitter().ObserveRoute(outbox.TransportWebhook, outbox.DestinationInstance)
 	registry.ExternalEventEmitter().ObserveRoute(outbox.TransportRabbitMQ, outbox.DestinationGlobal)
-	registry.ExternalEventEmitter().ObserveCompatibilityDispatch(outbox.TransportWebhook, "accepted")
-	registry.ExternalEventEmitter().ObserveCompatibilityDispatch(outbox.TransportRabbitMQ, "failed")
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -60,8 +58,6 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 		`omniwa_external_event_emitter_route_count_sum{mode="routed",outcome="failed"} 2`,
 		`omniwa_external_event_emitter_routes_total{destination="instance",transport="webhook"} 1`,
 		`omniwa_external_event_emitter_routes_total{destination="global",transport="rabbitmq"} 1`,
-		`omniwa_external_event_emitter_compatibility_dispatches_total{outcome="accepted",transport="webhook"} 1`,
-		`omniwa_external_event_emitter_compatibility_dispatches_total{outcome="failed",transport="rabbitmq"} 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q", expected)
@@ -91,8 +87,6 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	registry.ExternalEventEmitter().ObserveEmission("routed", "success", 99)
 	registry.ExternalEventEmitter().ObserveRoute(outbox.Transport("instance-123"), outbox.DestinationInstance)
 	registry.ExternalEventEmitter().ObserveRoute(outbox.TransportWebhook, outbox.Destination("provider_120363@g.us"))
-	registry.ExternalEventEmitter().ObserveCompatibilityDispatch(outbox.TransportNATS, "accepted")
-	registry.ExternalEventEmitter().ObserveCompatibilityDispatch(outbox.TransportWebhook, "provider_120363@g.us")
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -101,7 +95,7 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total", "omniwa_external_event_outbox_attempts_total", "omniwa_external_event_outbox_infrastructure_failures_total", "omniwa_external_event_emitter_records_total", "omniwa_external_event_emitter_routes_total", "omniwa_external_event_emitter_compatibility_dispatches_total"} {
+	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total", "omniwa_external_event_outbox_attempts_total", "omniwa_external_event_outbox_infrastructure_failures_total", "omniwa_external_event_emitter_records_total", "omniwa_external_event_emitter_routes_total"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("invalid metric material was exposed: %q", forbidden)
 		}

@@ -38,7 +38,6 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/config"
 	event_emission "github.com/evolution-foundation/evolution-go/pkg/events/emission"
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
-	event_outbox "github.com/evolution-foundation/evolution-go/pkg/events/outbox"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
 	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
@@ -64,8 +63,6 @@ type WhatsmeowService interface {
 	StartInstance(instanceId string) error
 	ReconnectClient(instanceId string) error
 	ClearInstanceCache(instanceId string, token string) error
-	CallWebhook(instance *instance_model.Instance, queueName string, jsonData []byte)
-	SendToGlobalQueues(event string, jsonData []byte, userId string)
 	EmitExternalEvent(instance *instance_model.Instance, eventType string, raw any, queueName string, payload []byte) bool
 	WaitOutbound(ctx context.Context, instanceID string, cost int) error
 	ForceUpdateJid(instanceId string, number string) error
@@ -100,8 +97,6 @@ type whatsmeowService struct {
 	config             *config.Config
 	userInfoCache      *cache.Cache
 	runtimeRegistry    *instance_runtime.Registry[*MyClient]
-	rabbitmqProducer   producer_interfaces.Producer
-	webhookProducer    producer_interfaces.Producer
 	websocketProducer  producer_interfaces.Producer
 	sqliteDB           *sql.DB
 	exPath             string
@@ -155,8 +150,6 @@ type MyClient struct {
 	userInfoCache       *cache.Cache
 	config              *config.Config
 	historySyncID       int32
-	rabbitmqProducer    producer_interfaces.Producer
-	webhookProducer     producer_interfaces.Producer
 	websocketProducer   producer_interfaces.Producer
 	mediaStorage        storage_interfaces.MediaStorage
 	processedMessages   *cache.Cache
@@ -894,8 +887,6 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		runtimeRegistry:    w.runtimeRegistry,
 		config:             w.config,
 		historySyncID:      0,
-		rabbitmqProducer:   w.rabbitmqProducer,
-		webhookProducer:    w.webhookProducer,
 		websocketProducer:  w.websocketProducer,
 		mediaStorage:       w.mediaStorage,
 		processedMessages:  w.processedMessages,
@@ -2501,176 +2492,19 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	}
 }
 
-func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueName string, jsonData []byte) {
-	var data map[string]interface{}
-	if err := json.Unmarshal(jsonData, &data); err != nil {
+func (w *whatsmeowService) sendToRealtimeTransports(instance *instance_model.Instance, eventType, queueName string, payload []byte) {
+	if !event_emission.InstanceSubscribed(instance.Events, eventType, payload) {
 		return
 	}
-
-	eventType, ok := data["event"].(string)
-	if !ok {
-		return
-	}
-	if w.externalEvents != nil {
-		if event_emission.InstanceSubscribed(instance.Events, eventType, jsonData) {
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-		return
-	}
-
-	eventArray := strings.Split(instance.Events, ",")
-
-	var subscriptions []string
-
-	if len(eventArray) < 1 {
-		subscriptions = append(subscriptions, event_types.MESSAGE)
-		subscriptions = append(subscriptions, event_types.SEND_MESSAGE)
-	} else {
-		for _, arg := range eventArray {
-			if !event_types.IsEventType(arg) {
-				w.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Message type discarded: %s", instance.Id, arg)
-				continue
-			}
-			if !utils.Find(subscriptions, arg) {
-				subscriptions = append(subscriptions, arg)
-			}
-
+	if instance.NatsEnable == "enabled" || instance.NatsEnable == "true" {
+		if err := w.natsProducer.Produce(queueName, payload, instance.NatsEnable, instance.Id); err != nil {
+			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to nats: %s", instance.Id, err)
 		}
 	}
-
-	if contains(subscriptions, "ALL") {
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-		w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		return
-	}
-
-	w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] subscriptions %s eventType %s", instance.Id, subscriptions, eventType)
-
-	switch eventType {
-	case "Message":
-		if contains(subscriptions, "MESSAGE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		} else {
-			// Forward to GROUP/NEWSLETTER subscribers even without MESSAGE subscription
-			if dataMap, ok := data["data"].(map[string]interface{}); ok {
-				if infoMap, ok := dataMap["Info"].(map[string]interface{}); ok {
-					if chat, ok := infoMap["Chat"].(string); ok {
-						if strings.HasSuffix(chat, "@g.us") && contains(subscriptions, "GROUP") {
-							w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Group)", instance.Id, eventType)
-							w.sendToQueueOrWebhook(instance, queueName, jsonData)
-						} else if strings.HasSuffix(chat, "@newsletter") && contains(subscriptions, "NEWSLETTER") {
-							w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Newsletter)", instance.Id, eventType)
-							w.sendToQueueOrWebhook(instance, queueName, jsonData)
-						}
-					}
-				}
-			}
+	if instance.WebSocketEnable == "enabled" || instance.WebSocketEnable == "true" {
+		if err := w.websocketProducer.Produce(queueName, payload, instance.Id, instance.Token); err != nil {
+			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to websocket: %s", instance.Id, err)
 		}
-	case "SendMessage":
-		if contains(subscriptions, "SEND_MESSAGE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		} else {
-			if dataMap, ok := data["data"].(map[string]interface{}); ok {
-				if infoMap, ok := dataMap["Info"].(map[string]interface{}); ok {
-					if chat, ok := infoMap["Chat"].(string); ok {
-						if strings.HasSuffix(chat, "@g.us") && contains(subscriptions, "GROUP") {
-							w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Group)", instance.Id, eventType)
-							w.sendToQueueOrWebhook(instance, queueName, jsonData)
-						} else if strings.HasSuffix(chat, "@newsletter") && contains(subscriptions, "NEWSLETTER") {
-							w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Newsletter)", instance.Id, eventType)
-							w.sendToQueueOrWebhook(instance, queueName, jsonData)
-						}
-					}
-				}
-			}
-		}
-	case "Receipt":
-		if contains(subscriptions, "READ_RECEIPT") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		} else {
-			if dataMap, ok := data["data"].(map[string]interface{}); ok {
-				if chat, ok := dataMap["Chat"].(string); ok {
-					if strings.HasSuffix(chat, "@g.us") && contains(subscriptions, "GROUP") {
-						w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Group)", instance.Id, eventType)
-						w.sendToQueueOrWebhook(instance, queueName, jsonData)
-					} else if strings.HasSuffix(chat, "@newsletter") && contains(subscriptions, "NEWSLETTER") {
-						w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Newsletter)", instance.Id, eventType)
-						w.sendToQueueOrWebhook(instance, queueName, jsonData)
-					}
-				}
-			}
-		}
-	case "Presence":
-		if contains(subscriptions, "PRESENCE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "HistorySync":
-		if contains(subscriptions, "HISTORY_SYNC") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "ChatPresence", "Archive":
-		if contains(subscriptions, "CHAT_PRESENCE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
-		if contains(subscriptions, "CALL") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected":
-		if contains(subscriptions, "CONNECTION") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
-		if contains(subscriptions, "LABEL") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "Contact", "PushName":
-		if contains(subscriptions, "CONTACT") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "Picture":
-		if contains(subscriptions, "PICTURE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "UserAbout":
-		if contains(subscriptions, "USER_ABOUT") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "GroupInfo", "JoinedGroup":
-		if contains(subscriptions, "GROUP") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "NewsletterJoin", "NewsletterLeave":
-		if contains(subscriptions, "NEWSLETTER") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "QRCode", "QRTimeout", "QRSuccess":
-		if contains(subscriptions, "QRCODE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "ButtonClick":
-		if contains(subscriptions, "BUTTON_CLICK") || contains(subscriptions, "MESSAGE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-
-	default:
-		return
 	}
 }
 
@@ -2693,9 +2527,9 @@ func (w *whatsmeowService) EmitExternalEvent(instance *instance_model.Instance, 
 		w.loggerWrapper.GetLogger(instance.Id).LogError("component=external_event_emitter action=record result=failed error_code=atomic_write_failed")
 		return false
 	}
-	go w.CallWebhook(instance, queueName, payload)
-	if w.config.AmqpGlobalEnabled || w.config.NatsGlobalEnabled {
-		go w.SendToGlobalQueues(eventType, payload, instance.Id)
+	go w.sendToRealtimeTransports(instance, eventType, queueName, payload)
+	if w.config.NatsGlobalEnabled {
+		go w.sendToGlobalNATS(eventType, payload, instance.Id)
 	}
 	return true
 }
@@ -2707,49 +2541,6 @@ func contains(subscriptions []string, event string) bool {
 		}
 	}
 	return false
-}
-
-func (w *whatsmeowService) sendToQueueOrWebhook(instance *instance_model.Instance, queueName string, jsonData []byte) {
-	if (w.externalEvents == nil || !w.externalEvents.Uses(event_outbox.TransportRabbitMQ)) &&
-		(instance.RabbitmqEnable == "enabled" || instance.RabbitmqEnable == "true") {
-		err := w.rabbitmqProducer.Produce(queueName, jsonData, instance.RabbitmqEnable, instance.Id)
-		if err != nil {
-			w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportRabbitMQ, "failed")
-			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to rabbitmq: %s", instance.Id, err)
-			return
-		}
-		w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportRabbitMQ, "accepted")
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to rabbitmq successfully", instance.Id)
-	}
-
-	if instance.NatsEnable == "enabled" || instance.NatsEnable == "true" {
-		err := w.natsProducer.Produce(queueName, jsonData, instance.NatsEnable, instance.Id)
-		if err != nil {
-			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to nats: %s", instance.Id, err)
-			return
-		}
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to nats successfully", instance.Id)
-	}
-
-	if instance.WebSocketEnable == "enabled" || instance.WebSocketEnable == "true" {
-		err := w.websocketProducer.Produce(queueName, jsonData, instance.Id, instance.Token)
-		if err != nil {
-			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to websocket: %s", instance.Id, err)
-			return
-		}
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to websocket successfully", instance.Id)
-	}
-
-	if (w.externalEvents == nil || !w.externalEvents.Uses(event_outbox.TransportWebhook)) && instance.Webhook != "" && instance.Webhook != "disabled" {
-		err := w.webhookProducer.Produce(queueName, jsonData, instance.Webhook, instance.Id)
-		if err != nil {
-			w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportWebhook, "failed")
-			w.loggerWrapper.GetLogger(instance.Id).LogError("component=webhook action=enqueue result=failed error_code=delivery_not_admitted")
-			return
-		}
-		w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportWebhook, "accepted")
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("component=webhook action=enqueue result=accepted")
-	}
 }
 
 func (w whatsmeowService) StartInstance(instanceId string) error {
@@ -2902,155 +2693,13 @@ func getExtensionFromMimeType(mimeType string) string {
 	}
 }
 
-func (w *whatsmeowService) SendToGlobalQueues(eventType string, payload []byte, userId string) {
-	w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Starting sendToGlobalQueues for event: %s", userId, eventType)
-	if w.externalEvents != nil {
-		if !w.externalEvents.Uses(event_outbox.TransportRabbitMQ) {
-			if queueName, enabled := w.externalEvents.GlobalRabbitQueue(eventType); enabled {
-				if err := w.rabbitmqProducer.Produce(queueName, payload, "global", userId); err != nil {
-					w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportRabbitMQ, "failed")
-					w.loggerWrapper.GetLogger(userId).LogError("[%s] Failed to send message to RabbitMQ global queue %s: %v", userId, queueName, err)
-				} else {
-					w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportRabbitMQ, "accepted")
-				}
-			}
-		}
-		if w.config.NatsGlobalEnabled {
-			group := event_emission.EventGroup(eventType)
-			if group != "" && utils.Find(w.config.NatsGlobalEvents, group) {
-				if err := w.natsProducer.Produce(strings.ToLower(eventType), payload, "global", userId); err != nil {
-					w.loggerWrapper.GetLogger(userId).LogError("[%s] Failed to send message to NATS global subject: %v", userId, err)
-				}
-			}
-		}
+func (w *whatsmeowService) sendToGlobalNATS(eventType string, payload []byte, userID string) {
+	group := event_emission.EventGroup(eventType)
+	if group == "" || !utils.Find(w.config.NatsGlobalEvents, group) {
 		return
 	}
-
-	// AMQP: AMQP_SPECIFIC_EVENTS tem prioridade sobre AMQP_GLOBAL_EVENTS
-	if w.config.AmqpGlobalEnabled && (w.externalEvents == nil || !w.externalEvents.Uses(event_outbox.TransportRabbitMQ)) {
-		var shouldSendToAmqp bool
-		var amqpQueueName string
-
-		// Se AMQP_SPECIFIC_EVENTS estiver configurada, ela tem prioridade
-		if len(w.config.AmqpSpecificEvents) > 0 {
-			w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Using AMQP_SPECIFIC_EVENTS (priority over AMQP_GLOBAL_EVENTS)", userId)
-			// Verifica se o evento específico está na lista
-			if utils.Find(w.config.AmqpSpecificEvents, eventType) {
-				shouldSendToAmqp = true
-				amqpQueueName = strings.ToLower(eventType)
-				w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Event %s found in AMQP_SPECIFIC_EVENTS", userId, eventType)
-			}
-		} else {
-			// Fallback para AMQP_GLOBAL_EVENTS (modo antigo com grupos de eventos)
-			w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Using AMQP_GLOBAL_EVENTS (fallback mode)", userId)
-
-			// Mapeia o evento do Whatsmeow para o tipo de evento global
-			var globalEventType string
-			switch eventType {
-			case "Message":
-				globalEventType = "MESSAGE"
-			case "SendMessage":
-				globalEventType = "SEND_MESSAGE"
-			case "Receipt":
-				globalEventType = "READ_RECEIPT"
-			case "Presence":
-				globalEventType = "PRESENCE"
-			case "HistorySync":
-				globalEventType = "HISTORY_SYNC"
-			case "ChatPresence", "Archive":
-				globalEventType = "CHAT_PRESENCE"
-			case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
-				globalEventType = "CALL"
-			case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected":
-				globalEventType = "CONNECTION"
-			case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
-				globalEventType = "LABEL"
-			case "Contact", "PushName":
-				globalEventType = "CONTACT"
-			case "Picture":
-				globalEventType = "PICTURE"
-			case "UserAbout":
-				globalEventType = "USER_ABOUT"
-			case "GroupInfo", "JoinedGroup":
-				globalEventType = "GROUP"
-			case "NewsletterJoin", "NewsletterLeave":
-				globalEventType = "NEWSLETTER"
-			case "QRCode", "QRTimeout", "QRSuccess":
-				globalEventType = "QRCODE"
-			default:
-				w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Event %s not mapped to global event type", userId, eventType)
-				return
-			}
-
-			// Verifica se o grupo de eventos está na lista
-			if utils.Find(w.config.AmqpGlobalEvents, globalEventType) {
-				shouldSendToAmqp = true
-				amqpQueueName = strings.ToLower(eventType)
-				w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Event group %s found in AMQP_GLOBAL_EVENTS", userId, globalEventType)
-			}
-		}
-
-		// Envia para RabbitMQ se necessário
-		if shouldSendToAmqp {
-			w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Sending to AMQP queue: %s", userId, amqpQueueName)
-			err := w.rabbitmqProducer.Produce(amqpQueueName, payload, "global", userId)
-			if err != nil {
-				w.loggerWrapper.GetLogger(userId).LogError("[%s] Failed to send message to RabbitMQ global queue %s: %v", userId, amqpQueueName, err)
-			} else {
-				w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Successfully sent message to RabbitMQ global queue %s", userId, amqpQueueName)
-			}
-		} else {
-			w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Event %s not configured for AMQP", userId, eventType)
-		}
-	}
-
-	// NATS: Mantém o comportamento original por enquanto (só NATS_GLOBAL_EVENTS)
-	if w.config.NatsGlobalEnabled {
-		// Mapeia o evento para grupo (necessário para NATS por enquanto)
-		var globalEventType string
-		switch eventType {
-		case "Message":
-			globalEventType = "MESSAGE"
-		case "SendMessage":
-			globalEventType = "SEND_MESSAGE"
-		case "Receipt":
-			globalEventType = "READ_RECEIPT"
-		case "Presence":
-			globalEventType = "PRESENCE"
-		case "HistorySync":
-			globalEventType = "HISTORY_SYNC"
-		case "ChatPresence", "Archive":
-			globalEventType = "CHAT_PRESENCE"
-		case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
-			globalEventType = "CALL"
-		case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected":
-			globalEventType = "CONNECTION"
-		case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
-			globalEventType = "LABEL"
-		case "Contact", "PushName":
-			globalEventType = "CONTACT"
-		case "GroupInfo", "JoinedGroup":
-			globalEventType = "GROUP"
-		case "NewsletterJoin", "NewsletterLeave":
-			globalEventType = "NEWSLETTER"
-		case "QRCode", "QRTimeout", "QRSuccess":
-			globalEventType = "QRCODE"
-		default:
-			globalEventType = ""
-		}
-
-		// Verifica se o evento está na lista de eventos globais NATS
-		if globalEventType != "" && utils.Find(w.config.NatsGlobalEvents, globalEventType) {
-			queueName := strings.ToLower(eventType)
-			w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Sending to NATS subject: %s", userId, queueName)
-
-			err := w.natsProducer.Produce(queueName, payload, "global", userId)
-			if err != nil {
-				w.loggerWrapper.GetLogger(userId).LogError("[%s] Failed to send message to NATS global subject %s: %v", userId, queueName, err)
-			} else {
-				w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Successfully sent message to NATS global subject %s", userId, queueName)
-			}
-		}
+	if err := w.natsProducer.Produce(strings.ToLower(eventType), payload, "global", userID); err != nil {
+		w.loggerWrapper.GetLogger(userID).LogError("[%s] Failed to send message to NATS global subject: %v", userID, err)
 	}
 }
 
@@ -3258,8 +2907,6 @@ func NewWhatsmeowService(
 	labelRepository label_repository.LabelRepository,
 	config *config.Config,
 	runtimeRegistry *instance_runtime.Registry[*MyClient],
-	rabbitmqProducer producer_interfaces.Producer,
-	webhookProducer producer_interfaces.Producer,
 	websocketProducer producer_interfaces.Producer,
 	sqliteDB *sql.DB,
 	exPath string,
@@ -3292,8 +2939,6 @@ func NewWhatsmeowService(
 		config:             config,
 		userInfoCache:      cache.New(5*time.Minute, 10*time.Minute),
 		runtimeRegistry:    runtimeRegistry,
-		rabbitmqProducer:   rabbitmqProducer,
-		webhookProducer:    webhookProducer,
 		websocketProducer:  websocketProducer,
 		sqliteDB:           sqliteDB,
 		exPath:             exPath,

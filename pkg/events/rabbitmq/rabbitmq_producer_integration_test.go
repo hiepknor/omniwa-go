@@ -52,7 +52,7 @@ func TestDeliverConfirmedWithRabbitMQCarriesStableMessageID(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer connection.Close()
-	producer := NewRabbitMQProducer(connection, false, nil, nil, url, nil).(*rabbitMQProducer)
+	producer := NewRabbitMQProducer(connection, false, nil, nil, url, nil)
 	queueName := "omniwa-outbox-confirm-test-" + uuid.NewString()
 	deliveryID := uuid.NewString()
 	if err := producer.DeliverConfirmed(context.Background(), queueName, []byte(`{"ok":true}`), "enabled", deliveryID); err != nil {

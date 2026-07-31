@@ -24,17 +24,14 @@ type atomicRecorder interface {
 type Observer interface {
 	ObserveEmission(string, string, int)
 	ObserveRoute(event_outbox.Transport, event_outbox.Destination)
-	ObserveCompatibilityDispatch(event_outbox.Transport, string)
 }
 
 type noopObserver struct{}
 
 func (noopObserver) ObserveEmission(string, string, int)                           {}
 func (noopObserver) ObserveRoute(event_outbox.Transport, event_outbox.Destination) {}
-func (noopObserver) ObserveCompatibilityDispatch(event_outbox.Transport, string)   {}
 
 type Settings struct {
-	DurableTransports    []string
 	GlobalWebhookEnabled bool
 	GlobalRabbitEnabled  bool
 	AMQPGlobalEvents     []string
@@ -50,12 +47,10 @@ type Event struct {
 }
 
 // Emitter is the single application boundary for durable event history and
-// selected restart-safe external routes. An empty transport set records only
-// durable history and therefore preserves the legacy direct fan-out rollout.
+// restart-safe Webhook and RabbitMQ routes.
 type Emitter struct {
 	builder              durableEventBuilder
 	recorder             atomicRecorder
-	durable              map[event_outbox.Transport]struct{}
 	globalWebhookEnabled bool
 	globalRabbitEnabled  bool
 	amqpGlobalEvents     []string
@@ -67,22 +62,11 @@ func NewEmitter(builder durableEventBuilder, recorder atomicRecorder, settings S
 	if builder == nil || recorder == nil {
 		return nil, errors.New("external event emitter builder and recorder are required")
 	}
-	durable := make(map[event_outbox.Transport]struct{}, len(settings.DurableTransports))
-	for _, configured := range settings.DurableTransports {
-		transport := event_outbox.Transport(strings.ToLower(strings.TrimSpace(configured)))
-		if transport != event_outbox.TransportWebhook && transport != event_outbox.TransportRabbitMQ {
-			return nil, errors.New("only webhook and rabbitmq support durable emission")
-		}
-		if _, duplicate := durable[transport]; duplicate {
-			return nil, errors.New("durable emission transports must be unique")
-		}
-		durable[transport] = struct{}{}
-	}
 	if observer == nil {
 		observer = noopObserver{}
 	}
 	return &Emitter{
-		builder: builder, recorder: recorder, durable: durable,
+		builder: builder, recorder: recorder,
 		globalWebhookEnabled: settings.GlobalWebhookEnabled,
 		globalRabbitEnabled:  settings.GlobalRabbitEnabled,
 		amqpGlobalEvents:     append([]string(nil), settings.AMQPGlobalEvents...),
@@ -118,23 +102,6 @@ func (e *Emitter) Record(ctx context.Context, input Event) error {
 	return nil
 }
 
-func (e *Emitter) Uses(transport event_outbox.Transport) bool {
-	if e == nil {
-		return false
-	}
-	_, enabled := e.durable[transport]
-	return enabled
-}
-
-// ObserveCompatibilityDispatch records aggregate-only admission outcomes for
-// legacy direct Webhook and RabbitMQ adapters. It intentionally does not imply
-// delivery: the legacy Webhook producer acknowledges in-memory admission.
-func (e *Emitter) ObserveCompatibilityDispatch(transport event_outbox.Transport, outcome string) {
-	if e != nil && e.observer != nil {
-		e.observer.ObserveCompatibilityDispatch(transport, outcome)
-	}
-}
-
 func (e *Emitter) Plan(input Event) []event_outbox.Delivery {
 	if e == nil || input.Instance == nil {
 		return nil
@@ -147,19 +114,17 @@ func (e *Emitter) Plan(input Event) []event_outbox.Delivery {
 			RoutingKey: routingKey, Payload: append(json.RawMessage(nil), input.Payload...),
 		})
 	}
-	if e.Uses(event_outbox.TransportWebhook) && subscribed && instanceWebhookEnabled(input.Instance.Webhook) {
+	if subscribed && instanceWebhookEnabled(input.Instance.Webhook) {
 		if e.globalWebhookEnabled {
 			appendDelivery(event_outbox.TransportWebhook, event_outbox.DestinationGlobal, input.QueueName)
 		}
 		appendDelivery(event_outbox.TransportWebhook, event_outbox.DestinationInstance, input.QueueName)
 	}
-	if e.Uses(event_outbox.TransportRabbitMQ) {
-		if subscribed && instanceRabbitEnabled(input.Instance.RabbitmqEnable) {
-			appendDelivery(event_outbox.TransportRabbitMQ, event_outbox.DestinationInstance, input.QueueName)
-		}
-		if queue, ok := e.GlobalRabbitQueue(input.Type); ok {
-			appendDelivery(event_outbox.TransportRabbitMQ, event_outbox.DestinationGlobal, queue)
-		}
+	if subscribed && instanceRabbitEnabled(input.Instance.RabbitmqEnable) {
+		appendDelivery(event_outbox.TransportRabbitMQ, event_outbox.DestinationInstance, input.QueueName)
+	}
+	if queue, ok := e.GlobalRabbitQueue(input.Type); ok {
+		appendDelivery(event_outbox.TransportRabbitMQ, event_outbox.DestinationGlobal, queue)
 	}
 	return deliveries
 }

@@ -145,28 +145,18 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		log.Fatal(err)
 	}
 
-	var rabbitmqProducer producer_interfaces.Producer
 	if conn != nil {
 		logger.LogInfo("RabbitMQ enabled")
-		rabbitmqProducer = rabbitmq_producer.NewRabbitMQProducer(
-			conn,
-			config.AmqpGlobalEnabled,
-			config.AmqpGlobalEvents,
-			config.AmqpSpecificEvents,
-			config.AmqpUrl,
-			loggerWrapper,
-		)
-	} else {
-		// Even if initial connection failed, pass the URL so reconnection can work
-		rabbitmqProducer = rabbitmq_producer.NewRabbitMQProducer(
-			nil,
-			config.AmqpGlobalEnabled,
-			config.AmqpGlobalEvents,
-			config.AmqpSpecificEvents,
-			config.AmqpUrl, // Keep the URL for reconnection attempts
-			loggerWrapper,
-		)
 	}
+	// Keep the URL even if initial connection failed so the durable worker can reconnect.
+	rabbitmqProducer := rabbitmq_producer.NewRabbitMQProducer(
+		conn,
+		config.AmqpGlobalEnabled,
+		config.AmqpGlobalEvents,
+		config.AmqpSpecificEvents,
+		config.AmqpUrl,
+		loggerWrapper,
+	)
 
 	var natsProducer producer_interfaces.Producer
 	if config.NatsUrl != "" {
@@ -208,54 +198,31 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			logger.LogFatal("component=webhook action=initialize result=failed error=%v", err)
 		}
 	}
-	webhookProducer, err := webhook_producer.NewWebhookProducer(
-		config.WebhookUrl,
-		webhookRequester,
-		loggerWrapper,
-		webhook_producer.Settings{
-			Workers:               config.Webhook.Workers,
-			QueueCapacity:         config.Webhook.QueueCapacity,
-			MaxPendingPerInstance: config.Webhook.MaxPendingPerInstance,
-			MaxAttempts:           config.Webhook.MaxAttempts,
-			RetryBase:             config.Webhook.RetryBase,
-		},
-	)
-	if err != nil {
-		logger.LogFatal("component=webhook action=initialize result=failed error=%v", err)
-	}
-	startBackground(backgroundWorkers, "webhook.deliveries", webhookProducer.Run)
+	webhookProducer := webhook_producer.NewWebhookProducer(webhookRequester)
 	outboxRepository := event_outbox.NewRepository(db)
-	if config.ExternalEventOutbox.ServeEnabled {
-		rabbitOutbox, ok := rabbitmqProducer.(event_outbox.RabbitMQDeliverer)
-		if !ok {
-			logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=rabbit_adapter_unavailable")
-		}
-		targetResolver, resolveErr := event_outbox.NewDatabaseTargetResolver(db, config.WebhookUrl, config.AmqpGlobalEnabled)
-		if resolveErr != nil {
-			logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=target_resolver_unavailable")
-		}
-		dispatcher, dispatchErr := event_outbox.NewTransportDispatcher(webhookProducer, rabbitOutbox, targetResolver)
-		if dispatchErr != nil {
-			logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=dispatcher_unavailable")
-		}
-		outboxWorker, workerErr := event_outbox.NewWorker(
-			outboxRepository, dispatcher,
-			event_outbox.Settings{
-				BatchSize: config.ExternalEventOutbox.BatchSize, LeaseDuration: config.ExternalEventOutbox.LeaseDuration,
-				PollInterval: config.ExternalEventOutbox.PollInterval, AttemptTimeout: config.ExternalEventOutbox.AttemptTimeout,
-				StateTimeout: config.ExternalEventOutbox.StateTimeout, RetryBase: config.ExternalEventOutbox.RetryBase,
-				RetryMax: config.ExternalEventOutbox.RetryMax,
-			},
-			metricsRegistry.ExternalEventOutbox(),
-		)
-		if workerErr != nil {
-			logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=invalid_worker_configuration")
-		}
-		startBackground(backgroundWorkers, "external_event_outbox.deliveries", outboxWorker.Run)
-		logger.LogInfo("component=external_event_outbox action=initialize result=success mode=serve")
-	} else {
-		logger.LogInfo("component=external_event_outbox action=initialize result=skipped mode=disabled")
+	targetResolver, resolveErr := event_outbox.NewDatabaseTargetResolver(db, config.WebhookUrl, config.AmqpGlobalEnabled)
+	if resolveErr != nil {
+		logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=target_resolver_unavailable")
 	}
+	dispatcher, dispatchErr := event_outbox.NewTransportDispatcher(webhookProducer, rabbitmqProducer, targetResolver)
+	if dispatchErr != nil {
+		logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=dispatcher_unavailable")
+	}
+	outboxWorker, workerErr := event_outbox.NewWorker(
+		outboxRepository, dispatcher,
+		event_outbox.Settings{
+			BatchSize: config.ExternalEventOutbox.BatchSize, LeaseDuration: config.ExternalEventOutbox.LeaseDuration,
+			PollInterval: config.ExternalEventOutbox.PollInterval, AttemptTimeout: config.ExternalEventOutbox.AttemptTimeout,
+			StateTimeout: config.ExternalEventOutbox.StateTimeout, RetryBase: config.ExternalEventOutbox.RetryBase,
+			RetryMax: config.ExternalEventOutbox.RetryMax,
+		},
+		metricsRegistry.ExternalEventOutbox(),
+	)
+	if workerErr != nil {
+		logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=invalid_worker_configuration")
+	}
+	startBackground(backgroundWorkers, "external_event_outbox.deliveries", outboxWorker.Run)
+	logger.LogInfo("component=external_event_outbox action=initialize result=success mode=durable transports=webhook,rabbitmq")
 	originPolicy, err := httpapi.NewOriginPolicy(config.HTTPAllowedOrigins)
 	if err != nil {
 		logger.LogFatal("component=http action=configure_origin_policy result=failed error=%v", err)
@@ -520,18 +487,14 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	durableEventRepository := projection_repository.NewDurableEventRepository(db)
 	durableEventService := projection_service.NewDurableEventService(durableEventRepository, config.EventRetention)
 	externalEventEmitter, err := event_emission.NewEmitter(durableEventService, outboxRepository, event_emission.Settings{
-		DurableTransports: config.ExternalEventOutbox.EmitTransports, GlobalWebhookEnabled: config.WebhookUrl != "",
-		GlobalRabbitEnabled: config.AmqpGlobalEnabled, AMQPGlobalEvents: config.AmqpGlobalEvents,
+		GlobalWebhookEnabled: config.WebhookUrl != "",
+		GlobalRabbitEnabled:  config.AmqpGlobalEnabled, AMQPGlobalEvents: config.AmqpGlobalEvents,
 		AMQPSpecificEvents: config.AmqpSpecificEvents,
 	}, metricsRegistry.ExternalEventEmitter())
 	if err != nil {
 		logger.LogFatal("component=external_event_emitter action=initialize result=failed error_code=invalid_configuration")
 	}
-	if len(config.ExternalEventOutbox.EmitTransports) == 0 {
-		logger.LogInfo("component=external_event_emitter action=initialize result=success mode=direct")
-	} else {
-		logger.LogInfo("component=external_event_emitter action=initialize result=success mode=durable transports=%s", strings.Join(config.ExternalEventOutbox.EmitTransports, ","))
-	}
+	logger.LogInfo("component=external_event_emitter action=initialize result=success mode=durable transports=webhook,rabbitmq")
 	durableEventReader := projection_service.NewDurableEventReader(durableEventRepository, config.EventRetention)
 	projectionFailureService := projection_service.NewFailureService(projection_repository.NewFailureRepository(db))
 	overviewService := projection_service.NewOverviewService(projection_repository.NewOverviewRepository(db))
@@ -657,8 +620,6 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		labelRepository,
 		config,
 		runtimeRegistry,
-		rabbitmqProducer,
-		webhookProducer,
 		websocketProducer,
 		sqliteDB,
 		exPath,

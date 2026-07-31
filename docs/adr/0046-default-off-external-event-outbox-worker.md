@@ -1,6 +1,6 @@
 # ADR 0046: Default-off external event outbox worker
 
-- Status: Accepted
+- Status: Superseded by ADR 0048
 - Date: 2026-07-30
 
 ## Context
