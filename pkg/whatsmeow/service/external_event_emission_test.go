@@ -49,13 +49,39 @@ func (r *emissionRecorder) count() int {
 type countingProducer struct {
 	mu    sync.Mutex
 	calls int
+	err   error
+}
+
+type compatibilityObserver struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func newCompatibilityObserver() *compatibilityObserver {
+	return &compatibilityObserver{counts: make(map[string]int)}
+}
+
+func (*compatibilityObserver) ObserveEmission(string, string, int) {}
+func (*compatibilityObserver) ObserveRoute(event_outbox.Transport, event_outbox.Destination) {
+}
+func (o *compatibilityObserver) ObserveCompatibilityDispatch(transport event_outbox.Transport, outcome string) {
+	o.mu.Lock()
+	o.counts[string(transport)+":"+outcome]++
+	o.mu.Unlock()
+}
+
+func (o *compatibilityObserver) count(transport event_outbox.Transport, outcome string) int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.counts[string(transport)+":"+outcome]
 }
 
 func (p *countingProducer) Produce(string, []byte, string, string) error {
 	p.mu.Lock()
 	p.calls++
+	err := p.err
 	p.mu.Unlock()
-	return nil
+	return err
 }
 
 func (*countingProducer) CreateGlobalQueues() error { return nil }
@@ -68,10 +94,11 @@ func (p *countingProducer) count() int {
 
 func TestEmitExternalEventWebhookCanaryKeepsOtherTransportsDirect(t *testing.T) {
 	recorder := &emissionRecorder{}
+	observer := newCompatibilityObserver()
 	emitter, err := event_emission.NewEmitter(emissionBuilder{}, recorder, event_emission.Settings{
 		DurableTransports: []string{"webhook"}, GlobalWebhookEnabled: true,
 		GlobalRabbitEnabled: true, AMQPGlobalEvents: []string{"MESSAGE"},
-	}, nil)
+	}, observer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,19 +121,23 @@ func TestEmitExternalEventWebhookCanaryKeepsOtherTransportsDirect(t *testing.T) 
 		t.Fatal("emission was rejected")
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && (rabbit.count() != 2 || websocket.count() != 1 || nats.count() != 2) {
+	for time.Now().Before(deadline) && (rabbit.count() != 2 || websocket.count() != 1 || nats.count() != 2 || observer.count(event_outbox.TransportRabbitMQ, "accepted") != 2) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if recorder.count() != 2 || rabbit.count() != 2 || webhook.count() != 0 || websocket.count() != 1 || nats.count() != 2 {
 		t.Fatalf("routes=%d rabbit=%d webhook=%d websocket=%d nats=%d", recorder.count(), rabbit.count(), webhook.count(), websocket.count(), nats.count())
 	}
+	if observer.count(event_outbox.TransportRabbitMQ, "accepted") != 2 || observer.count(event_outbox.TransportWebhook, "accepted") != 0 {
+		t.Fatalf("unexpected compatibility telemetry: rabbit=%d webhook=%d", observer.count(event_outbox.TransportRabbitMQ, "accepted"), observer.count(event_outbox.TransportWebhook, "accepted"))
+	}
 }
 
 func TestEmitExternalEventDefaultKeepsLegacyDirectFanout(t *testing.T) {
 	recorder := &emissionRecorder{}
+	observer := newCompatibilityObserver()
 	emitter, err := event_emission.NewEmitter(emissionBuilder{}, recorder, event_emission.Settings{
 		GlobalWebhookEnabled: true, GlobalRabbitEnabled: true, AMQPGlobalEvents: []string{"MESSAGE"},
-	}, nil)
+	}, observer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,20 +160,24 @@ func TestEmitExternalEventDefaultKeepsLegacyDirectFanout(t *testing.T) {
 		t.Fatal("emission was rejected")
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && (rabbit.count() != 2 || webhook.count() != 1 || websocket.count() != 1 || nats.count() != 2) {
+	for time.Now().Before(deadline) && (rabbit.count() != 2 || webhook.count() != 1 || websocket.count() != 1 || nats.count() != 2 || observer.count(event_outbox.TransportRabbitMQ, "accepted") != 2 || observer.count(event_outbox.TransportWebhook, "accepted") != 1) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if recorder.count() != 0 || rabbit.count() != 2 || webhook.count() != 1 || websocket.count() != 1 || nats.count() != 2 {
 		t.Fatalf("routes=%d rabbit=%d webhook=%d websocket=%d nats=%d", recorder.count(), rabbit.count(), webhook.count(), websocket.count(), nats.count())
 	}
+	if observer.count(event_outbox.TransportRabbitMQ, "accepted") != 2 || observer.count(event_outbox.TransportWebhook, "accepted") != 1 {
+		t.Fatalf("unexpected compatibility telemetry: rabbit=%d webhook=%d", observer.count(event_outbox.TransportRabbitMQ, "accepted"), observer.count(event_outbox.TransportWebhook, "accepted"))
+	}
 }
 
 func TestEmitExternalEventRabbitCanaryKeepsOtherTransportsDirect(t *testing.T) {
 	recorder := &emissionRecorder{}
+	observer := newCompatibilityObserver()
 	emitter, err := event_emission.NewEmitter(emissionBuilder{}, recorder, event_emission.Settings{
 		DurableTransports: []string{"rabbitmq"}, GlobalWebhookEnabled: true,
 		GlobalRabbitEnabled: true, AMQPGlobalEvents: []string{"MESSAGE"},
-	}, nil)
+	}, observer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,11 +199,14 @@ func TestEmitExternalEventRabbitCanaryKeepsOtherTransportsDirect(t *testing.T) {
 		t.Fatal("emission was rejected")
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && (webhook.count() != 1 || websocket.count() != 1 || nats.count() != 2) {
+	for time.Now().Before(deadline) && (webhook.count() != 1 || websocket.count() != 1 || nats.count() != 2 || observer.count(event_outbox.TransportWebhook, "accepted") != 1) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if recorder.count() != 2 || rabbit.count() != 0 || webhook.count() != 1 || websocket.count() != 1 || nats.count() != 2 {
 		t.Fatalf("routes=%d rabbit=%d webhook=%d websocket=%d nats=%d", recorder.count(), rabbit.count(), webhook.count(), websocket.count(), nats.count())
+	}
+	if observer.count(event_outbox.TransportRabbitMQ, "accepted") != 0 || observer.count(event_outbox.TransportWebhook, "accepted") != 1 {
+		t.Fatalf("unexpected compatibility telemetry: rabbit=%d webhook=%d", observer.count(event_outbox.TransportRabbitMQ, "accepted"), observer.count(event_outbox.TransportWebhook, "accepted"))
 	}
 }
 
@@ -200,5 +238,26 @@ func TestEmitExternalEventAtomicFailureSuppressesEveryDirectTransport(t *testing
 	time.Sleep(50 * time.Millisecond)
 	if rabbit.count() != 0 || webhook.count() != 0 || websocket.count() != 0 || nats.count() != 0 {
 		t.Fatalf("direct fan-out occurred after failure: rabbit=%d webhook=%d websocket=%d nats=%d", rabbit.count(), webhook.count(), websocket.count(), nats.count())
+	}
+}
+
+func TestCompatibilityTelemetryRecordsDirectAdmissionFailures(t *testing.T) {
+	observer := newCompatibilityObserver()
+	emitter, err := event_emission.NewEmitter(emissionBuilder{}, &emissionRecorder{}, event_emission.Settings{}, observer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := &config.Config{LogDirectory: t.TempDir(), LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1}
+	service := &whatsmeowService{
+		config: settings, rabbitmqProducer: &countingProducer{err: errors.New("rabbit unavailable")},
+		webhookProducer: &countingProducer{err: errors.New("webhook queue full")},
+		externalEvents:  emitter, loggerWrapper: logger_wrapper.NewLoggerManager(settings),
+	}
+	instanceID := uuid.NewString()
+	service.sendToQueueOrWebhook(&instance_model.Instance{Id: instanceID, RabbitmqEnable: "enabled"}, instanceID+".message", []byte(`{"event":"Message"}`))
+	service.sendToQueueOrWebhook(&instance_model.Instance{Id: instanceID, Webhook: "https://instance.example/events"}, instanceID+".message", []byte(`{"event":"Message"}`))
+
+	if observer.count(event_outbox.TransportRabbitMQ, "failed") != 1 || observer.count(event_outbox.TransportWebhook, "failed") != 1 {
+		t.Fatalf("unexpected compatibility failures: rabbit=%d webhook=%d", observer.count(event_outbox.TransportRabbitMQ, "failed"), observer.count(event_outbox.TransportWebhook, "failed"))
 	}
 }

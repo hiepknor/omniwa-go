@@ -2714,9 +2714,11 @@ func (w *whatsmeowService) sendToQueueOrWebhook(instance *instance_model.Instanc
 		(instance.RabbitmqEnable == "enabled" || instance.RabbitmqEnable == "true") {
 		err := w.rabbitmqProducer.Produce(queueName, jsonData, instance.RabbitmqEnable, instance.Id)
 		if err != nil {
+			w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportRabbitMQ, "failed")
 			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to rabbitmq: %s", instance.Id, err)
 			return
 		}
+		w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportRabbitMQ, "accepted")
 		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to rabbitmq successfully", instance.Id)
 	}
 
@@ -2741,9 +2743,11 @@ func (w *whatsmeowService) sendToQueueOrWebhook(instance *instance_model.Instanc
 	if (w.externalEvents == nil || !w.externalEvents.Uses(event_outbox.TransportWebhook)) && instance.Webhook != "" && instance.Webhook != "disabled" {
 		err := w.webhookProducer.Produce(queueName, jsonData, instance.Webhook, instance.Id)
 		if err != nil {
+			w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportWebhook, "failed")
 			w.loggerWrapper.GetLogger(instance.Id).LogError("component=webhook action=enqueue result=failed error_code=delivery_not_admitted")
 			return
 		}
+		w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportWebhook, "accepted")
 		w.loggerWrapper.GetLogger(instance.Id).LogInfo("component=webhook action=enqueue result=accepted")
 	}
 }
@@ -2904,7 +2908,10 @@ func (w *whatsmeowService) SendToGlobalQueues(eventType string, payload []byte, 
 		if !w.externalEvents.Uses(event_outbox.TransportRabbitMQ) {
 			if queueName, enabled := w.externalEvents.GlobalRabbitQueue(eventType); enabled {
 				if err := w.rabbitmqProducer.Produce(queueName, payload, "global", userId); err != nil {
+					w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportRabbitMQ, "failed")
 					w.loggerWrapper.GetLogger(userId).LogError("[%s] Failed to send message to RabbitMQ global queue %s: %v", userId, queueName, err)
+				} else {
+					w.externalEvents.ObserveCompatibilityDispatch(event_outbox.TransportRabbitMQ, "accepted")
 				}
 			}
 		}
