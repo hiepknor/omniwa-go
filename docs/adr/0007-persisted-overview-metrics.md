@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded in part by ADR 0052
 
 ## Context
 
@@ -17,7 +17,7 @@ scope; an admin key sees server-wide aggregates. All counters are read in one
 repeatable-read, read-only transaction and share one `generatedAt` timestamp.
 
 The response distinguishes current active projection counts from windowed flow
-counts. Groups, contacts, and chats exclude tombstones. Messages exclude
+counts. Groups, contacts, and canonical conversations exclude tombstones. Messages exclude
 deleted rows and are counted by provider timestamp in the half-open interval
 `[window.start, window.end)`, including incoming/outgoing breakdowns. Durable
 events use the same interval. The default window is 24 hours and the maximum is

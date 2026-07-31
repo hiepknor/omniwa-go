@@ -37,7 +37,8 @@ func TestOverviewServiceDefinesWindowScopeAndPersistedCounts(t *testing.T) {
 		t.Fatalf("repository window = %q %v..%v", repository.instanceID, repository.start, repository.end)
 	}
 	if overview.Scope.Type != "instance" || overview.Scope.InstanceID != "instance-a" || overview.Window.DurationSeconds != 86400 ||
-		overview.Instances.Disconnected != 0 || overview.Projections.Messages != 5 || overview.Messages.Incoming != 3 || overview.Messages.Outgoing != 2 || overview.Projections.Events != 6 {
+		overview.Instances.Disconnected != 0 || overview.Projections.Conversations != 4 || overview.Projections.Chats != overview.Projections.Conversations ||
+		overview.Projections.Messages != 5 || overview.Messages.Incoming != 3 || overview.Messages.Outgoing != 2 || overview.Projections.Events != 6 {
 		t.Fatalf("overview = %#v", overview)
 	}
 }

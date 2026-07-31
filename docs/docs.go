@@ -11791,9 +11791,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "chats": {
+                    "description": "Chats is a deprecated compatibility alias for Conversations.",
                     "type": "integer"
                 },
                 "contacts": {
+                    "type": "integer"
+                },
+                "conversations": {
+                    "description": "Conversations counts canonical public Conversation entities.",
                     "type": "integer"
                 },
                 "events": {
