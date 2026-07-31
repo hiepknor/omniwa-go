@@ -149,4 +149,16 @@ func TestConversationBackfillLeasesResumeAndAssociatesAliasHistory(t *testing.T)
 	if err != nil || message.ConversationID == nil || *message.ConversationID != *chats[0].ConversationID {
 		t.Fatalf("backfilled message = %#v, %v", message, err)
 	}
+	restarted, err := backfill.RestartCompleted(context.Background(), instance.Id, 1, time.Unix(208, 0).UTC())
+	if err != nil || !restarted {
+		t.Fatalf("restart completed = %t, %v", restarted, err)
+	}
+	state, err = backfill.GetState(context.Background(), instance.Id)
+	if err != nil || state.Status != projection_model.ConversationBackfillPending || state.CursorChatID != nil || state.CompletedAt != nil {
+		t.Fatalf("restarted state = %#v, %v", state, err)
+	}
+	restarted, err = backfill.RestartCompleted(context.Background(), instance.Id, 1, time.Unix(209, 0).UTC())
+	if err != nil || restarted {
+		t.Fatalf("pending pass restarted = %t, %v", restarted, err)
+	}
 }

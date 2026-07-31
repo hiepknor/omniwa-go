@@ -21,6 +21,7 @@ type conversationBackfillStub struct {
 	stateErr     error
 	commits      []projection_repository.ConversationBackfillCounts
 	failedCode   string
+	restarts     int
 }
 
 type unreadSnapshotStub struct {
@@ -43,6 +44,11 @@ func (s *conversationBackfillStub) ClaimBatch(context.Context, string, int, stri
 	batch := s.batches[0]
 	s.batches = s.batches[1:]
 	return batch, nil
+}
+
+func (s *conversationBackfillStub) RestartCompleted(context.Context, string, int, time.Time) (bool, error) {
+	s.restarts++
+	return true, nil
 }
 
 func (s *conversationBackfillStub) AssociateChat(_ context.Context, _, chatID string, _ time.Time) (projection_repository.ConversationAssociationResult, error) {
@@ -101,6 +107,24 @@ func TestConversationReconcilerTreatsCompetingLeaseAsNoop(t *testing.T) {
 	}
 }
 
+func TestConversationReconcilerRefreshesAndEnrichesBeforeAssociation(t *testing.T) {
+	repository := &conversationBackfillStub{
+		batches: []*projection_repository.ConversationBackfillBatch{{
+			Items: []projection_repository.ConversationBackfillCandidate{{ChatID: "15550001@s.whatsapp.net"}}, Complete: true,
+		}},
+		associations: map[string]projection_repository.ConversationAssociationResult{"15550001@s.whatsapp.net": {Associated: 2, Absorbed: 1}},
+	}
+	enriched := make([]string, 0, 1)
+	result, err := NewConversationReconciler(repository).RefreshBounded(context.Background(), "instance-a", 10, 1,
+		func(_ context.Context, instanceID, chatID string) error {
+			enriched = append(enriched, instanceID+":"+chatID)
+			return nil
+		})
+	if err != nil || !result.Complete || result.Absorbed != 1 || repository.restarts != 1 || len(enriched) != 1 {
+		t.Fatalf("RefreshBounded() = %#v, %v, restarts=%d enriched=%#v", result, err, repository.restarts, enriched)
+	}
+}
+
 func TestConversationReconcilerRecoversUnreadAfterCompletedBackfill(t *testing.T) {
 	repository := &conversationBackfillStub{}
 	unread := &unreadSnapshotStub{}
@@ -139,23 +163,31 @@ func (s *contactBackfillStateStub) GetState(context.Context, string) (*projectio
 	return s.state, s.err
 }
 
-func TestCanonicalChatReadinessRequiresBothCheckpointsAndAuthoritativeUnread(t *testing.T) {
+func TestCanonicalConversationReadinessSeparatesIdentityFromAuthoritativeUnread(t *testing.T) {
 	contacts := &contactBackfillStateStub{state: &projection_model.ContactIdentityBackfill{
 		Version: ContactIdentityBackfillVersion, Status: projection_model.ContactIdentityBackfillComplete,
 	}}
 	conversations := &conversationBackfillStub{state: &projection_model.ConversationBackfill{
 		Version: ConversationBackfillVersion, Status: projection_model.ConversationBackfillComplete,
 	}, validate: projection_repository.ConversationValidation{UnreadNonAuthoritative: 1}}
-	readiness := NewCanonicalChatReadiness(contacts, conversations)
+	readiness := NewCanonicalConversationReadiness(contacts, conversations)
 	ready, err := readiness.Ready("instance-a")
-	if err != nil || ready {
-		t.Fatalf("non-authoritative readiness = %t, %v", ready, err)
+	if err != nil || !ready {
+		t.Fatalf("identity readiness = %t, %v", ready, err)
+	}
+	unreadReady, err := readiness.UnreadReady("instance-a")
+	if err != nil || unreadReady {
+		t.Fatalf("non-authoritative unread readiness = %t, %v", unreadReady, err)
 	}
 
 	conversations.validate = projection_repository.ConversationValidation{}
 	ready, err = readiness.Ready("instance-a")
 	if err != nil || !ready {
 		t.Fatalf("authoritative readiness = %t, %v", ready, err)
+	}
+	unreadReady, err = readiness.UnreadReady("instance-a")
+	if err != nil || !unreadReady {
+		t.Fatalf("authoritative unread readiness = %t, %v", unreadReady, err)
 	}
 
 	conversations.state.Status = projection_model.ConversationBackfillRunning
@@ -165,8 +197,8 @@ func TestCanonicalChatReadinessRequiresBothCheckpointsAndAuthoritativeUnread(t *
 	}
 }
 
-func TestCanonicalChatReadinessTreatsMissingCheckpointAsNotReady(t *testing.T) {
-	readiness := NewCanonicalChatReadiness(
+func TestCanonicalConversationReadinessTreatsMissingCheckpointAsNotReady(t *testing.T) {
+	readiness := NewCanonicalConversationReadiness(
 		&contactBackfillStateStub{err: gorm.ErrRecordNotFound},
 		&conversationBackfillStub{},
 	)

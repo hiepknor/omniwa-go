@@ -1,5 +1,8 @@
 # ADR 0039: Remove the legacy Chat read contract
 
+> The combined identity/unread readiness predicate in this ADR is superseded
+> by ADR 0049. The legacy Chat read removal remains active.
+
 - Status: Accepted
 - Date: 2026-07-29
 

@@ -178,7 +178,7 @@ func TestConversationContractSharesCanonicalReadsAndRequiresCanonicalIdentity(t 
 
 	conversations, conversationMeta, err := reader.ListConversations(context.Background(), "instance-a", 10, "")
 	if err != nil || len(conversations) != 1 || conversations[0].ConversationID != conversationID ||
-		conversations[0].Type != ConversationTypeDirect || conversations[0].UnreadCount != 2 ||
+		conversations[0].Type != ConversationTypeDirect || conversations[0].UnreadCount != 2 || !conversations[0].UnreadAuthoritative ||
 		conversationMeta.Total == nil || *conversationMeta.Total != 1 {
 		t.Fatalf("conversation contract = %#v meta=%#v err=%v", conversations, conversationMeta, err)
 	}
