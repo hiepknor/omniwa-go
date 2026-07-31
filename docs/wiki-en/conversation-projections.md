@@ -107,7 +107,7 @@ chat, timestamp, or valid durable event still fails the sync and suppresses the
 completion barrier; the backend never converts malformed message data into a
 ready projection.
 
-Set `WA_CANONICAL_CHAT_IDENTITY_ENABLED=true` only after
+Set `WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED=true` only after
 `WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED=true`. The worker scans active
 projected Chats in opaque provider-ID order, uses a two-minute lease, persists
 its cursor and counters, and can resume after a process restart. Live writes
@@ -137,7 +137,7 @@ signal and must not be treated as an empty result. Absence of
 `authoritative_conversation_unread` means consumers must inspect each
 `unreadAuthoritative` value.
 
-Rollback disables `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restarts the binary.
+Rollback disables `WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED` and restarts the binary.
 This removes the capability without deleting the additive schema. Restoring the
 removed Chat reads requires redeploying a pre-removal binary; see ADR 0039.
 
