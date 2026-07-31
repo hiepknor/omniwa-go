@@ -73,7 +73,14 @@ curl -fsS --get http://127.0.0.1:9090/api/v1/query \
   --data-urlencode 'query=up{job="omniwa-go"}'
 curl -fsS --get http://127.0.0.1:9090/api/v1/query \
   --data-urlencode 'query=sum(increase(omniwa_conversation_api_requests_total{contract="conversation",status=~"4xx|5xx"}[24h])) or vector(0)'
+curl -fsS --get http://127.0.0.1:9090/api/v1/query \
+  --data-urlencode 'query=sum by (transport,outcome) (increase(omniwa_external_event_emitter_compatibility_dispatches_total[24h])) or vector(0)'
 ```
+
+The compatibility counter measures direct adapter admission attempts. A zero
+increase over a representative cohort window is required before retiring a
+Webhook or RabbitMQ compatibility path; Webhook `accepted` does not prove that
+the remote endpoint received the request.
 
 Changing `GLOBAL_API_KEY` requires recreating both `omniwa-go` and
 `prometheus`. Removing the Prometheus service leaves application behavior and

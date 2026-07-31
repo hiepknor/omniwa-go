@@ -81,6 +81,9 @@ resolution remains authoritative.
 - Bounded emitter metrics report atomic record outcomes, planned route counts,
   and successfully accepted routes by transport and destination. They never use
   instance IDs, routing keys, destinations, delivery IDs, or payloads as labels.
+- A bounded compatibility counter reports direct Webhook and RabbitMQ adapter
+  attempts by transport and admission outcome. An `accepted` legacy Webhook
+  attempt means in-memory queue admission, not confirmed delivery.
 - Payloads for selected routes are retained under the existing outbox and
   durable-event retention boundary; no new table or migration is required.
 - A failed atomic write suppresses external dispatch instead of claiming an
@@ -99,6 +102,10 @@ resolution remains authoritative.
    serve mode enabled long enough to drain accepted rows. Disable serve only
    after no pending/processing rows remain.
 5. Repeat independently for `rabbitmq` after consumer deduplication readiness.
+6. Before removing a direct compatibility adapter, observe a representative
+   cohort window with zero compatibility dispatch attempts for that transport,
+   healthy durable-route and outbox metrics, and no unexpected dead letters.
+   Canary success alone is not retirement evidence.
 
 Application rollback must first clear the emit transport set. A previous image
 must not be deployed while new pending rows exist unless the current worker is

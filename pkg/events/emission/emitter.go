@@ -24,12 +24,14 @@ type atomicRecorder interface {
 type Observer interface {
 	ObserveEmission(string, string, int)
 	ObserveRoute(event_outbox.Transport, event_outbox.Destination)
+	ObserveCompatibilityDispatch(event_outbox.Transport, string)
 }
 
 type noopObserver struct{}
 
 func (noopObserver) ObserveEmission(string, string, int)                           {}
 func (noopObserver) ObserveRoute(event_outbox.Transport, event_outbox.Destination) {}
+func (noopObserver) ObserveCompatibilityDispatch(event_outbox.Transport, string)   {}
 
 type Settings struct {
 	DurableTransports    []string
@@ -122,6 +124,15 @@ func (e *Emitter) Uses(transport event_outbox.Transport) bool {
 	}
 	_, enabled := e.durable[transport]
 	return enabled
+}
+
+// ObserveCompatibilityDispatch records aggregate-only admission outcomes for
+// legacy direct Webhook and RabbitMQ adapters. It intentionally does not imply
+// delivery: the legacy Webhook producer acknowledges in-memory admission.
+func (e *Emitter) ObserveCompatibilityDispatch(transport event_outbox.Transport, outcome string) {
+	if e != nil && e.observer != nil {
+		e.observer.ObserveCompatibilityDispatch(transport, outcome)
+	}
 }
 
 func (e *Emitter) Plan(input Event) []event_outbox.Delivery {
