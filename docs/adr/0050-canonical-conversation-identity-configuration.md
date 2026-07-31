@@ -1,6 +1,6 @@
 # ADR 0050: Canonical Conversation identity configuration
 
-- Status: Accepted
+- Status: Superseded in part by ADR 0051
 - Date: 2026-07-31
 
 ## Context

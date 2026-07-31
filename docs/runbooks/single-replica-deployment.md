@@ -80,14 +80,9 @@ has an authoritative unread snapshot. Inspect required
 `unreadAuthoritative` on each response when the stricter capability is absent.
 Do not derive either capability from the version string. The deprecated Chat
 reads, projected-message detail, and capability alias were physically removed
-by ADR 0039; provider Chat commands and message receipts remain. The deprecated
-`WA_CANONICAL_CHAT_IDENTITY_ENABLED` environment alias is accepted only for
-deployment compatibility; migrate it to the canonical Conversation name.
-Deploy the compatible binary before renaming the setting. Keep both names at
-the same value during the image rollback window, then remove the deprecated
-name. The process fails startup when both names are present with different
-values. A rollback to an older image must restore the deprecated name because
-that binary does not understand the canonical setting.
+by ADR 0039; provider Chat commands and message receipts remain. Only
+`WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED` controls canonical Conversation
+identity. The retired Chat-named environment variable is ignored; see ADR 0051.
 
 Verify the canonical API and its bounded metrics with a durable Prometheus
 scraper. Treat an absent or unhealthy scrape target as missing evidence:

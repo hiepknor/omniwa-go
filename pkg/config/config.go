@@ -351,20 +351,7 @@ func Load() *Config {
 	if err != nil || contactIdentityBackfillMaxBatches > 1000 {
 		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES)
 	}
-	canonicalConversationIdentityEnabled, deprecatedCanonicalChatFlagUsed, err := resolveBooleanAlias(
-		config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED,
-		config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED,
-	)
-	if err != nil {
-		logger.LogFatal("[CONFIG] %v", err)
-	}
-	if deprecatedCanonicalChatFlagUsed {
-		logger.LogWarn(
-			"[CONFIG] %s is deprecated; use %s instead",
-			config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED,
-			config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED,
-		)
-	}
+	canonicalConversationIdentityEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED)), "true")
 	conversationAppStateCommandsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CONVERSATION_APP_STATE_COMMANDS_ENABLED)), "true")
 	conversationHistorySyncEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CONVERSATION_HISTORY_SYNC_ENABLED)), "true")
 	conversationBackfillBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.CONVERSATION_BACKFILL_BATCH), "100"))
@@ -991,32 +978,6 @@ func parsePositiveInt(value string) (int, error) {
 		return 0, fmt.Errorf("value must be a positive integer")
 	}
 	return parsed, nil
-}
-
-func resolveBooleanAlias(primaryName, deprecatedName string) (value, deprecatedUsed bool, err error) {
-	primaryRaw, primarySet := os.LookupEnv(primaryName)
-	deprecatedRaw, deprecatedSet := os.LookupEnv(deprecatedName)
-	primaryRaw = strings.TrimSpace(primaryRaw)
-	deprecatedRaw = strings.TrimSpace(deprecatedRaw)
-	primarySet = primarySet && primaryRaw != ""
-	deprecatedSet = deprecatedSet && deprecatedRaw != ""
-
-	primaryValue := strings.EqualFold(primaryRaw, "true")
-	deprecatedValue := strings.EqualFold(deprecatedRaw, "true")
-	if primarySet && deprecatedSet && primaryValue != deprecatedValue {
-		return false, true, fmt.Errorf(
-			"%s and deprecated %s must not disagree",
-			primaryName,
-			deprecatedName,
-		)
-	}
-	if primarySet {
-		return primaryValue, deprecatedSet, nil
-	}
-	if deprecatedSet {
-		return deprecatedValue, true, nil
-	}
-	return false, false, nil
 }
 
 func splitNonEmptyCSV(value string) []string {
