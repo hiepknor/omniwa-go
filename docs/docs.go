@@ -8807,6 +8807,7 @@ const docTemplate = `{
                         "chats_projection",
                         "canonical_contact_identity",
                         "canonical_conversation_identity",
+                        "authoritative_conversation_unread",
                         "conversation_app_state_commands",
                         "conversation_history_sync",
                         "group_lists",
@@ -11836,6 +11837,7 @@ const docTemplate = `{
             "required": [
                 "conversationId",
                 "type",
+                "unreadAuthoritative",
                 "unreadCount"
             ],
             "properties": {
@@ -11910,6 +11912,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ConversationType"
                         }
                     ]
+                },
+                "unreadAuthoritative": {
+                    "description": "UnreadAuthoritative is false when unreadCount is only the best-known projected count because no complete provider snapshot is available.",
+                    "type": "boolean"
                 },
                 "unreadCount": {
                     "type": "integer"

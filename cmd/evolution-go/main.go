@@ -350,7 +350,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		contactIdentityResolver = projection_repository.NewContactLIDMappingResolver(mappingDB)
 	}
 	conversationBackfillRepository := projection_repository.NewConversationBackfillRepository(db)
-	canonicalChatReadiness := projection_service.NewCanonicalChatReadiness(contactIdentityBackfillRepository, conversationBackfillRepository)
+	canonicalConversationReadiness := projection_service.NewCanonicalConversationReadiness(contactIdentityBackfillRepository, conversationBackfillRepository)
 	groupCampaignsEnabled := config.GroupListsEnabled && config.CampaignGroupTargetsEnabled
 	if config.CampaignImageContentEnabled && !groupCampaignsEnabled {
 		logger.LogFatal("component=campaign_media action=initialize result=failed error=group_campaign_targets_required")
@@ -409,21 +409,26 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
 			projection_service.CapabilityCanonicalConversationIdentity,
 			[]string{"contacts", "chats", "messages"},
-			canonicalChatReadiness.Ready,
+			canonicalConversationReadiness.Ready,
+		))
+		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
+			projection_service.CapabilityAuthoritativeConversationUnread,
+			[]string{"contacts", "chats", "messages"},
+			canonicalConversationReadiness.UnreadReady,
 		))
 	}
 	if config.ConversationAppStateCommandsEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
 			projection_service.CapabilityConversationAppStateCommands,
 			[]string{"contacts", "chats", "messages"},
-			canonicalChatReadiness.Ready,
+			canonicalConversationReadiness.Ready,
 		))
 	}
 	if config.ConversationHistorySyncEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
 			projection_service.CapabilityConversationHistorySync,
 			[]string{"contacts", "chats", "messages"},
-			canonicalChatReadiness.Ready,
+			canonicalConversationReadiness.Ready,
 		))
 	}
 	projectionStateService := projection_service.NewStateServiceWithHealth(

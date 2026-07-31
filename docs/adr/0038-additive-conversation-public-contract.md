@@ -1,5 +1,8 @@
 # ADR 0038: Additive canonical Conversation public contract
 
+> The combined identity/unread readiness predicate in this ADR is superseded
+> by ADR 0049. The public Conversation terminology and contract remain active.
+
 - Status: Accepted
 - Date: 2026-07-29
 

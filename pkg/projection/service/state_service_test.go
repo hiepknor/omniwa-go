@@ -194,7 +194,7 @@ func TestConditionalCapabilityRequiresAllResourcesAndDurableReadiness(t *testing
 	}
 }
 
-func TestCanonicalConversationCapabilityFollowsAuthoritativeReadiness(t *testing.T) {
+func TestCanonicalConversationCapabilityFollowsIdentityReadiness(t *testing.T) {
 	ready := false
 	service := NewStateService(newMemoryRepository(), WithConditionalCapability(
 		CapabilityCanonicalConversationIdentity, []string{"contacts", "chats", "messages"},
@@ -224,6 +224,34 @@ func TestCanonicalConversationCapabilityFollowsAuthoritativeReadiness(t *testing
 	capabilities, err = service.Capabilities("instance-a")
 	if err != nil || containsCapability(capabilities, CapabilityCanonicalConversationIdentity) {
 		t.Fatalf("canonical capability survived failed readiness: %v, %v", capabilities, err)
+	}
+}
+
+func TestCanonicalConversationAndUnreadCapabilitiesRollOutIndependently(t *testing.T) {
+	identityReady, unreadReady := true, false
+	resources := []string{"contacts", "chats", "messages"}
+	service := NewStateService(newMemoryRepository(),
+		WithConditionalCapability(CapabilityCanonicalConversationIdentity, resources, func(string) (bool, error) { return identityReady, nil }),
+		WithConditionalCapability(CapabilityAuthoritativeConversationUnread, resources, func(string) (bool, error) { return identityReady && unreadReady, nil }),
+	)
+	for resource, version := range map[string]int64{"contacts": ContactsProjectionSchemaVersion, "chats": ChatsProjectionSchemaVersion, "messages": MessagesProjectionSchemaVersion} {
+		if err := service.MarkReady("instance-a", resource, version, time.Unix(100, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	capabilities, err := service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, CapabilityCanonicalConversationIdentity) || containsCapability(capabilities, CapabilityAuthoritativeConversationUnread) {
+		t.Fatalf("identity-only rollout = %v, %v", capabilities, err)
+	}
+	unreadReady = true
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || !containsCapability(capabilities, CapabilityCanonicalConversationIdentity) || !containsCapability(capabilities, CapabilityAuthoritativeConversationUnread) {
+		t.Fatalf("full unread rollout = %v, %v", capabilities, err)
+	}
+	identityReady = false
+	capabilities, err = service.Capabilities("instance-a")
+	if err != nil || containsCapability(capabilities, CapabilityCanonicalConversationIdentity) || containsCapability(capabilities, CapabilityAuthoritativeConversationUnread) {
+		t.Fatalf("identity rollback = %v, %v", capabilities, err)
 	}
 }
 

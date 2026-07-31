@@ -50,20 +50,6 @@ func TestCanonicalConversationAssociatesAuthoritativeAliasesConcurrently(t *test
 
 	phoneJID, lid := "15551235555@s.whatsapp.net", "900000005555@lid"
 	contactRepository := NewContactRepository(db)
-	contact, _, err := contactRepository.Apply(context.Background(), ContactPatch{
-		InstanceID: instances[0].Id,
-		Identities: []ContactIdentityRef{
-			{Kind: projection_model.ContactIdentityKindJID, Value: phoneJID},
-			{Kind: projection_model.ContactIdentityKindJID, Value: lid},
-			{Kind: projection_model.ContactIdentityKindPhoneJID, Value: phoneJID},
-			{Kind: projection_model.ContactIdentityKindLID, Value: lid},
-		},
-		Aspect: ContactAspectIdentity, OccurredAt: time.Unix(100, 0).UTC(), EventKey: "authoritative-pn-lid-map",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	chatRepository := NewChatMessageRepository(db)
 	start := make(chan struct{})
 	errorsChannel := make(chan error, 2)
@@ -88,6 +74,23 @@ func TestCanonicalConversationAssociatesAuthoritativeAliasesConcurrently(t *test
 		if applyErr != nil {
 			t.Fatal(applyErr)
 		}
+	}
+
+	// These chats model message-derived rows created while the provider Contacts
+	// store was empty. A later authoritative local PN/LID mapping must link and
+	// absorb them without a new Chat event.
+	contact, _, err := contactRepository.Apply(context.Background(), ContactPatch{
+		InstanceID: instances[0].Id,
+		Identities: []ContactIdentityRef{
+			{Kind: projection_model.ContactIdentityKindJID, Value: phoneJID},
+			{Kind: projection_model.ContactIdentityKindJID, Value: lid},
+			{Kind: projection_model.ContactIdentityKindPhoneJID, Value: phoneJID},
+			{Kind: projection_model.ContactIdentityKindLID, Value: lid},
+		},
+		Aspect: ContactAspectIdentity, OccurredAt: time.Unix(100, 0).UTC(), EventKey: "authoritative-pn-lid-map",
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	var chats []projection_model.Chat

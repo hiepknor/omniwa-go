@@ -26,22 +26,24 @@ const (
 // ConversationID is the entity identity; AddressingJID and Aliases are
 // provider-addressing metadata and must not be used as entity identifiers.
 type ProjectedConversation struct {
-	ConversationID       string           `json:"conversationId" binding:"required" format:"uuid"`
-	Type                 ConversationType `json:"type" binding:"required" enums:"direct,group,newsletter,broadcast,unknown"`
-	UnreadCount          int              `json:"unreadCount" binding:"required"`
-	AddressingJID        *string          `json:"addressingJid,omitempty"`
-	Aliases              []string         `json:"aliases,omitempty"`
-	ContactID            *string          `json:"contactId,omitempty" format:"uuid"`
-	DisplayName          *string          `json:"displayName,omitempty"`
-	DisplayNameSource    *string          `json:"displayNameSource,omitempty" enums:"full_name,business_name,push_name,first_name,username,provider_chat,group_subject,newsletter_name,broadcast_name"`
-	DisplayNameUpdatedAt *time.Time       `json:"displayNameUpdatedAt,omitempty"`
-	LastMessageID        *string          `json:"lastMessageId,omitempty"`
-	LastMessageAt        *time.Time       `json:"lastMessageAt,omitempty"`
-	LastActivityAt       *time.Time       `json:"lastActivityAt,omitempty"`
-	Archived             *bool            `json:"archived,omitempty"`
-	Pinned               *bool            `json:"pinned,omitempty"`
-	MutedUntil           *time.Time       `json:"mutedUntil,omitempty"`
-	DisappearingTimer    *uint32          `json:"disappearingTimer,omitempty"`
+	ConversationID string           `json:"conversationId" binding:"required" format:"uuid"`
+	Type           ConversationType `json:"type" binding:"required" enums:"direct,group,newsletter,broadcast,unknown"`
+	UnreadCount    int              `json:"unreadCount" binding:"required"`
+	// UnreadAuthoritative is false when unreadCount is only the best-known projected count because no complete provider snapshot is available.
+	UnreadAuthoritative  bool       `json:"unreadAuthoritative" binding:"required"`
+	AddressingJID        *string    `json:"addressingJid,omitempty"`
+	Aliases              []string   `json:"aliases,omitempty"`
+	ContactID            *string    `json:"contactId,omitempty" format:"uuid"`
+	DisplayName          *string    `json:"displayName,omitempty"`
+	DisplayNameSource    *string    `json:"displayNameSource,omitempty" enums:"full_name,business_name,push_name,first_name,username,provider_chat,group_subject,newsletter_name,broadcast_name"`
+	DisplayNameUpdatedAt *time.Time `json:"displayNameUpdatedAt,omitempty"`
+	LastMessageID        *string    `json:"lastMessageId,omitempty"`
+	LastMessageAt        *time.Time `json:"lastMessageAt,omitempty"`
+	LastActivityAt       *time.Time `json:"lastActivityAt,omitempty"`
+	Archived             *bool      `json:"archived,omitempty"`
+	Pinned               *bool      `json:"pinned,omitempty"`
+	MutedUntil           *time.Time `json:"mutedUntil,omitempty"`
+	DisappearingTimer    *uint32    `json:"disappearingTimer,omitempty"`
 }
 
 // ProjectedConversationMessage is a message in a canonical conversation.
@@ -235,7 +237,8 @@ func projectedCanonicalConversationView(record *projection_repository.Conversati
 	}
 	return ProjectedConversation{
 		ConversationID: conversation.ConversationID, Type: conversationType(conversation.Type), UnreadCount: conversation.UnreadCount,
-		AddressingJID: conversation.AddressingJID, Aliases: aliases, ContactID: conversation.ContactID,
+		UnreadAuthoritative: conversation.UnreadAuthoritative,
+		AddressingJID:       conversation.AddressingJID, Aliases: aliases, ContactID: conversation.ContactID,
 		DisplayName: conversation.DisplayName, DisplayNameSource: conversation.DisplayNameSource,
 		DisplayNameUpdatedAt: conversation.DisplayNameUpdatedAt, LastMessageID: conversation.LastMessageID,
 		LastMessageAt: conversation.LastMessageAt, LastActivityAt: conversation.LastActivityAt,

@@ -1,6 +1,6 @@
 # ADR 0037: Canonical conversation serving and authoritative unread
 
-- Status: Accepted
+- Status: Superseded in part by ADR 0049
 - Date: 2026-07-29
 
 ## Context

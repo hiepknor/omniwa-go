@@ -172,6 +172,26 @@ func TestContactIdentityReconcilerRefreshesCompletedPassForLateMapping(t *testin
 	}
 }
 
+func TestContactIdentityReconcilerMaterializesMessageDerivedDirectChatMapping(t *testing.T) {
+	writer := &contactIdentityWriterFake{}
+	reconciler := NewContactIdentityReconciler(&contactIdentityBackfillRepositoryFake{}, writer)
+	resolver := &contactLIDResolverFake{
+		phone: types.NewJID("15550001", types.DefaultUserServer), lid: types.NewJID("9000001", types.HiddenUserServer),
+	}
+	if err := reconciler.ReconcileChatIdentity(context.Background(), "instance-a", resolver.phone.String(), resolver); err != nil {
+		t.Fatal(err)
+	}
+	if len(writer.patches) != 1 || len(writer.patches[0].Identities) != 4 || writer.patches[0].Aspect != projection_repository.ContactAspectIdentity {
+		t.Fatalf("direct chat identity patch = %#v", writer.patches)
+	}
+	if err := reconciler.ReconcileChatIdentity(context.Background(), "instance-a", "12345@g.us", resolver); err != nil {
+		t.Fatal(err)
+	}
+	if len(writer.patches) != 1 {
+		t.Fatalf("group chat unexpectedly materialized a contact: %#v", writer.patches)
+	}
+}
+
 func eventsPushName(jid types.JID) events.PushName {
 	return events.PushName{JID: jid, NewPushName: "Ada"}
 }

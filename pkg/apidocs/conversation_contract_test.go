@@ -114,9 +114,9 @@ func TestGeneratedOpenAPIContainsCanonicalConversationContract(t *testing.T) {
 
 	definitions := object(t, document, "definitions")
 	conversation := definitionWithSuffix(t, definitions, ".ProjectedConversation")
-	assertRequired(t, conversation, "conversationId", "type", "unreadCount")
+	assertRequired(t, conversation, "conversationId", "type", "unreadCount", "unreadAuthoritative")
 	conversationProperties := object(t, conversation, "properties")
-	for _, field := range []string{"conversationId", "type", "unreadCount", "aliases", "addressingJid"} {
+	for _, field := range []string{"conversationId", "type", "unreadCount", "unreadAuthoritative", "aliases", "addressingJid"} {
 		if _, ok := conversationProperties[field]; !ok {
 			t.Fatalf("ProjectedConversation missing %q", field)
 		}
@@ -160,6 +160,9 @@ func TestGeneratedOpenAPIContainsCanonicalConversationContract(t *testing.T) {
 	}
 	if !seen["canonical_conversation_identity"] {
 		t.Fatal("capability example missing canonical_conversation_identity")
+	}
+	if !seen["authoritative_conversation_unread"] {
+		t.Fatal("capability example missing authoritative_conversation_unread")
 	}
 	if seen["canonical_chat_identity"] {
 		t.Fatal("retired canonical_chat_identity remains in capability example")

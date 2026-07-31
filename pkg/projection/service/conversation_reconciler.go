@@ -36,6 +36,8 @@ type ConversationReconciler struct {
 	now func() time.Time
 }
 
+type ConversationIdentityEnricher func(context.Context, string, string) error
+
 type contactBackfillStateReader interface {
 	GetState(context.Context, string) (*projection_model.ContactIdentityBackfill, error)
 }
@@ -45,18 +47,18 @@ type conversationBackfillStateReader interface {
 	Validate(context.Context, string) (projection_repository.ConversationValidation, error)
 }
 
-type CanonicalChatReadiness struct {
+type CanonicalConversationReadiness struct {
 	contacts      contactBackfillStateReader
 	conversations conversationBackfillStateReader
 }
 
-func NewCanonicalChatReadiness(contacts contactBackfillStateReader, conversations conversationBackfillStateReader) *CanonicalChatReadiness {
-	return &CanonicalChatReadiness{contacts: contacts, conversations: conversations}
+func NewCanonicalConversationReadiness(contacts contactBackfillStateReader, conversations conversationBackfillStateReader) *CanonicalConversationReadiness {
+	return &CanonicalConversationReadiness{contacts: contacts, conversations: conversations}
 }
 
-func (r *CanonicalChatReadiness) Ready(instanceID string) (bool, error) {
+func (r *CanonicalConversationReadiness) Ready(instanceID string) (bool, error) {
 	if r == nil || r.contacts == nil || r.conversations == nil || instanceID == "" {
-		return false, errors.New("canonical chat readiness dependencies and instance are required")
+		return false, errors.New("canonical conversation readiness dependencies and instance are required")
 	}
 	contactState, err := r.contacts.GetState(context.Background(), instanceID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -75,7 +77,18 @@ func (r *CanonicalChatReadiness) Ready(instanceID string) (bool, error) {
 		return false, err
 	}
 	validation, err := r.conversations.Validate(context.Background(), instanceID)
-	return err == nil && validation.Ready(), err
+	return err == nil && validation.AssociationsValid(), err
+}
+
+// UnreadReady is stricter than canonical identity readiness: it indicates that
+// every active conversation has an authoritative provider unread snapshot.
+func (r *CanonicalConversationReadiness) UnreadReady(instanceID string) (bool, error) {
+	ready, err := r.Ready(instanceID)
+	if err != nil || !ready {
+		return ready, err
+	}
+	validation, err := r.conversations.Validate(context.Background(), instanceID)
+	return err == nil && validation.UnreadNonAuthoritative == 0, err
 }
 
 func NewConversationReconciler(backfill projection_repository.ConversationBackfillRepository) *ConversationReconciler {
@@ -104,6 +117,24 @@ func (r *ConversationReconciler) RunBounded(
 	batchSize int,
 	maxBatches int,
 ) (ConversationBackfillResult, error) {
+	return r.runBounded(ctx, instanceID, batchSize, maxBatches, nil)
+}
+
+// RefreshBounded reopens a completed pass so newly learned provider identity
+// mappings are reflected in canonical conversation associations. The optional
+// enricher runs before each chat association and remains bounded by the same
+// checkpoint and batch limits.
+func (r *ConversationReconciler) RefreshBounded(ctx context.Context, instanceID string, batchSize, maxBatches int, enrich ConversationIdentityEnricher) (ConversationBackfillResult, error) {
+	if r == nil || r.backfill == nil || r.now == nil || ctx == nil || instanceID == "" {
+		return ConversationBackfillResult{}, errors.New("canonical conversation refresh dependencies are required")
+	}
+	if _, err := r.backfill.RestartCompleted(ctx, instanceID, ConversationBackfillVersion, r.now().UTC()); err != nil {
+		return ConversationBackfillResult{}, fmt.Errorf("restart canonical conversation verification: %w", err)
+	}
+	return r.runBounded(ctx, instanceID, batchSize, maxBatches, enrich)
+}
+
+func (r *ConversationReconciler) runBounded(ctx context.Context, instanceID string, batchSize, maxBatches int, enrich ConversationIdentityEnricher) (ConversationBackfillResult, error) {
 	if r == nil || r.backfill == nil || r.now == nil || ctx == nil || instanceID == "" || batchSize < 1 || maxBatches < 1 {
 		return ConversationBackfillResult{}, errors.New("canonical conversation reconciliation dependencies and bounds are required")
 	}
@@ -131,6 +162,12 @@ func (r *ConversationReconciler) RunBounded(
 		var cursor *string
 		for _, candidate := range batch.Items {
 			counts.Scanned++
+			if enrich != nil {
+				if enrichErr := enrich(ctx, instanceID, candidate.ChatID); enrichErr != nil {
+					_ = r.backfill.FailBatch(ctx, instanceID, ConversationBackfillVersion, owner, "identity_enrichment_failed", r.now().UTC())
+					return result, fmt.Errorf("enrich canonical conversation chat %q: %w", candidate.ChatID, enrichErr)
+				}
+			}
 			association, associateErr := r.backfill.AssociateChat(ctx, instanceID, candidate.ChatID, r.now().UTC())
 			if associateErr != nil {
 				_ = r.backfill.FailBatch(ctx, instanceID, ConversationBackfillVersion, owner, "association_write_failed", r.now().UTC())

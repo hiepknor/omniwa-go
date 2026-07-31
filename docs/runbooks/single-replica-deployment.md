@@ -73,9 +73,13 @@ message-level unread snapshot.
 Do not accept process liveness as readiness. Verify migrations 34 through 38,
 the Contact and conversation backfill checkpoints, Chats/Contacts/Messages
 projection states, and an instance-targeted `/server/capabilities` response.
-New binaries advertise only `canonical_conversation_identity` from this
-readiness decision. Do not derive it from the version string. The deprecated
-Chat reads, projected-message detail, rollout flag, and capability alias were
+New binaries advertise `canonical_conversation_identity` when the canonical
+association graph is structurally ready. They advertise the stricter
+`authoritative_conversation_unread` only when every active Conversation also
+has an authoritative unread snapshot. Inspect required
+`unreadAuthoritative` on each response when the stricter capability is absent.
+Do not derive either capability from the version string. The deprecated Chat
+reads, projected-message detail, rollout flag, and capability alias were
 physically removed by ADR 0039; provider Chat commands and message receipts
 remain.
 

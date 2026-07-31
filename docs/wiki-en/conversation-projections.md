@@ -27,14 +27,15 @@ contact. `GET /user/contact/{contactId}` accepts a current UUID, an absorbed
 UUID, or a contact JID alias and always returns the canonical ID.
 
 The bounded local-mapping pass is resumable and is reopened on every successful
-connection. A HistorySync carrying PN/LID mappings also triggers a serialized
-refresh after its projection events are durably ingested. This closes the race
-where the connection pass completes before Whatsmeow persists a newly learned
-mapping. Resolution reads the parameterized local SQL mapping table directly
-instead of the live client's in-memory cache, so a prior negative cache entry
-cannot mask persisted authority. During an incomplete or failed refresh,
-canonical identity readiness fails closed rather than presenting partial
-reconciliation as ready.
+connection. The subsequent Conversation pass also scans direct projected Chats
+and materializes authoritative local PN/LID pairs before association. This
+covers message-derived chats even when the provider Contacts store is empty. A
+HistorySync carrying PN/LID mappings also triggers a serialized refresh after
+its projection events are durably ingested. Resolution reads the parameterized
+local SQL mapping table directly instead of the live client's in-memory cache,
+so a prior negative cache entry cannot mask persisted authority. During an
+incomplete or failed refresh, canonical identity readiness fails closed rather
+than presenting partial reconciliation as ready.
 
 Search applies Unicode NFKC normalization, collapses whitespace, and compares
 case-insensitively across canonical/absorbed IDs, aliases, username, and names.
@@ -117,14 +118,24 @@ and bounded work per connection cycle are controlled by
 
 Structural completion validates every active Chat alias and retained Message,
 redirect flattening, active-conversation ownership, and direct Contact
-agreement. `canonical_conversation_identity` is advertised per instance only when
-Contacts, Chats, and Messages are ready at their current schemas, both Contact
-and conversation checkpoints are complete, structural validation succeeds,
-and every active canonical conversation has authoritative unread state.
+agreement. `canonical_conversation_identity` is advertised per instance only
+when Contacts, Chats, and Messages are ready at their current schemas, both
+Contact and Conversation checkpoints are complete, and structural validation
+succeeds. It does not claim that every unread count is authoritative.
+
+Every `ProjectedConversation` includes required `unreadCount` and
+`unreadAuthoritative`. When the latter is false, the integer is the best-known
+projected count and must not be presented as provider-authoritative. The
+separate `authoritative_conversation_unread` capability is advertised only when
+the structural identity conditions also hold and every active Conversation has
+an authoritative provider unread snapshot.
 
 Do not add or maximize unread counts from PN/LID alias rows: either operation
-can double-count or discard unread messages. Capability absence is the
-machine-readable readiness signal; clients must not treat it as an empty result.
+can double-count or discard unread messages. Absence of
+`canonical_conversation_identity` is the machine-readable identity-readiness
+signal and must not be treated as an empty result. Absence of
+`authoritative_conversation_unread` means consumers must inspect each
+`unreadAuthoritative` value.
 
 Rollback disables `WA_CANONICAL_CHAT_IDENTITY_ENABLED` and restarts the binary.
 This removes the capability without deleting the additive schema. Restoring the

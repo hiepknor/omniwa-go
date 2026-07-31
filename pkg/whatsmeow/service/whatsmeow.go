@@ -309,8 +309,14 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 			}
 		}
 		if mycli.chatReconciler != nil {
-			result, reconcileErr := mycli.chatReconciler.RunBounded(
-				ctx, mycli.userID, mycli.config.ConversationBackfillBatch, mycli.config.ConversationBackfillMaxBatches,
+			var enrich projection_service.ConversationIdentityEnricher
+			if mycli.identityReconciler != nil && resolver != nil {
+				enrich = func(ctx context.Context, instanceID, chatID string) error {
+					return mycli.identityReconciler.ReconcileChatIdentity(ctx, instanceID, chatID, resolver)
+				}
+			}
+			result, reconcileErr := mycli.chatReconciler.RefreshBounded(
+				ctx, mycli.userID, mycli.config.ConversationBackfillBatch, mycli.config.ConversationBackfillMaxBatches, enrich,
 			)
 			if reconcileErr != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=backfill instance_id=%s resource=canonical_conversation result=failed error_code=association_failed", mycli.userID)
@@ -498,6 +504,22 @@ func (mycli *MyClient) triggerHistoryProjectionSync(event *events.HistorySync) {
 				"component=projection action=refresh instance_id=%s resource=contact_identity result=success batches=%d scanned=%d mapped=%d merged=%d unchanged=%d complete=%t lease_held=%t",
 				mycli.userID, result.Batches, result.Scanned, result.Mapped, result.Merged, result.Unchanged, result.Complete, result.LeaseHeld,
 			)
+			if mycli.chatReconciler != nil {
+				enrich := func(ctx context.Context, instanceID, chatID string) error {
+					return mycli.identityReconciler.ReconcileChatIdentity(ctx, instanceID, chatID, mycli.identityResolver)
+				}
+				conversationResult, conversationErr := mycli.chatReconciler.RefreshBounded(
+					refreshCtx, mycli.userID, mycli.config.ConversationBackfillBatch, mycli.config.ConversationBackfillMaxBatches, enrich,
+				)
+				if conversationErr != nil {
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=refresh instance_id=%s resource=canonical_conversation result=failed error_code=late_mapping_association_failed", mycli.userID)
+					return
+				}
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo(
+					"component=projection action=refresh instance_id=%s resource=canonical_conversation result=success batches=%d scanned=%d associated=%d absorbed=%d messages=%d conflicts=%d complete=%t lease_held=%t",
+					mycli.userID, conversationResult.Batches, conversationResult.Scanned, conversationResult.Associated, conversationResult.Absorbed, conversationResult.Messages, conversationResult.Conflicts, conversationResult.Complete, conversationResult.LeaseHeld,
+				)
+			}
 		}
 	}()
 }

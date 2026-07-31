@@ -152,6 +152,39 @@ func (r *ContactIdentityReconciler) RefreshBounded(
 	return r.RunBounded(ctx, instanceID, resolver, batchSize, maxBatches)
 }
 
+// ReconcileChatIdentity materializes an authoritative local PN/LID mapping for
+// a direct provider chat. This covers message-derived chats when the provider
+// Contacts store has no corresponding row. Group-like JIDs are intentionally
+// ignored and no provider network request is made.
+func (r *ContactIdentityReconciler) ReconcileChatIdentity(ctx context.Context, instanceID, chatID string, resolver ContactLIDResolver) error {
+	if r == nil || r.contacts == nil || ctx == nil || instanceID == "" || chatID == "" || resolver == nil {
+		return errors.New("chat identity reconciliation dependencies are required")
+	}
+	jid, err := types.ParseJID(chatID)
+	if err != nil || jid.IsEmpty() {
+		return errors.New("provider chat contains an invalid JID")
+	}
+	jid = jid.ToNonAD()
+	if jid.Server != types.DefaultUserServer && jid.Server != types.HiddenUserServer {
+		return nil
+	}
+	identities, mapped, err := resolveContactLIDAliases(ctx, resolver, jid.String(), nil, nil)
+	if err != nil || !mapped {
+		return err
+	}
+	stored, _, err := r.contacts.Apply(ctx, projection_repository.ContactPatch{
+		InstanceID: instanceID, Identities: identities, Aspect: projection_repository.ContactAspectIdentity,
+		OccurredAt: time.Unix(0, 0).UTC(), EventKey: contactIdentityMappingEventKey(identities),
+	})
+	if err != nil {
+		return fmt.Errorf("apply direct chat identity mapping: %w", err)
+	}
+	if stored == nil {
+		return errors.New("apply direct chat identity mapping returned no contact")
+	}
+	return nil
+}
+
 // EnrichContactEventWithLIDMapping adds authoritative aliases from the local
 // whatsmeow mapping store. It never performs a provider network request.
 func EnrichContactEventWithLIDMapping(ctx context.Context, event *projection_model.Event, resolver ContactLIDResolver) (*projection_model.Event, error) {
