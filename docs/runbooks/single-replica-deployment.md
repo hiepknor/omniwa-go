@@ -55,7 +55,7 @@ Never bypass the lock to restore a multi-replica topology.
 ## Canonical conversation rollout
 
 Canonical conversation serving is a staged, per-instance rollout. Apply
-migration 38 before enabling `WA_CANONICAL_CHAT_IDENTITY_ENABLED`. Keep
+migration 38 before enabling `WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED`. Keep
 `WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED=true`, use bounded
 `CONVERSATION_BACKFILL_BATCH` and `CONVERSATION_BACKFILL_MAX_BATCHES`, and obtain
 a valid RECENT or FULL HistorySync after deploying Messages schema version 3.
@@ -79,9 +79,15 @@ association graph is structurally ready. They advertise the stricter
 has an authoritative unread snapshot. Inspect required
 `unreadAuthoritative` on each response when the stricter capability is absent.
 Do not derive either capability from the version string. The deprecated Chat
-reads, projected-message detail, rollout flag, and capability alias were
-physically removed by ADR 0039; provider Chat commands and message receipts
-remain.
+reads, projected-message detail, and capability alias were physically removed
+by ADR 0039; provider Chat commands and message receipts remain. The deprecated
+`WA_CANONICAL_CHAT_IDENTITY_ENABLED` environment alias is accepted only for
+deployment compatibility; migrate it to the canonical Conversation name.
+Deploy the compatible binary before renaming the setting. Keep both names at
+the same value during the image rollback window, then remove the deprecated
+name. The process fails startup when both names are present with different
+values. A rollback to an older image must restore the deprecated name because
+that binary does not understand the canonical setting.
 
 Verify the canonical API and its bounded metrics with a durable Prometheus
 scraper. Treat an absent or unhealthy scrape target as missing evidence:

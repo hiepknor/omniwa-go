@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/base64"
 	"math"
+	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -82,6 +84,8 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED, "")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH, "")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES, "")
+	t.Setenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED, "")
+	t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "")
 
 	config := Load()
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
@@ -164,8 +168,8 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.ContactIdentityReconciliationEnabled || config.ContactIdentityBackfillBatch != 100 || config.ContactIdentityBackfillMaxBatches != 10 {
 		t.Fatalf("contact identity reconciliation defaults are invalid")
 	}
-	if config.CanonicalChatIdentityEnabled || config.ConversationBackfillBatch != 100 || config.ConversationBackfillMaxBatches != 10 {
-		t.Fatalf("canonical chat identity defaults are invalid")
+	if config.CanonicalConversationIdentityEnabled || config.ConversationBackfillBatch != 100 || config.ConversationBackfillMaxBatches != 10 {
+		t.Fatalf("canonical Conversation identity defaults are invalid")
 	}
 	if config.ConversationAppStateCommandsEnabled || config.ConversationHistorySyncEnabled {
 		t.Fatal("expected canonical Conversation commands to be disabled by default")
@@ -243,7 +247,8 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED, "true")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH, "25")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES, "4")
-	t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "true")
+	t.Setenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED, "true")
+	t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "")
 	t.Setenv(config_env.WA_CONVERSATION_APP_STATE_COMMANDS_ENABLED, "true")
 	t.Setenv(config_env.WA_CONVERSATION_HISTORY_SYNC_ENABLED, "true")
 	t.Setenv(config_env.CONVERSATION_BACKFILL_BATCH, "20")
@@ -321,11 +326,103 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	if !config.ContactIdentityReconciliationEnabled || config.ContactIdentityBackfillBatch != 25 || config.ContactIdentityBackfillMaxBatches != 4 {
 		t.Fatalf("contact identity reconciliation overrides are invalid")
 	}
-	if !config.CanonicalChatIdentityEnabled || config.ConversationBackfillBatch != 20 || config.ConversationBackfillMaxBatches != 3 {
-		t.Fatalf("canonical chat identity overrides are invalid")
+	if !config.CanonicalConversationIdentityEnabled || config.ConversationBackfillBatch != 20 || config.ConversationBackfillMaxBatches != 3 {
+		t.Fatalf("canonical Conversation identity overrides are invalid")
 	}
 	if !config.ConversationAppStateCommandsEnabled || !config.ConversationHistorySyncEnabled {
 		t.Fatal("expected canonical Conversation command overrides to be enabled")
+	}
+}
+
+func TestResolveCanonicalConversationIdentityFlagAlias(t *testing.T) {
+	t.Run("new flag", func(t *testing.T) {
+		t.Setenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED, "true")
+		t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "")
+		value, deprecatedUsed, err := resolveBooleanAlias(
+			config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED,
+			config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED,
+		)
+		if err != nil || !value || deprecatedUsed {
+			t.Fatalf("new flag resolved to value=%t deprecated=%t err=%v", value, deprecatedUsed, err)
+		}
+	})
+
+	t.Run("deprecated alias", func(t *testing.T) {
+		t.Setenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED, "")
+		t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "true")
+		value, deprecatedUsed, err := resolveBooleanAlias(
+			config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED,
+			config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED,
+		)
+		if err != nil || !value || !deprecatedUsed {
+			t.Fatalf("deprecated alias resolved to value=%t deprecated=%t err=%v", value, deprecatedUsed, err)
+		}
+	})
+
+	t.Run("matching flags", func(t *testing.T) {
+		t.Setenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED, "true")
+		t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "TRUE")
+		value, deprecatedUsed, err := resolveBooleanAlias(
+			config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED,
+			config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED,
+		)
+		if err != nil || !value || !deprecatedUsed {
+			t.Fatalf("matching flags resolved to value=%t deprecated=%t err=%v", value, deprecatedUsed, err)
+		}
+	})
+
+	t.Run("conflicting flags", func(t *testing.T) {
+		t.Setenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED, "true")
+		t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "false")
+		_, deprecatedUsed, err := resolveBooleanAlias(
+			config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED,
+			config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED,
+		)
+		if err == nil || !deprecatedUsed {
+			t.Fatalf("conflicting flags resolved with deprecated=%t err=%v", deprecatedUsed, err)
+		}
+	})
+}
+
+func TestLoadAcceptsDeprecatedCanonicalChatIdentityFlag(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED, "true")
+	t.Setenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED, "")
+	t.Setenv(config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED, "true")
+	t.Setenv(config_env.WA_CONVERSATION_APP_STATE_COMMANDS_ENABLED, "")
+	t.Setenv(config_env.WA_CONVERSATION_HISTORY_SYNC_ENABLED, "")
+
+	loaded := Load()
+	if !loaded.CanonicalConversationIdentityEnabled {
+		t.Fatal("deprecated canonical Chat identity alias did not enable canonical Conversation identity")
+	}
+}
+
+func TestLoadRejectsConflictingCanonicalConversationIdentityFlags(t *testing.T) {
+	if os.Getenv("GO_WANT_CONFIG_FLAG_CONFLICT_HELPER") == "1" {
+		Load()
+		t.Fatal("Load returned after conflicting canonical Conversation identity flags")
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestLoadRejectsConflictingCanonicalConversationIdentityFlags$")
+	cmd.Env = []string{
+		"GO_WANT_CONFIG_FLAG_CONFLICT_HELPER=1",
+		config_env.POSTGRES_USERS_DB + "=postgres://user:password@localhost:5432/test",
+		config_env.DATABASE_SAVE_MESSAGES + "=false",
+		config_env.GLOBAL_API_KEY + "=test-api-key",
+		config_env.AMQP_URL + "=",
+		config_env.MINIO_ENABLED + "=false",
+		config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED + "=true",
+		config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED + "=true",
+		config_env.WA_CANONICAL_CHAT_IDENTITY_ENABLED + "=false",
+	}
+	output, err := cmd.CombinedOutput()
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 1 {
+		t.Fatalf("conflicting flags exit error = %v, output=%s", err, output)
+	}
+	if !bytes.Contains(output, []byte("must not disagree")) {
+		t.Fatalf("conflicting flags output = %s", output)
 	}
 }
 

@@ -405,7 +405,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			},
 		))
 	}
-	if config.CanonicalChatIdentityEnabled {
+	if config.CanonicalConversationIdentityEnabled {
 		projectionStateOptions = append(projectionStateOptions, projection_service.WithConditionalCapability(
 			projection_service.CapabilityCanonicalConversationIdentity,
 			[]string{"contacts", "chats", "messages"},
@@ -481,12 +481,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 		return false, nil
 	}
-	if config.CanonicalChatIdentityEnabled {
+	if config.CanonicalConversationIdentityEnabled {
 		chatMessageReader.EnableCanonicalConversations(canonicalConversationServing)
 	}
 	historySyncer := projection_service.NewHistorySyncer(projectionEventService, projectionStateService)
 	historyReadinessProjector := projection_service.NewHistoryReadinessProjector(projectionStateService, projectionReadinessRepository)
-	if config.CanonicalChatIdentityEnabled {
+	if config.CanonicalConversationIdentityEnabled {
 		historyReadinessProjector.WithCanonicalUnread(chatMessageProjectionRepository)
 	}
 	durableEventRepository := projection_repository.NewDurableEventRepository(db)
@@ -512,7 +512,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		)
 	}
 	var conversationReconciler *projection_service.ConversationReconciler
-	if config.CanonicalChatIdentityEnabled {
+	if config.CanonicalConversationIdentityEnabled {
 		conversationReconciler = projection_service.NewConversationReconciler(conversationBackfillRepository).WithUnreadSnapshots(chatMessageProjectionRepository)
 	}
 	contactReader := projection_service.NewContactReader(contactProjectionRepository, projectionStateService)
@@ -882,7 +882,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	startBackground(backgroundWorkers, "campaign.delivery", campaignWorker.Run)
 	userService := user_service.NewUserService(runtimeRegistry, whatsmeowService, queryGuard, identityResolver, contactReader, remoteMediaFetcher, loggerWrapper)
 	messageServiceOptions := []message_service.MessageServiceOption{}
-	if config.CanonicalChatIdentityEnabled {
+	if config.CanonicalConversationIdentityEnabled {
 		messageServiceOptions = append(messageServiceOptions, message_service.WithProjectedUnread(chatMessageProjectionRepository, projectionStateService))
 	}
 	messageService := message_service.NewMessageService(runtimeRegistry, messageRepository, whatsmeowService, message_service.LegacyMediaSettings{
