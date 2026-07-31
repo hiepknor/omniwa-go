@@ -2127,7 +2127,8 @@ definitions:
   github_com_evolution-foundation_evolution-go_pkg_projection_service.OverviewProjectionCounts:
     properties:
       chats:
-        description: Chats is a deprecated compatibility alias for Conversations.
+        description: Chats is the deprecated provider Chat projection-row count retained
+          for compatibility; it can exceed Conversations.
         type: integer
       contacts:
         type: integer

@@ -50,7 +50,7 @@ type OverviewProjectionCounts struct {
 	Contacts int64 `json:"contacts"`
 	// Conversations counts canonical public Conversation entities.
 	Conversations int64 `json:"conversations"`
-	// Chats is a deprecated compatibility alias for Conversations.
+	// Chats is the deprecated provider Chat projection-row count retained for compatibility; it can exceed Conversations.
 	Chats    int64 `json:"chats"`
 	Messages int64 `json:"messages"`
 	Events   int64 `json:"events"`
@@ -87,7 +87,7 @@ func (s *OverviewService) Snapshot(ctx context.Context, instanceID string, windo
 		GeneratedAt: end, Window: OverviewWindow{Start: start, End: end, DurationSeconds: int64(window / time.Second)}, Scope: scope,
 		Instances: OverviewInstances{Total: counts.InstancesTotal, Connected: counts.InstancesConnected, Disconnected: counts.InstancesTotal - counts.InstancesConnected},
 		Projections: OverviewProjectionCounts{
-			Groups: counts.Groups, Contacts: counts.Contacts, Conversations: counts.Chats,
+			Groups: counts.Groups, Contacts: counts.Contacts, Conversations: counts.Conversations,
 			Chats: counts.Chats, Messages: counts.Messages, Events: counts.Events,
 		},
 		Messages: OverviewMessages{Total: counts.Messages, Incoming: counts.MessagesIncoming, Outgoing: counts.MessagesOutgoing},

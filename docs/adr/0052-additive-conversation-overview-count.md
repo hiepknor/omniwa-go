@@ -19,19 +19,20 @@ consumers.
 
 ## Decision
 
-Add `projections.conversations` to the overview response. Both
-`projections.conversations` and the deprecated compatibility alias
-`projections.chats` are populated from the same persisted canonical Conversation
-count in the service layer.
+Add `projections.conversations` to the overview response. It counts active rows
+in the canonical `projected_conversations` projection. The deprecated
+`projections.chats` compatibility field continues to count active provider Chat
+projection rows exactly as it did before this decision.
 
-The handler does not issue an additional query or recompute the value. The
-repository field and database implementation remain named `Chats` because they
-describe the historical provider projection and changing them provides no public
-contract benefit.
+The repository obtains both counts inside the existing repeatable-read, read-only
+snapshot transaction. The handler does not query or recompute either value.
+Provider aliases can make `chats` larger than `conversations`; absorbed or
+not-yet-canonical provider rows must not become public entity counts.
 
-No capability is required: the two fields are response-shape aliases, not
-different behaviors. Consumers should prefer `conversations` when present and may
-fall back to `chats` during mixed-version rollout.
+No capability is required: both fields are persisted overview counters, while
+their names and documented semantics identify the canonical entity count versus
+the retained provider-row count. Consumers should prefer `conversations` when
+present and may fall back to `chats` during mixed-version rollout.
 
 Existing bounded Conversation API telemetry remains authoritative for contract
 usage and latency. It uses only allowlisted contract, operation, and status-class
@@ -59,17 +60,22 @@ a separate impact analysis before any migration.
 ## Consequences
 
 - New clients can use canonical Conversation terminology.
-- Existing clients continue to receive the same `chats` value.
-- The response temporarily carries two equal counters.
-- The OpenAPI schema explicitly describes `chats` as deprecated compatibility.
-- There is no database migration, backfill, capability change, or extra query.
+- Existing clients continue to receive the same provider-row `chats` value.
+- The counters can differ when several provider Chat rows resolve to one
+  canonical Conversation or a provider row has not been canonicalized.
+- The OpenAPI schema explicitly describes `chats` as a deprecated provider-row
+  compatibility count that can exceed `conversations`.
+- There is no database migration, backfill, or capability change. The existing
+  repeatable-read snapshot adds one bounded count over the indexed canonical
+  projection table.
 
 ## Rollout and rollback
 
 Deploy the additive response and verify representative admin- and instance-scoped
-overview calls return equal `conversations` and `chats` values. Frontends then
-prefer `conversations` while retaining a `chats` fallback across the mixed-version
-window.
+overview calls return a `conversations` value equal to canonical list
+`meta.total` for the same scope. Frontends then prefer `conversations` while
+retaining a `chats` fallback only for older backend revisions during the
+mixed-version window.
 
 Rollback by redeploying the previous immutable image. Older clients remain safe
 because `chats` is unchanged. Clients must not require `conversations` until the

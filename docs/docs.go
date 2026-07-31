@@ -11791,7 +11791,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "chats": {
-                    "description": "Chats is a deprecated compatibility alias for Conversations.",
+                    "description": "Chats is the deprecated provider Chat projection-row count retained for compatibility; it can exceed Conversations.",
                     "type": "integer"
                 },
                 "contacts": {
