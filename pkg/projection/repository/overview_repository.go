@@ -17,6 +17,7 @@ type OverviewCounts struct {
 	Groups             int64
 	Contacts           int64
 	Chats              int64
+	Conversations      int64
 	Messages           int64
 	MessagesIncoming   int64
 	MessagesOutgoing   int64
@@ -49,6 +50,7 @@ func (r *overviewRepository) Snapshot(ctx context.Context, instanceID string, st
 			{&projection_model.Group{}, "instance_id", "tombstoned_at IS NULL", nil, &counts.Groups},
 			{&projection_model.Contact{}, "instance_id", "tombstoned_at IS NULL", nil, &counts.Contacts},
 			{&projection_model.Chat{}, "instance_id", "tombstoned_at IS NULL", nil, &counts.Chats},
+			{&projection_model.Conversation{}, "instance_id", "tombstoned_at IS NULL", nil, &counts.Conversations},
 			{&projection_model.ProjectedMessage{}, "instance_id", "deleted_at IS NULL AND provider_timestamp >= ? AND provider_timestamp < ?", []any{start.UTC(), end.UTC()}, &counts.Messages},
 			{&projection_model.ProjectedMessage{}, "instance_id", "deleted_at IS NULL AND provider_timestamp >= ? AND provider_timestamp < ? AND direction = ?", []any{start.UTC(), end.UTC(), projection_model.MessageDirectionIncoming}, &counts.MessagesIncoming},
 			{&projection_model.ProjectedMessage{}, "instance_id", "deleted_at IS NULL AND provider_timestamp >= ? AND provider_timestamp < ? AND direction = ?", []any{start.UTC(), end.UTC(), projection_model.MessageDirectionOutgoing}, &counts.MessagesOutgoing},

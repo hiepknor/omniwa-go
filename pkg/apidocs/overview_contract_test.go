@@ -30,7 +30,8 @@ func TestGeneratedOpenAPIContainsAdditiveConversationOverviewCount(t *testing.T)
 		t.Fatalf("conversations description does not identify the canonical entity count: %q", canonicalDescription)
 	}
 	legacyDescription, _ := object(t, properties, "chats")["description"].(string)
-	if !strings.Contains(strings.ToLower(legacyDescription), "deprecated") || !strings.Contains(legacyDescription, "Conversations") {
-		t.Fatalf("chats description does not identify the compatibility alias: %q", legacyDescription)
+	if !strings.Contains(strings.ToLower(legacyDescription), "deprecated") || !strings.Contains(legacyDescription, "provider Chat") ||
+		!strings.Contains(legacyDescription, "can exceed Conversations") {
+		t.Fatalf("chats description does not identify the provider-row compatibility count: %q", legacyDescription)
 	}
 }

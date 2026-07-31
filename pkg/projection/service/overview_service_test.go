@@ -24,7 +24,7 @@ func (s *overviewRepositoryStub) Snapshot(_ context.Context, instanceID string, 
 
 func TestOverviewServiceDefinesWindowScopeAndPersistedCounts(t *testing.T) {
 	repository := &overviewRepositoryStub{counts: &projection_repository.OverviewCounts{
-		InstancesTotal: 1, InstancesConnected: 1, Groups: 2, Contacts: 3, Chats: 4,
+		InstancesTotal: 1, InstancesConnected: 1, Groups: 2, Contacts: 3, Chats: 7, Conversations: 4,
 		Messages: 5, MessagesIncoming: 3, MessagesOutgoing: 2, Events: 6,
 	}}
 	service := NewOverviewService(repository)
@@ -37,7 +37,7 @@ func TestOverviewServiceDefinesWindowScopeAndPersistedCounts(t *testing.T) {
 		t.Fatalf("repository window = %q %v..%v", repository.instanceID, repository.start, repository.end)
 	}
 	if overview.Scope.Type != "instance" || overview.Scope.InstanceID != "instance-a" || overview.Window.DurationSeconds != 86400 ||
-		overview.Instances.Disconnected != 0 || overview.Projections.Conversations != 4 || overview.Projections.Chats != overview.Projections.Conversations ||
+		overview.Instances.Disconnected != 0 || overview.Projections.Conversations != 4 || overview.Projections.Chats != 7 ||
 		overview.Projections.Messages != 5 || overview.Messages.Incoming != 3 || overview.Messages.Outgoing != 2 || overview.Projections.Events != 6 {
 		t.Fatalf("overview = %#v", overview)
 	}
