@@ -14,11 +14,6 @@ WEBHOOK_ALLOW_PRIVATE=false
 WEBHOOK_TIMEOUT=10s
 WEBHOOK_MAX_REQUEST_BYTES=4194304
 WEBHOOK_MAX_RESPONSE_BYTES=65536
-WEBHOOK_WORKERS=4
-WEBHOOK_QUEUE_CAPACITY=256
-WEBHOOK_MAX_PENDING_PER_INSTANCE=32
-WEBHOOK_MAX_ATTEMPTS=3
-WEBHOOK_RETRY_BASE=1s
 ```
 
 Host entries do not contain a scheme, path, credentials, query, or port. Ports
@@ -36,17 +31,11 @@ with bounded exponential backoff. Other 4xx responses, unsafe targets,
 oversized responses, and cancellation are permanent failures. Response bodies
 and URL query strings are not written to logs.
 
-## Bounded delivery behavior
+## Durable delivery behavior
 
-Webhook work is admitted to an in-memory queue and processed by a fixed worker
-pool. `WEBHOOK_QUEUE_CAPACITY` bounds total outstanding work, including active
-requests and queued deliveries. `WEBHOOK_MAX_PENDING_PER_INSTANCE` prevents one
-instance from consuming the entire process budget. Queue saturation is returned
-to the internal caller and recorded with a safe structured error code. Accepted
-HTTP deliveries are processed only by the fixed worker pool, never by a new
-goroutine per delivery.
-
-The queue intentionally is not a durable delivery ledger. A process restart or
-shutdown can abandon accepted work, and OmniWA GO does not expose webhook
-delivery history. Consumers requiring guaranteed delivery must use a configured
-durable broker and implement their own acknowledgement and replay policy.
+Webhook routes are atomically recorded with durable event history and processed
+by the PostgreSQL outbox worker. Worker batch size, leases, attempt timeout, and
+bounded exponential retry are configured with `EXTERNAL_EVENT_OUTBOX_*`.
+Restarted workers reclaim expired leases. Every request carries a stable
+`X-Omniwa-Delivery-ID`; receivers should use it for idempotency because an
+ambiguous network acknowledgement can result in at-least-once delivery.

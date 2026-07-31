@@ -38,23 +38,13 @@ curl -s -H "apikey: $GLOBAL_API_KEY" \
 The expected commit, OCI revision label, and `data.revision` response must be
 identical before the deployment is accepted.
 
-### Development external-event rollout
+### Durable external events
 
-The development stack keeps both outbox controls default-off. Start the worker
-without changing event routing by setting only the serve flag:
-
-```bash
-export EXTERNAL_EVENT_OUTBOX_SERVE_ENABLED=true
-export EXTERNAL_EVENT_OUTBOX_EMIT_TRANSPORTS=
-docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate omniwa-go
-```
-
-After the idle queue and metrics baseline is healthy, canary one confirmed
-transport at a time by setting the emit value to `webhook` or `rabbitmq`.
-Never select a transport while serve mode is false. To roll back a canary,
-clear the emit value first, allow pending and processing rows to drain, and
-only then disable the worker. See ADR 0047 for the acceptance boundary and
-full rollback sequence.
+Webhook and RabbitMQ events are atomically recorded with durable history and
+are always delivered by the PostgreSQL outbox worker. NATS and WebSocket remain
+direct realtime transports. Before rolling back to an image that still has
+direct adapters, drain pending and processing outbox rows, then configure that
+image with serving and both durable emit transports enabled. See ADR 0048.
 
 ### Development metrics
 
@@ -73,14 +63,7 @@ curl -fsS --get http://127.0.0.1:9090/api/v1/query \
   --data-urlencode 'query=up{job="omniwa-go"}'
 curl -fsS --get http://127.0.0.1:9090/api/v1/query \
   --data-urlencode 'query=sum(increase(omniwa_conversation_api_requests_total{contract="conversation",status=~"4xx|5xx"}[24h])) or vector(0)'
-curl -fsS --get http://127.0.0.1:9090/api/v1/query \
-  --data-urlencode 'query=sum by (transport,outcome) (increase(omniwa_external_event_emitter_compatibility_dispatches_total[24h])) or vector(0)'
 ```
-
-The compatibility counter measures direct adapter admission attempts. A zero
-increase over a representative cohort window is required before retiring a
-Webhook or RabbitMQ compatibility path; Webhook `accepted` does not prove that
-the remote endpoint received the request.
 
 Changing `GLOBAL_API_KEY` requires recreating both `omniwa-go` and
 `prometheus`. Removing the Prometheus service leaves application behavior and

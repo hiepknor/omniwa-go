@@ -1,6 +1,6 @@
 # ADR 0047: Atomic external event emission and transport cutover
 
-- Status: Accepted
+- Status: Superseded by ADR 0048
 - Date: 2026-07-30
 
 ## Context

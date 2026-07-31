@@ -81,7 +81,6 @@ type Registry struct {
 	emitterRecords               *prometheus.CounterVec
 	emitterRouteCount            *prometheus.HistogramVec
 	emitterRoutes                *prometheus.CounterVec
-	emitterCompatibilityDispatch *prometheus.CounterVec
 }
 
 // NewRegistry constructs an isolated registry. Registration failures are
@@ -151,10 +150,6 @@ func NewRegistry() (*Registry, error) {
 			Namespace: "omniwa", Subsystem: "external_event_emitter", Name: "routes_total",
 			Help: "Successfully recorded durable routes by bounded transport and destination.",
 		}, []string{"transport", "destination"}),
-		emitterCompatibilityDispatch: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "omniwa", Subsystem: "external_event_emitter", Name: "compatibility_dispatches_total",
-			Help: "Legacy direct adapter dispatch attempts by bounded transport and admission outcome; accepted Webhook dispatches are not delivery confirmations.",
-		}, []string{"transport", "outcome"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -163,7 +158,7 @@ func NewRegistry() (*Registry, error) {
 		result.conversationRequests, result.conversationDuration,
 		result.outboxAttempts, result.outboxAttemptDuration, result.outboxClaimed,
 		result.outboxQueue, result.outboxOldestPending, result.outboxInfrastructureFailures,
-		result.emitterRecords, result.emitterRouteCount, result.emitterRoutes, result.emitterCompatibilityDispatch,
+		result.emitterRecords, result.emitterRouteCount, result.emitterRoutes,
 	} {
 		if err := result.registry.Register(collector); err != nil {
 			return nil, err
@@ -195,15 +190,6 @@ func (r *Registry) ObserveRoute(transport outbox.Transport, destination outbox.D
 		return
 	}
 	r.emitterRoutes.WithLabelValues(transportLabel, string(destination)).Inc()
-}
-
-func (r *Registry) ObserveCompatibilityDispatch(transport outbox.Transport, outcome string) {
-	transportLabel := boundedOutboxTransport(transport)
-	if r == nil || (transport != outbox.TransportWebhook && transport != outbox.TransportRabbitMQ) ||
-		transportLabel == "" || (outcome != "accepted" && outcome != "failed") {
-		return
-	}
-	r.emitterCompatibilityDispatch.WithLabelValues(transportLabel, outcome).Inc()
 }
 
 // ExternalEventOutbox returns aggregate-only worker instrumentation. Labels

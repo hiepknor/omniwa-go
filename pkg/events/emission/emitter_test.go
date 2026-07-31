@@ -39,7 +39,7 @@ func testBuilder(instanceID, eventType string, _ any) (*projection_model.Durable
 	}, nil
 }
 
-func TestEmitterDefaultRecordsHistoryWithoutExternalRoutes(t *testing.T) {
+func TestEmitterAlwaysPlansConfiguredInstanceRoutes(t *testing.T) {
 	t.Parallel()
 	store := &recordingStore{}
 	emitter, err := NewEmitter(builderFunc(testBuilder), store, Settings{}, nil)
@@ -50,7 +50,8 @@ func TestEmitterDefaultRecordsHistoryWithoutExternalRoutes(t *testing.T) {
 	if err := emitter.Record(context.Background(), Event{Instance: instance, Type: "Message", QueueName: instance.Id + ".message", Payload: []byte(`{"event":"Message"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if store.event == nil || store.event.InstanceID != instance.Id || len(store.deliveries) != 0 {
+	if store.event == nil || store.event.InstanceID != instance.Id || len(store.deliveries) != 2 ||
+		store.deliveries[0].Transport != event_outbox.TransportWebhook || store.deliveries[1].Transport != event_outbox.TransportRabbitMQ {
 		t.Fatalf("default emission event=%#v deliveries=%#v", store.event, store.deliveries)
 	}
 }
@@ -59,7 +60,7 @@ func TestEmitterPlansSelectedRoutesFromOneAuthoritativeDecision(t *testing.T) {
 	t.Parallel()
 	store := &recordingStore{}
 	emitter, err := NewEmitter(builderFunc(testBuilder), store, Settings{
-		DurableTransports: []string{"webhook", "rabbitmq"}, GlobalWebhookEnabled: true, GlobalRabbitEnabled: true,
+		GlobalWebhookEnabled: true, GlobalRabbitEnabled: true,
 		AMQPGlobalEvents: []string{"MESSAGE"},
 	}, nil)
 	if err != nil {
@@ -131,14 +132,8 @@ func TestGlobalRabbitSpecificEventsRemainAuthoritative(t *testing.T) {
 	}
 }
 
-func TestEmitterRejectsUnsafeConfigurationAndPropagatesAtomicFailure(t *testing.T) {
+func TestEmitterPropagatesAtomicFailure(t *testing.T) {
 	t.Parallel()
-	if _, err := NewEmitter(builderFunc(testBuilder), &recordingStore{}, Settings{DurableTransports: []string{"nats"}}, nil); err == nil {
-		t.Fatal("NATS durable emission was accepted")
-	}
-	if _, err := NewEmitter(builderFunc(testBuilder), &recordingStore{}, Settings{DurableTransports: []string{"webhook", "WEBHOOK"}}, nil); err == nil {
-		t.Fatal("duplicate durable transport was accepted")
-	}
 	want := errors.New("transaction failed")
 	store := &recordingStore{err: want}
 	emitter, err := NewEmitter(builderFunc(testBuilder), store, Settings{}, nil)

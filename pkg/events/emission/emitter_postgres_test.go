@@ -43,8 +43,8 @@ func TestEmitterPostgresAtomicallyRecordsHistoryAndRoutes(t *testing.T) {
 
 	builder := projection_service.NewDurableEventService(projection_repository.NewDurableEventRepository(db), time.Hour)
 	emitter, err := NewEmitter(builder, event_outbox.NewRepository(db), Settings{
-		DurableTransports: []string{"webhook", "rabbitmq"}, GlobalWebhookEnabled: true,
-		GlobalRabbitEnabled: true, AMQPGlobalEvents: []string{"MESSAGE"},
+		GlobalWebhookEnabled: true,
+		GlobalRabbitEnabled:  true, AMQPGlobalEvents: []string{"MESSAGE"},
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
