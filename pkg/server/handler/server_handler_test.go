@@ -105,7 +105,8 @@ func TestOverviewUsesAuthenticationScopeAndValidatesWindow(t *testing.T) {
 				ctx.Set("instance", test.instance)
 			}
 			handler.Overview(ctx)
-			if response.Code != test.wantStatus || (test.wantStatus == http.StatusOK && (repository.instanceID != test.wantID || !strings.Contains(response.Body.String(), test.wantScope))) {
+			if response.Code != test.wantStatus || (test.wantStatus == http.StatusOK && (repository.instanceID != test.wantID ||
+				!strings.Contains(response.Body.String(), test.wantScope) || !strings.Contains(response.Body.String(), `"conversations":0,"chats":0`))) {
 				t.Fatalf("Overview() status=%d instance=%q body=%s", response.Code, repository.instanceID, response.Body.String())
 			}
 		})
