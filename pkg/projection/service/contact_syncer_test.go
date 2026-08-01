@@ -108,6 +108,24 @@ func TestContactSyncerEnrichesSnapshotFromLocalLIDMapping(t *testing.T) {
 	}
 }
 
+func TestContactSyncerCapturesOnlyDirectSnapshotPhoneEvidence(t *testing.T) {
+	repository := &phoneEvidenceRepositoryStub{}
+	recorder := NewPhoneIdentityEvidenceRecorder(repository, nil)
+	writes := &captureContactSnapshots{}
+	syncer := NewContactSyncer(writes, &contactSyncStateStub{}, &captureContactSyncEvents{}).WithPhoneIdentityEvidence(recorder)
+	syncer.now = func() time.Time { return time.Unix(760, 0) }
+	phone := types.NewJID("15550009", types.DefaultUserServer)
+	lid := types.NewJID("9000009", types.HiddenUserServer)
+	if err := syncer.Sync(context.Background(), "instance-a", func(context.Context) (map[types.JID]types.ContactInfo, error) {
+		return map[types.JID]types.ContactInfo{phone: {Found: true}, lid: {Found: true}}, nil
+	}, &contactLIDResolverFake{phone: phone, lid: lid}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.observed) != 1 || repository.observed[0].PhoneJID != phone.String() || repository.observed[0].LIDJID != nil {
+		t.Fatalf("snapshot evidence included inferred global mapping: %#v", repository.observed)
+	}
+}
+
 func TestContactSyncerSkipsReadyProjectionAndMarksInitialFailure(t *testing.T) {
 	readyState := &contactSyncStateStub{state: &projection_model.State{SyncStatus: projection_model.SyncStatusReady, SchemaVersion: ContactsProjectionSchemaVersion}}
 	fetched := false

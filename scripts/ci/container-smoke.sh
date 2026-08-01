@@ -11,7 +11,7 @@ smoke_postgres_auth_dsn="postgresql://postgres:postgres@postgres:5432/omniwa_aut
 smoke_postgres_users_dsn="postgresql://postgres:postgres@postgres:5432/omniwa_users?sslmode=disable"
 project_suffix="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${PPID}"
 project_name="omniwa-smoke-${project_suffix//[^a-zA-Z0-9_-]/-}"
-expected_migrations="39:39"
+expected_migrations="40:40"
 
 if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
   echo "SOURCE_SHA must be a full 40-character lowercase Git commit" >&2

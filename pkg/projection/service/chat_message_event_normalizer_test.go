@@ -191,3 +191,33 @@ func TestNormalizeReceiptEventDeduplicatesAndSortsMessageIDs(t *testing.T) {
 		t.Fatalf("unsupported receipt entered projection: %#v, %v, %v", ignored, relevant, err)
 	}
 }
+
+func TestNormalizeMessageAndReceiptPreserveAlternateIdentitiesInternally(t *testing.T) {
+	message := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				Chat: types.NewJID("900001", types.HiddenUserServer), Sender: types.NewJID("900001", types.HiddenUserServer),
+				SenderAlt: types.NewJID("15550001", types.DefaultUserServer), RecipientAlt: types.NewJID("15559999", types.DefaultUserServer),
+			},
+			ID: "message-alt", Timestamp: time.Unix(700, 0), Type: "text",
+		},
+		Message: &waE2E.Message{Conversation: proto.String("hello")},
+	}
+	for _, raw := range []any{
+		message,
+		&events.Receipt{MessageSource: message.Info.MessageSource, MessageIDs: []types.MessageID{"message-alt"}, Timestamp: time.Unix(701, 0), Type: types.ReceiptTypeDelivered},
+	} {
+		event, relevant, err := NormalizeChatMessageEvent("instance-a", raw)
+		if err != nil || !relevant {
+			t.Fatalf("normalize alternate identities = %#v, %v, %v", event, relevant, err)
+		}
+		var payload messageEventPayload
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.SenderAltJID == nil || *payload.SenderAltJID != "15550001@s.whatsapp.net" ||
+			payload.RecipientAltJID == nil || *payload.RecipientAltJID != "15559999@s.whatsapp.net" {
+			t.Fatalf("alternate identities were discarded: %#v", payload)
+		}
+	}
+}

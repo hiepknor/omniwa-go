@@ -34,12 +34,20 @@ type ContactSyncer struct {
 	contacts contactProjectionWriter
 	state    contactSyncState
 	events   contactSyncEvents
+	evidence *PhoneIdentityEvidenceRecorder
 	now      func() time.Time
 	locks    sync.Map
 }
 
 func NewContactSyncer(contacts contactProjectionWriter, state contactSyncState, events contactSyncEvents) *ContactSyncer {
 	return &ContactSyncer{contacts: contacts, state: state, events: events, now: time.Now}
+}
+
+func (s *ContactSyncer) WithPhoneIdentityEvidence(evidence *PhoneIdentityEvidenceRecorder) *ContactSyncer {
+	if s != nil {
+		s.evidence = evidence
+	}
+	return s
 }
 
 func (s *ContactSyncer) Sync(ctx context.Context, instanceID string, fetch ContactSnapshotFetcher, resolver ContactLIDResolver) error {
@@ -110,6 +118,11 @@ func (s *ContactSyncer) Sync(ctx context.Context, instanceID string, fetch Conta
 }
 
 func (s *ContactSyncer) applySnapshotContact(ctx context.Context, instanceID, snapshotID string, snapshotAt time.Time, jid types.JID, info types.ContactInfo, resolver ContactLIDResolver) error {
+	if s.evidence != nil {
+		if err := s.evidence.ObserveJIDs(ctx, instanceID, snapshotAt, jid); err != nil {
+			return err
+		}
+	}
 	payload := newContactPayload(jid)
 	if resolver != nil {
 		resolved, mapped, err := resolveContactLIDAliases(ctx, resolver, payload.PreferredJID, payload.PhoneJID, payload.LID)

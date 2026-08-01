@@ -26,7 +26,9 @@ type messageEventPayload struct {
 	MessageID            string                             `json:"messageId,omitempty"`
 	MessageIDs           []string                           `json:"messageIds,omitempty"`
 	SenderJID            *string                            `json:"senderJid,omitempty"`
+	SenderAltJID         *string                            `json:"senderAltJid,omitempty"`
 	RecipientJID         *string                            `json:"recipientJid,omitempty"`
+	RecipientAltJID      *string                            `json:"recipientAltJid,omitempty"`
 	ParticipantJID       *string                            `json:"participantJid,omitempty"`
 	Direction            projection_model.MessageDirection  `json:"direction"`
 	MessageType          string                             `json:"messageType,omitempty"`
@@ -132,6 +134,12 @@ func normalizeLiveMessageEvent(instanceID string, event *events.Message) (*proje
 	if !event.Info.Sender.IsEmpty() {
 		payload.SenderJID = boundedStringPointer(event.Info.Sender.ToNonAD().String(), 255)
 	}
+	if !event.Info.SenderAlt.IsEmpty() {
+		payload.SenderAltJID = boundedStringPointer(event.Info.SenderAlt.ToNonAD().String(), 255)
+	}
+	if !event.Info.RecipientAlt.IsEmpty() {
+		payload.RecipientAltJID = boundedStringPointer(event.Info.RecipientAlt.ToNonAD().String(), 255)
+	}
 	if event.Info.IsFromMe {
 		payload.RecipientJID = boundedStringPointer(chatID, 255)
 	}
@@ -198,6 +206,12 @@ func normalizeReceiptEvent(instanceID string, event *events.Receipt) (*projectio
 		ChatID: chatID, ChatType: projectedChatType(event.Chat), MessageIDs: messageIDs,
 		RecipientJID: recipientID, Direction: direction,
 		ReceiptType: receiptType, ReceiptAt: &receiptAt,
+	}
+	if !event.SenderAlt.IsEmpty() {
+		payload.SenderAltJID = boundedStringPointer(event.SenderAlt.ToNonAD().String(), 255)
+	}
+	if !event.RecipientAlt.IsEmpty() {
+		payload.RecipientAltJID = boundedStringPointer(event.RecipientAlt.ToNonAD().String(), 255)
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {

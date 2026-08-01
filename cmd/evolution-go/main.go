@@ -464,6 +464,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	labelProjectionRepository := projection_repository.NewLabelProjectionRepository(db)
 	labelProjector := projection_service.NewLabelProjector(labelProjectionRepository, projectionStateService, projection_repository.NewReadinessRepository(db))
 	contactProjectionRepository := projection_repository.NewContactRepository(db)
+	var phoneIdentityEvidence *projection_service.PhoneIdentityEvidenceRecorder
+	if config.PhoneIdentityEvidenceEnabled {
+		phoneIdentityEvidence = projection_service.NewPhoneIdentityEvidenceRecorder(
+			projection_repository.NewPhoneIdentityEvidenceRepository(db), metricsRegistry,
+		)
+	}
 	projectionReadinessRepository := projection_repository.NewReadinessRepository(db)
 	contactProjector := projection_service.NewContactProjector(contactProjectionRepository, projectionStateService, projectionReadinessRepository)
 	chatMessageProjectionRepository := projection_repository.NewChatMessageRepository(db)
@@ -504,7 +510,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	projectionFailureService := projection_service.NewFailureService(projection_repository.NewFailureRepository(db))
 	overviewService := projection_service.NewOverviewService(projection_repository.NewOverviewRepository(db))
 	healthService := projection_service.NewServerHealthService(projection_repository.NewHealthRepository(db), projectionStateService, queryGuard)
-	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService)
+	contactSyncer := projection_service.NewContactSyncer(contactProjectionRepository, projectionStateService, projectionEventService).
+		WithPhoneIdentityEvidence(phoneIdentityEvidence)
 	var contactIdentityReconciler *projection_service.ContactIdentityReconciler
 	if config.ContactIdentityReconciliationEnabled {
 		contactIdentityReconciler = projection_service.NewContactIdentityReconciler(
@@ -545,8 +552,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		},
 	)
 	startBackground(backgroundWorkers, "projection.labels", labelWorker.Run)
+	contactProjectionHandler := projection_service.EventHandler(contactProjector.Handle)
+	if phoneIdentityEvidence != nil {
+		contactProjectionHandler = phoneIdentityEvidence.HandleContact(contactProjectionHandler)
+	}
 	contactWorker := projection_service.NewWorker(
-		projectionEventService, "contacts", []string{"contact", "push_name", "business_name", "picture", "user_about", "contact_sync_complete"}, 50, time.Second, contactProjector.Handle,
+		projectionEventService, "contacts", []string{"contact", "push_name", "business_name", "picture", "user_about", "contact_sync_complete"}, 50, time.Second, contactProjectionHandler,
 		func(result projection_service.EventBatchResult, err error) {
 			if err != nil {
 				logger.LogError("component=projection action=process resource=contacts result=failed error_code=batch_failed")
@@ -556,8 +567,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		},
 	)
 	startBackground(backgroundWorkers, "projection.contacts", contactWorker.Run)
+	chatMessageProjectionHandler := projection_service.EventHandler(chatMessageProjector.Handle)
+	if phoneIdentityEvidence != nil {
+		chatMessageProjectionHandler = phoneIdentityEvidence.HandleMessage(chatMessageProjectionHandler)
+	}
 	chatMessageWorker := projection_service.NewWorker(
-		projectionEventService, "messages", []string{"message", "receipt", "history_chat", "history_message", "chat_archived", "chat_pinned", "chat_muted"}, 50, time.Second, chatMessageProjector.Handle,
+		projectionEventService, "messages", []string{"message", "receipt", "history_chat", "history_message", "chat_archived", "chat_pinned", "chat_muted"}, 50, time.Second, chatMessageProjectionHandler,
 		func(result projection_service.EventBatchResult, err error) {
 			if err != nil {
 				logger.LogError("component=projection action=process resource=messages result=failed error_code=batch_failed")
