@@ -140,10 +140,33 @@ func (e *Emitter) GlobalRabbitQueue(eventType string) (string, bool) {
 		return "", false
 	}
 	group := EventGroup(eventType)
-	if group != "" && exactContains(e.amqpGlobalEvents, group) {
+	if group != "" && globalEventGroupConfigured(e.amqpGlobalEvents, group) {
 		return strings.ToLower(eventType), true
 	}
 	return "", false
+}
+
+func globalEventGroupConfigured(values []string, expected string) bool {
+	if exactContains(values, expected) {
+		return true
+	}
+	for _, value := range values {
+		switch value {
+		case "messages.upsert":
+			if expected == event_types.MESSAGE || expected == event_types.SEND_MESSAGE {
+				return true
+			}
+		case "messages.update":
+			if expected == event_types.READ_RECEIPT {
+				return true
+			}
+		case "connection.update":
+			if expected == event_types.CONNECTION {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func InstanceSubscribed(configured, eventType string, payload []byte) bool {
