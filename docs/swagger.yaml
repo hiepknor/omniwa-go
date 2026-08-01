@@ -3674,10 +3674,20 @@ definitions:
     type: object
   types.VerifiedName:
     properties:
+      actualActors:
+        type: integer
       certificate:
         $ref: '#/definitions/waVnameCert.VerifiedNameCertificate'
       details:
         $ref: '#/definitions/waVnameCert.VerifiedNameCertificate_Details'
+      hostStorage:
+        type: integer
+      privacyModeTS:
+        type: string
+      verifiedLevel:
+        type: string
+      version:
+        type: integer
     type: object
   types.WebAuthnResponse:
     properties:
@@ -3736,6 +3746,20 @@ definitions:
     properties:
       hatchMetadataSync:
         $ref: '#/definitions/waAICommon.HatchMetadataSync'
+    type: object
+  waAICommon.AIProvenance:
+    properties:
+      c2PaMetadata:
+        $ref: '#/definitions/waAICommon.AIProvenance_Metadata'
+      iptcMetadata:
+        $ref: '#/definitions/waAICommon.AIProvenance_Metadata'
+    type: object
+  waAICommon.AIProvenance_Metadata:
+    properties:
+      createdWithGenAi:
+        type: boolean
+      editedWithGenAi:
+        type: boolean
     type: object
   waAICommon.AIRegenerateMetadata:
     properties:
@@ -3818,6 +3842,10 @@ definitions:
     - BotAgeCollectionMetadata_WAFFLE
   waAICommon.BotAgentDeepLinkMetadata:
     properties:
+      clientPublicKey:
+        items:
+          type: integer
+        type: array
       token:
         type: string
     type: object
@@ -3901,6 +3929,10 @@ definitions:
     - 63
     - 64
     - 65
+    - 66
+    - 67
+    - 68
+    - 69
     type: integer
     x-enum-varnames:
     - BotCapabilityMetadata_UNKNOWN
@@ -3969,6 +4001,10 @@ definitions:
     - BotCapabilityMetadata_UNIFIED_RESPONSE_MARKDOWN_LINKS_ENABLED
     - BotCapabilityMetadata_AI_RICH_RESPONSE_MAPS_V2_ENABLED
     - BotCapabilityMetadata_AI_SUBSCRIPTION_METERING_ENABLED
+    - BotCapabilityMetadata_RICH_RESPONSE_SPORTS_WIDGET_ENABLED
+    - BotCapabilityMetadata_AI_RICH_RESPONSE_ARTIFACTS_ENABLED
+    - BotCapabilityMetadata_AI_RICH_RESPONSE_EMAIL_CALENDAR_ENABLED
+    - BotCapabilityMetadata_AI_RICH_RESPONSE_REMINDERS_ENABLED
   waAICommon.BotCommandMetadata:
     properties:
       commandDescription:
@@ -4139,6 +4175,13 @@ definitions:
       botFbid:
         type: string
     type: object
+  waAICommon.BotHistoryShareMetadata:
+    properties:
+      participantsMetadata:
+        items:
+          $ref: '#/definitions/waAICommon.BotGroupParticipantMetadata'
+        type: array
+    type: object
   waAICommon.BotImagineMetadata:
     properties:
       imagineType:
@@ -4296,6 +4339,8 @@ definitions:
         $ref: '#/definitions/waAICommon.BotDocumentMessageMetadata'
       botGroupMetadata:
         $ref: '#/definitions/waAICommon.BotGroupMetadata'
+      botHistoryShareMetadata:
+        $ref: '#/definitions/waAICommon.BotHistoryShareMetadata'
       botInfrastructureDiagnostics:
         $ref: '#/definitions/waAICommon.BotInfrastructureDiagnostics'
       botLinkedAccountsMetadata:
@@ -4423,6 +4468,7 @@ definitions:
     - 54
     - 55
     - 56
+    - 57
     type: integer
     x-enum-varnames:
     - BotMetricsEntryPoint_UNDEFINED_ENTRY_POINT
@@ -4473,6 +4519,7 @@ definitions:
     - BotMetricsEntryPoint_GROUP_MEMBER
     - BotMetricsEntryPoint_CHATLIST_SEARCH
     - BotMetricsEntryPoint_NEW_CHAT_LIST
+    - BotMetricsEntryPoint_CONTACTS_TAB
   waAICommon.BotMetricsMetadata:
     properties:
       destinationEntryPoint:
@@ -5322,6 +5369,21 @@ definitions:
     x-enum-varnames:
     - ADVEncryptionType_E2EE
     - ADVEncryptionType_HOSTED
+  waAea.NonE2EEAttestation:
+    properties:
+      accountType:
+        $ref: '#/definitions/waAea.NonE2EEAttestation_AccountType'
+    type: object
+  waAea.NonE2EEAttestation_AccountType:
+    enum:
+    - 0
+    - 1
+    - 2
+    type: integer
+    x-enum-varnames:
+    - NonE2EEAttestation_E2EE
+    - NonE2EEAttestation_HYBRID_E2EE
+    - NonE2EEAttestation_NON_E2EE
   waCommon.LimitSharing:
     properties:
       initiatedByMe:
@@ -5574,6 +5636,17 @@ definitions:
     - BCallMessage_UNKNOWN
     - BCallMessage_AUDIO
     - BCallMessage_VIDEO
+  waE2E.BotHistoryShareSyncMetadata:
+    properties:
+      botJID:
+        type: string
+      historyShareCutoffTimestamp:
+        type: integer
+      historyShareMessages:
+        items:
+          $ref: '#/definitions/waE2E.HistoryShareMessageEntry'
+        type: array
+    type: object
   waE2E.ButtonsMessage:
     properties:
       buttons:
@@ -5669,6 +5742,8 @@ definitions:
         items:
           type: integer
         type: array
+      callReason:
+        type: string
       contextInfo:
         $ref: '#/definitions/waE2E.ContextInfo'
       conversionData:
@@ -5859,6 +5934,8 @@ definitions:
         $ref: '#/definitions/waE2E.ActionLink'
       afterReadDuration:
         type: integer
+      aiProvenance:
+        $ref: '#/definitions/waAICommon.AIProvenance'
       alwaysShowAdAttribution:
         type: boolean
       botMessageSharingInfo:
@@ -5923,6 +6000,8 @@ definitions:
         type: array
       groupSubject:
         type: string
+      instagramThreadLink:
+        $ref: '#/definitions/waE2E.ContextInfo_InstagramThreadLink'
       isForwarded:
         type: boolean
       isGroupStatus:
@@ -6031,6 +6110,8 @@ definitions:
         items:
           type: integer
         type: array
+      unauthenticatedBusinessMetadata:
+        $ref: '#/definitions/waE2E.ContextInfo_BusinessInteractionPills_UnauthenticatedBusinessMetadata'
     type: object
   waE2E.ContextInfo_BusinessInteractionPills_EntryPoint:
     enum:
@@ -6085,6 +6166,17 @@ definitions:
     - ContextInfo_BusinessInteractionPills_ABOUT
     - ContextInfo_BusinessInteractionPills_SHOP
     - ContextInfo_BusinessInteractionPills_ORDER
+  waE2E.ContextInfo_BusinessInteractionPills_UnauthenticatedBusinessMetadata:
+    properties:
+      businessCategory:
+        type: string
+      businessIsOpen:
+        type: boolean
+      businessIsOpenSnapshotMS:
+        type: integer
+      businessName:
+        type: string
+    type: object
   waE2E.ContextInfo_BusinessMessageForwardInfo:
     properties:
       businessOwnerJID:
@@ -6267,6 +6359,11 @@ definitions:
     - ContextInfo_ForwardedNewsletterMessageInfo_UPDATE
     - ContextInfo_ForwardedNewsletterMessageInfo_UPDATE_CARD
     - ContextInfo_ForwardedNewsletterMessageInfo_LINK_CARD
+  waE2E.ContextInfo_InstagramThreadLink:
+    properties:
+      URL:
+        type: string
+    type: object
   waE2E.ContextInfo_PairedMediaType:
     enum:
     - 0
@@ -6653,7 +6750,7 @@ definitions:
         items:
           $ref: '#/definitions/waE2E.VideoEndCard'
         type: array
-      faviconMMSMetadata:
+      faviconMmsMetadata:
         $ref: '#/definitions/waE2E.MMSThumbnailMetadata'
       font:
         $ref: '#/definitions/waE2E.ExtendedTextMessage_FontType'
@@ -6872,6 +6969,15 @@ definitions:
         type: string
       paramOneof:
         description: "Types that are valid to be assigned to ParamOneof:\n\n\t*HighlyStructuredMessage_HSMLocalizableParameter_Currency\n\t*HighlyStructuredMessage_HSMLocalizableParameter_DateTime"
+    type: object
+  waE2E.HistoryShareMessageEntry:
+    properties:
+      messageSecretProof:
+        items:
+          type: integer
+        type: array
+      stanzaID:
+        type: string
     type: object
   waE2E.HistorySyncMessageAccessStatus:
     properties:
@@ -7460,6 +7566,19 @@ definitions:
       thumbnailWidth:
         type: integer
     type: object
+  waE2E.MarkAsVerifiedAction:
+    properties:
+      actionSeq:
+        type: integer
+      userJIDString:
+        type: string
+      verified:
+        type: boolean
+      verifiedIdentityKey:
+        items:
+          type: integer
+        type: array
+    type: object
   waE2E.MediaDomainInfo:
     properties:
       e2EeMediaKey:
@@ -7681,6 +7800,8 @@ definitions:
         $ref: '#/definitions/waE2E.SenderKeyDistributionMessage'
       splitPaymentMessage:
         $ref: '#/definitions/waE2E.SplitPaymentMessage'
+      splitPaymentUpdateMessage:
+        $ref: '#/definitions/waE2E.SplitPaymentUpdateMessage'
       spoilerMessage:
         $ref: '#/definitions/waE2E.FutureProofMessage'
       statusAddYours:
@@ -7771,6 +7892,12 @@ definitions:
     - MessageAssociation_POLL_ADD_OPTION
   waE2E.MessageContextInfo:
     properties:
+      accountEncryptionAttestation:
+        $ref: '#/definitions/waAea.NonE2EEAttestation'
+      associatedPrimaryIdentityKey:
+        items:
+          type: integer
+        type: array
       botMessageSecret:
         items:
           type: integer
@@ -7868,6 +7995,8 @@ definitions:
     type: object
   waE2E.MessageHistoryNotice:
     properties:
+      botHistoryShareSyncMetadata:
+        $ref: '#/definitions/waE2E.BotHistoryShareSyncMetadata'
       contextInfo:
         $ref: '#/definitions/waE2E.ContextInfo'
       messageHistoryMetadata:
@@ -8017,6 +8146,8 @@ definitions:
     - PaymentBackground_DEFAULT
   waE2E.PaymentExtendedMetadata:
     properties:
+      messageParamsJSON:
+        type: string
       platform:
         type: string
       type:
@@ -8287,6 +8418,8 @@ definitions:
         $ref: '#/definitions/waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_CompanionCanonicalUserNonceFetchResponse'
       companionMetaNonceFetchRequestResponse:
         $ref: '#/definitions/waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_CompanionMetaNonceFetchResponse'
+      contactRefreshResponse:
+        $ref: '#/definitions/waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_ContactRefreshResponse'
       flowResponsesCsvBundle:
         $ref: '#/definitions/waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_FlowResponsesCsvBundle'
       fullHistorySyncOnDemandRequestResponse:
@@ -8337,6 +8470,21 @@ definitions:
     properties:
       nonce:
         type: string
+    type: object
+  waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_ContactRefreshResponse:
+    properties:
+      collectionVersion:
+        type: integer
+      coveredRequestIDs:
+        items:
+          type: string
+        type: array
+      primaryProcessEndTimestampMS:
+        type: integer
+      primaryProcessStartTimestampMS:
+        type: integer
+      uploadedContactCount:
+        type: integer
     type: object
   waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_FlowResponsesCsvBundle:
     properties:
@@ -8515,6 +8663,7 @@ definitions:
     - 11
     - 12
     - 13
+    - 14
     type: integer
     x-enum-varnames:
     - PeerDataOperationRequestType_UPLOAD_STICKER
@@ -8531,6 +8680,7 @@ definitions:
     - PeerDataOperationRequestType_GALAXY_FLOW_ACTION
     - PeerDataOperationRequestType_BUSINESS_BROADCAST_INSIGHTS_DELIVERED_TO
     - PeerDataOperationRequestType_BUSINESS_BROADCAST_INSIGHTS_REFRESH
+    - PeerDataOperationRequestType_CONTACT_REFRESH_REQUEST
   waE2E.PinInChatMessage:
     properties:
       key:
@@ -8798,6 +8948,8 @@ definitions:
         $ref: '#/definitions/waE2E.ChatThemeSetting'
       cloudApiThreadControlNotification:
         $ref: '#/definitions/waE2E.CloudAPIThreadControlNotification'
+      coexStateSync:
+        $ref: '#/definitions/waServerSync.CoexStateSync'
       disappearingMode:
         $ref: '#/definitions/waE2E.DisappearingMode'
       editedMessage:
@@ -8818,6 +8970,8 @@ definitions:
         $ref: '#/definitions/waE2E.LIDMigrationMappingSyncMessage'
       limitSharing:
         $ref: '#/definitions/waCommon.LimitSharing'
+      markAsVerifiedAction:
+        $ref: '#/definitions/waE2E.MarkAsVerifiedAction'
       mediaNotifyMessage:
         $ref: '#/definitions/waE2E.MediaNotifyMessage'
       memberLabel:
@@ -8828,6 +8982,8 @@ definitions:
         $ref: '#/definitions/waE2E.PeerDataOperationRequestResponseMessage'
       requestWelcomeMessageMetadata:
         $ref: '#/definitions/waE2E.RequestWelcomeMessageMetadata'
+      syncRequestMutationRetry:
+        $ref: '#/definitions/waE2E.SyncRequestMutationRetry'
       timestampMS:
         type: integer
       type:
@@ -8865,6 +9021,9 @@ definitions:
     - 32
     - 34
     - 35
+    - 36
+    - 37
+    - 38
     type: integer
     x-enum-varnames:
     - ProtocolMessage_REVOKE
@@ -8897,6 +9056,9 @@ definitions:
     - ProtocolMessage_MESSAGE_UNSCHEDULE
     - ProtocolMessage_CHAT_THEME_SETTING
     - ProtocolMessage_AI_METADATA_OPERATION
+    - ProtocolMessage_MARK_AS_VERIFIED_ACTION
+    - ProtocolMessage_COEX_STATE_SYNC
+    - ProtocolMessage_SYNC_REQUEST_MUTATION_RETRY
   waE2E.QuestionResponseMessage:
     properties:
       key:
@@ -9090,6 +9252,13 @@ definitions:
     x-enum-varnames:
     - SplitPaymentParticipant_PENDING
     - SplitPaymentParticipant_PAID
+  waE2E.SplitPaymentUpdateMessage:
+    properties:
+      participantJID:
+        type: string
+      splitID:
+        type: string
+    type: object
   waE2E.StatusNotificationMessage:
     properties:
       originalMessageKey:
@@ -9310,6 +9479,22 @@ definitions:
       rmrSource:
         type: string
     type: object
+  waE2E.SyncRequestMutationRetry:
+    properties:
+      collections:
+        items:
+          $ref: '#/definitions/waE2E.SyncRequestMutationRetry_Collection'
+        type: array
+      count:
+        type: integer
+    type: object
+  waE2E.SyncRequestMutationRetry_Collection:
+    properties:
+      name:
+        type: string
+      storedSyncdVersion:
+        type: integer
+    type: object
   waE2E.TemplateButtonReplyMessage:
     properties:
       contextInfo:
@@ -9525,6 +9710,55 @@ definitions:
     - MediaRetryNotification_SUCCESS
     - MediaRetryNotification_NOT_FOUND
     - MediaRetryNotification_DECRYPTION_ERROR
+  waServerSync.CoexStateSync:
+    properties:
+      collectionMutations:
+        items:
+          $ref: '#/definitions/waServerSync.CoexStateSync_CollectionMutations'
+        type: array
+    type: object
+  waServerSync.CoexStateSync_CollectionMutations:
+    properties:
+      collection:
+        type: string
+      mutations:
+        items:
+          $ref: '#/definitions/waServerSync.CoexStateSync_Mutation'
+        type: array
+    type: object
+  waServerSync.CoexStateSync_Mutation:
+    properties:
+      dirtyVersion:
+        type: integer
+      index:
+        $ref: '#/definitions/waServerSync.SyncdIndex'
+      operation:
+        $ref: '#/definitions/waServerSync.SyncdMutation_SyncdOperation'
+      value:
+        $ref: '#/definitions/waServerSync.SyncdValue'
+    type: object
+  waServerSync.SyncdIndex:
+    properties:
+      blob:
+        items:
+          type: integer
+        type: array
+    type: object
+  waServerSync.SyncdMutation_SyncdOperation:
+    enum:
+    - 0
+    - 1
+    type: integer
+    x-enum-varnames:
+    - SyncdMutation_SET
+    - SyncdMutation_REMOVE
+  waServerSync.SyncdValue:
+    properties:
+      blob:
+        items:
+          type: integer
+        type: array
+    type: object
   waStatusAttributions.StatusAttribution:
     properties:
       actionURL:

@@ -14045,11 +14045,26 @@ const docTemplate = `{
         "types.VerifiedName": {
             "type": "object",
             "properties": {
+                "actualActors": {
+                    "type": "integer"
+                },
                 "certificate": {
                     "$ref": "#/definitions/waVnameCert.VerifiedNameCertificate"
                 },
                 "details": {
                     "$ref": "#/definitions/waVnameCert.VerifiedNameCertificate_Details"
+                },
+                "hostStorage": {
+                    "type": "integer"
+                },
+                "privacyModeTS": {
+                    "type": "string"
+                },
+                "verifiedLevel": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -14140,6 +14155,28 @@ const docTemplate = `{
             "properties": {
                 "hatchMetadataSync": {
                     "$ref": "#/definitions/waAICommon.HatchMetadataSync"
+                }
+            }
+        },
+        "waAICommon.AIProvenance": {
+            "type": "object",
+            "properties": {
+                "c2PaMetadata": {
+                    "$ref": "#/definitions/waAICommon.AIProvenance_Metadata"
+                },
+                "iptcMetadata": {
+                    "$ref": "#/definitions/waAICommon.AIProvenance_Metadata"
+                }
+            }
+        },
+        "waAICommon.AIProvenance_Metadata": {
+            "type": "object",
+            "properties": {
+                "createdWithGenAi": {
+                    "type": "boolean"
+                },
+                "editedWithGenAi": {
+                    "type": "boolean"
                 }
             }
         },
@@ -14261,6 +14298,12 @@ const docTemplate = `{
         "waAICommon.BotAgentDeepLinkMetadata": {
             "type": "object",
             "properties": {
+                "clientPublicKey": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "token": {
                     "type": "string"
                 }
@@ -14353,7 +14396,11 @@ const docTemplate = `{
                 62,
                 63,
                 64,
-                65
+                65,
+                66,
+                67,
+                68,
+                69
             ],
             "x-enum-varnames": [
                 "BotCapabilityMetadata_UNKNOWN",
@@ -14421,7 +14468,11 @@ const docTemplate = `{
                 "BotCapabilityMetadata_UNIFIED_RESPONSE_AI_CONTENT_SEARCH_ENABLED",
                 "BotCapabilityMetadata_UNIFIED_RESPONSE_MARKDOWN_LINKS_ENABLED",
                 "BotCapabilityMetadata_AI_RICH_RESPONSE_MAPS_V2_ENABLED",
-                "BotCapabilityMetadata_AI_SUBSCRIPTION_METERING_ENABLED"
+                "BotCapabilityMetadata_AI_SUBSCRIPTION_METERING_ENABLED",
+                "BotCapabilityMetadata_RICH_RESPONSE_SPORTS_WIDGET_ENABLED",
+                "BotCapabilityMetadata_AI_RICH_RESPONSE_ARTIFACTS_ENABLED",
+                "BotCapabilityMetadata_AI_RICH_RESPONSE_EMAIL_CALENDAR_ENABLED",
+                "BotCapabilityMetadata_AI_RICH_RESPONSE_REMINDERS_ENABLED"
             ]
         },
         "waAICommon.BotCommandMetadata": {
@@ -14669,6 +14720,17 @@ const docTemplate = `{
                 }
             }
         },
+        "waAICommon.BotHistoryShareMetadata": {
+            "type": "object",
+            "properties": {
+                "participantsMetadata": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/waAICommon.BotGroupParticipantMetadata"
+                    }
+                }
+            }
+        },
         "waAICommon.BotImagineMetadata": {
             "type": "object",
             "properties": {
@@ -14903,6 +14965,9 @@ const docTemplate = `{
                 "botGroupMetadata": {
                     "$ref": "#/definitions/waAICommon.BotGroupMetadata"
                 },
+                "botHistoryShareMetadata": {
+                    "$ref": "#/definitions/waAICommon.BotHistoryShareMetadata"
+                },
                 "botInfrastructureDiagnostics": {
                     "$ref": "#/definitions/waAICommon.BotInfrastructureDiagnostics"
                 },
@@ -15069,7 +15134,8 @@ const docTemplate = `{
                 47,
                 54,
                 55,
-                56
+                56,
+                57
             ],
             "x-enum-varnames": [
                 "BotMetricsEntryPoint_UNDEFINED_ENTRY_POINT",
@@ -15119,7 +15185,8 @@ const docTemplate = `{
                 "BotMetricsEntryPoint_WEB_NAVIGATION_BAR",
                 "BotMetricsEntryPoint_GROUP_MEMBER",
                 "BotMetricsEntryPoint_CHATLIST_SEARCH",
-                "BotMetricsEntryPoint_NEW_CHAT_LIST"
+                "BotMetricsEntryPoint_NEW_CHAT_LIST",
+                "BotMetricsEntryPoint_CONTACTS_TAB"
             ]
         },
         "waAICommon.BotMetricsMetadata": {
@@ -16352,6 +16419,27 @@ const docTemplate = `{
                 "ADVEncryptionType_HOSTED"
             ]
         },
+        "waAea.NonE2EEAttestation": {
+            "type": "object",
+            "properties": {
+                "accountType": {
+                    "$ref": "#/definitions/waAea.NonE2EEAttestation_AccountType"
+                }
+            }
+        },
+        "waAea.NonE2EEAttestation_AccountType": {
+            "type": "integer",
+            "enum": [
+                0,
+                1,
+                2
+            ],
+            "x-enum-varnames": [
+                "NonE2EEAttestation_E2EE",
+                "NonE2EEAttestation_HYBRID_E2EE",
+                "NonE2EEAttestation_NON_E2EE"
+            ]
+        },
         "waCommon.LimitSharing": {
             "type": "object",
             "properties": {
@@ -16733,6 +16821,23 @@ const docTemplate = `{
                 "BCallMessage_VIDEO"
             ]
         },
+        "waE2E.BotHistoryShareSyncMetadata": {
+            "type": "object",
+            "properties": {
+                "botJID": {
+                    "type": "string"
+                },
+                "historyShareCutoffTimestamp": {
+                    "type": "integer"
+                },
+                "historyShareMessages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/waE2E.HistoryShareMessageEntry"
+                    }
+                }
+            }
+        },
         "waE2E.ButtonsMessage": {
             "type": "object",
             "properties": {
@@ -16868,6 +16973,9 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "callReason": {
+                    "type": "string"
                 },
                 "contextInfo": {
                     "$ref": "#/definitions/waE2E.ContextInfo"
@@ -17147,6 +17255,9 @@ const docTemplate = `{
                 "afterReadDuration": {
                     "type": "integer"
                 },
+                "aiProvenance": {
+                    "$ref": "#/definitions/waAICommon.AIProvenance"
+                },
                 "alwaysShowAdAttribution": {
                     "type": "boolean"
                 },
@@ -17242,6 +17353,9 @@ const docTemplate = `{
                 },
                 "groupSubject": {
                     "type": "string"
+                },
+                "instagramThreadLink": {
+                    "$ref": "#/definitions/waE2E.ContextInfo_InstagramThreadLink"
                 },
                 "isForwarded": {
                     "type": "boolean"
@@ -17403,6 +17517,9 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "unauthenticatedBusinessMetadata": {
+                    "$ref": "#/definitions/waE2E.ContextInfo_BusinessInteractionPills_UnauthenticatedBusinessMetadata"
                 }
             }
         },
@@ -17468,6 +17585,23 @@ const docTemplate = `{
                 "ContextInfo_BusinessInteractionPills_SHOP",
                 "ContextInfo_BusinessInteractionPills_ORDER"
             ]
+        },
+        "waE2E.ContextInfo_BusinessInteractionPills_UnauthenticatedBusinessMetadata": {
+            "type": "object",
+            "properties": {
+                "businessCategory": {
+                    "type": "string"
+                },
+                "businessIsOpen": {
+                    "type": "boolean"
+                },
+                "businessIsOpenSnapshotMS": {
+                    "type": "integer"
+                },
+                "businessName": {
+                    "type": "string"
+                }
+            }
         },
         "waE2E.ContextInfo_BusinessMessageForwardInfo": {
             "type": "object",
@@ -17732,6 +17866,14 @@ const docTemplate = `{
                 "ContextInfo_ForwardedNewsletterMessageInfo_UPDATE_CARD",
                 "ContextInfo_ForwardedNewsletterMessageInfo_LINK_CARD"
             ]
+        },
+        "waE2E.ContextInfo_InstagramThreadLink": {
+            "type": "object",
+            "properties": {
+                "URL": {
+                    "type": "string"
+                }
+            }
         },
         "waE2E.ContextInfo_PairedMediaType": {
             "type": "integer",
@@ -18293,7 +18435,7 @@ const docTemplate = `{
                         "$ref": "#/definitions/waE2E.VideoEndCard"
                     }
                 },
-                "faviconMMSMetadata": {
+                "faviconMmsMetadata": {
                     "$ref": "#/definitions/waE2E.MMSThumbnailMetadata"
                 },
                 "font": {
@@ -18609,6 +18751,20 @@ const docTemplate = `{
                 },
                 "paramOneof": {
                     "description": "Types that are valid to be assigned to ParamOneof:\n\n\t*HighlyStructuredMessage_HSMLocalizableParameter_Currency\n\t*HighlyStructuredMessage_HSMLocalizableParameter_DateTime"
+                }
+            }
+        },
+        "waE2E.HistoryShareMessageEntry": {
+            "type": "object",
+            "properties": {
+                "messageSecretProof": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "stanzaID": {
+                    "type": "string"
                 }
             }
         },
@@ -19478,6 +19634,26 @@ const docTemplate = `{
                 }
             }
         },
+        "waE2E.MarkAsVerifiedAction": {
+            "type": "object",
+            "properties": {
+                "actionSeq": {
+                    "type": "integer"
+                },
+                "userJIDString": {
+                    "type": "string"
+                },
+                "verified": {
+                    "type": "boolean"
+                },
+                "verifiedIdentityKey": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
         "waE2E.MediaDomainInfo": {
             "type": "object",
             "properties": {
@@ -19809,6 +19985,9 @@ const docTemplate = `{
                 "splitPaymentMessage": {
                     "$ref": "#/definitions/waE2E.SplitPaymentMessage"
                 },
+                "splitPaymentUpdateMessage": {
+                    "$ref": "#/definitions/waE2E.SplitPaymentUpdateMessage"
+                },
                 "spoilerMessage": {
                     "$ref": "#/definitions/waE2E.FutureProofMessage"
                 },
@@ -19925,6 +20104,15 @@ const docTemplate = `{
         "waE2E.MessageContextInfo": {
             "type": "object",
             "properties": {
+                "accountEncryptionAttestation": {
+                    "$ref": "#/definitions/waAea.NonE2EEAttestation"
+                },
+                "associatedPrimaryIdentityKey": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "botMessageSecret": {
                     "type": "array",
                     "items": {
@@ -20071,6 +20259,9 @@ const docTemplate = `{
         "waE2E.MessageHistoryNotice": {
             "type": "object",
             "properties": {
+                "botHistoryShareSyncMetadata": {
+                    "$ref": "#/definitions/waE2E.BotHistoryShareSyncMetadata"
+                },
                 "contextInfo": {
                     "$ref": "#/definitions/waE2E.ContextInfo"
                 },
@@ -20295,6 +20486,9 @@ const docTemplate = `{
         "waE2E.PaymentExtendedMetadata": {
             "type": "object",
             "properties": {
+                "messageParamsJSON": {
+                    "type": "string"
+                },
                 "platform": {
                     "type": "string"
                 },
@@ -20695,6 +20889,9 @@ const docTemplate = `{
                 "companionMetaNonceFetchRequestResponse": {
                     "$ref": "#/definitions/waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_CompanionMetaNonceFetchResponse"
                 },
+                "contactRefreshResponse": {
+                    "$ref": "#/definitions/waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_ContactRefreshResponse"
+                },
                 "flowResponsesCsvBundle": {
                     "$ref": "#/definitions/waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_FlowResponsesCsvBundle"
                 },
@@ -20771,6 +20968,29 @@ const docTemplate = `{
             "properties": {
                 "nonce": {
                     "type": "string"
+                }
+            }
+        },
+        "waE2E.PeerDataOperationRequestResponseMessage_PeerDataOperationResult_ContactRefreshResponse": {
+            "type": "object",
+            "properties": {
+                "collectionVersion": {
+                    "type": "integer"
+                },
+                "coveredRequestIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "primaryProcessEndTimestampMS": {
+                    "type": "integer"
+                },
+                "primaryProcessStartTimestampMS": {
+                    "type": "integer"
+                },
+                "uploadedContactCount": {
+                    "type": "integer"
                 }
             }
         },
@@ -21024,7 +21244,8 @@ const docTemplate = `{
                 10,
                 11,
                 12,
-                13
+                13,
+                14
             ],
             "x-enum-varnames": [
                 "PeerDataOperationRequestType_UPLOAD_STICKER",
@@ -21040,7 +21261,8 @@ const docTemplate = `{
                 "PeerDataOperationRequestType_HISTORY_SYNC_CHUNK_RETRY",
                 "PeerDataOperationRequestType_GALAXY_FLOW_ACTION",
                 "PeerDataOperationRequestType_BUSINESS_BROADCAST_INSIGHTS_DELIVERED_TO",
-                "PeerDataOperationRequestType_BUSINESS_BROADCAST_INSIGHTS_REFRESH"
+                "PeerDataOperationRequestType_BUSINESS_BROADCAST_INSIGHTS_REFRESH",
+                "PeerDataOperationRequestType_CONTACT_REFRESH_REQUEST"
             ]
         },
         "waE2E.PinInChatMessage": {
@@ -21443,6 +21665,9 @@ const docTemplate = `{
                 "cloudApiThreadControlNotification": {
                     "$ref": "#/definitions/waE2E.CloudAPIThreadControlNotification"
                 },
+                "coexStateSync": {
+                    "$ref": "#/definitions/waServerSync.CoexStateSync"
+                },
                 "disappearingMode": {
                     "$ref": "#/definitions/waE2E.DisappearingMode"
                 },
@@ -21473,6 +21698,9 @@ const docTemplate = `{
                 "limitSharing": {
                     "$ref": "#/definitions/waCommon.LimitSharing"
                 },
+                "markAsVerifiedAction": {
+                    "$ref": "#/definitions/waE2E.MarkAsVerifiedAction"
+                },
                 "mediaNotifyMessage": {
                     "$ref": "#/definitions/waE2E.MediaNotifyMessage"
                 },
@@ -21487,6 +21715,9 @@ const docTemplate = `{
                 },
                 "requestWelcomeMessageMetadata": {
                     "$ref": "#/definitions/waE2E.RequestWelcomeMessageMetadata"
+                },
+                "syncRequestMutationRetry": {
+                    "$ref": "#/definitions/waE2E.SyncRequestMutationRetry"
                 },
                 "timestampMS": {
                     "type": "integer"
@@ -21528,7 +21759,10 @@ const docTemplate = `{
                 31,
                 32,
                 34,
-                35
+                35,
+                36,
+                37,
+                38
             ],
             "x-enum-varnames": [
                 "ProtocolMessage_REVOKE",
@@ -21560,7 +21794,10 @@ const docTemplate = `{
                 "ProtocolMessage_AI_MEDIA_COLLECTION_MESSAGE",
                 "ProtocolMessage_MESSAGE_UNSCHEDULE",
                 "ProtocolMessage_CHAT_THEME_SETTING",
-                "ProtocolMessage_AI_METADATA_OPERATION"
+                "ProtocolMessage_AI_METADATA_OPERATION",
+                "ProtocolMessage_MARK_AS_VERIFIED_ACTION",
+                "ProtocolMessage_COEX_STATE_SYNC",
+                "ProtocolMessage_SYNC_REQUEST_MUTATION_RETRY"
             ]
         },
         "waE2E.QuestionResponseMessage": {
@@ -21847,6 +22084,17 @@ const docTemplate = `{
                 "SplitPaymentParticipant_PENDING",
                 "SplitPaymentParticipant_PAID"
             ]
+        },
+        "waE2E.SplitPaymentUpdateMessage": {
+            "type": "object",
+            "properties": {
+                "participantJID": {
+                    "type": "string"
+                },
+                "splitID": {
+                    "type": "string"
+                }
+            }
         },
         "waE2E.StatusNotificationMessage": {
             "type": "object",
@@ -22176,6 +22424,31 @@ const docTemplate = `{
                 }
             }
         },
+        "waE2E.SyncRequestMutationRetry": {
+            "type": "object",
+            "properties": {
+                "collections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/waE2E.SyncRequestMutationRetry_Collection"
+                    }
+                },
+                "count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "waE2E.SyncRequestMutationRetry_Collection": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "storedSyncdVersion": {
+                    "type": "integer"
+                }
+            }
+        },
         "waE2E.TemplateButtonReplyMessage": {
             "type": "object",
             "properties": {
@@ -22492,6 +22765,81 @@ const docTemplate = `{
                 "MediaRetryNotification_NOT_FOUND",
                 "MediaRetryNotification_DECRYPTION_ERROR"
             ]
+        },
+        "waServerSync.CoexStateSync": {
+            "type": "object",
+            "properties": {
+                "collectionMutations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/waServerSync.CoexStateSync_CollectionMutations"
+                    }
+                }
+            }
+        },
+        "waServerSync.CoexStateSync_CollectionMutations": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "type": "string"
+                },
+                "mutations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/waServerSync.CoexStateSync_Mutation"
+                    }
+                }
+            }
+        },
+        "waServerSync.CoexStateSync_Mutation": {
+            "type": "object",
+            "properties": {
+                "dirtyVersion": {
+                    "type": "integer"
+                },
+                "index": {
+                    "$ref": "#/definitions/waServerSync.SyncdIndex"
+                },
+                "operation": {
+                    "$ref": "#/definitions/waServerSync.SyncdMutation_SyncdOperation"
+                },
+                "value": {
+                    "$ref": "#/definitions/waServerSync.SyncdValue"
+                }
+            }
+        },
+        "waServerSync.SyncdIndex": {
+            "type": "object",
+            "properties": {
+                "blob": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "waServerSync.SyncdMutation_SyncdOperation": {
+            "type": "integer",
+            "enum": [
+                0,
+                1
+            ],
+            "x-enum-varnames": [
+                "SyncdMutation_SET",
+                "SyncdMutation_REMOVE"
+            ]
+        },
+        "waServerSync.SyncdValue": {
+            "type": "object",
+            "properties": {
+                "blob": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
         },
         "waStatusAttributions.StatusAttribution": {
             "type": "object",
