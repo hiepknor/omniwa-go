@@ -22,8 +22,8 @@ require (
 	github.com/swaggo/gin-swagger v1.6.0
 	github.com/swaggo/swag v1.16.3
 	github.com/vincent-petithory/dataurl v1.0.0
-	go.mau.fi/whatsmeow v0.0.0-20260630180629-b572e5bcb92b
-	golang.org/x/exp v0.0.0-20260611194520-c48552f49976
+	go.mau.fi/whatsmeow v0.0.0-20260730092514-662ad1dc6900
+	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597
 	golang.org/x/image v0.43.0
 	golang.org/x/net v0.57.0
 	golang.org/x/sync v0.22.0
@@ -82,7 +82,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
-	github.com/petermattis/goid v0.0.0-20260330135022-df67b199bc81 // indirect
+	github.com/petermattis/goid v0.0.0-20260713124913-97594f28f5ca // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
@@ -94,11 +94,11 @@ require (
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.27 // indirect
 	go.mau.fi/libsignal v0.2.2 // indirect
-	go.mau.fi/util v0.9.10 // indirect
+	go.mau.fi/util v0.9.12-0.20260717235539-f9ffa7eca58d // indirect
 	golang.org/x/arch v0.10.0 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect
 	modernc.org/libc v1.55.3 // indirect
