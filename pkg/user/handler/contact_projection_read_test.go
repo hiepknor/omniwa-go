@@ -20,18 +20,39 @@ import (
 
 type contactUserServiceStub struct {
 	user_service.UserService
-	contacts []user_service.ContactInfo
-	meta     *projection_service.ProjectionReadMeta
-	err      error
-	contact  *user_service.ContactInfo
-	term     string
-	limit    int
-	cursor   string
-	checked  *user_service.CheckUserCollection
+	contacts   []user_service.ContactInfo
+	meta       *projection_service.ProjectionReadMeta
+	err        error
+	contact    *user_service.ContactInfo
+	term       string
+	limit      int
+	cursor     string
+	checked    *user_service.CheckUserCollection
+	checkCalls int
 }
 
 func (s *contactUserServiceStub) CheckUser(context.Context, *user_service.CheckUserStruct, *instance_model.Instance) (*user_service.CheckUserCollection, error) {
+	s.checkCalls++
 	return s.checked, s.err
+}
+
+func TestCheckUserRejectsMoreThanOneHundredNumbersBeforeProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	numbers := make([]string, 101)
+	for index := range numbers {
+		numbers[index] = "15550001"
+	}
+	body, _ := json.Marshal(map[string]any{"number": numbers})
+	service := &contactUserServiceStub{}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/user/check", strings.NewReader(string(body)))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("instance", &instance_model.Instance{Id: "instance-a"})
+	(&userHandler{userService: service}).CheckUser(ctx)
+	if recorder.Code != http.StatusBadRequest || service.checkCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", recorder.Code, service.checkCalls, recorder.Body.String())
+	}
 }
 
 func (s *contactUserServiceStub) GetContact(context.Context, *instance_model.Instance, string) (*user_service.ContactInfo, *projection_service.ProjectionReadMeta, error) {
@@ -60,6 +81,9 @@ func TestGetContactsReturnsAdditiveProjectionMetaAndEmptyArray(t *testing.T) {
 	(&userHandler{userService: service}).GetContacts(ctx)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("cache control = %q", recorder.Header().Get("Cache-Control"))
 	}
 	var body map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {

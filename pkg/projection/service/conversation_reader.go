@@ -32,6 +32,7 @@ type ProjectedConversation struct {
 	// UnreadAuthoritative is false when unreadCount is only the best-known projected count because no complete provider snapshot is available.
 	UnreadAuthoritative  bool       `json:"unreadAuthoritative" binding:"required"`
 	AddressingJID        *string    `json:"addressingJid,omitempty"`
+	PhoneNumber          *string    `json:"phoneNumber,omitempty"`
 	Aliases              []string   `json:"aliases,omitempty"`
 	ContactID            *string    `json:"contactId,omitempty" format:"uuid"`
 	DisplayName          *string    `json:"displayName,omitempty"`
@@ -50,35 +51,38 @@ type ProjectedConversation struct {
 // ProviderChatID records the provider alias on which the message arrived; it is
 // not the conversation identity or cursor scope.
 type ProjectedConversationMessage struct {
-	MessageID          string                             `json:"messageId" binding:"required"`
-	ConversationID     string                             `json:"conversationId" binding:"required" format:"uuid"`
-	ProviderChatID     string                             `json:"providerChatId,omitempty"`
-	SenderJID          *string                            `json:"senderJid,omitempty"`
-	RecipientJID       *string                            `json:"recipientJid,omitempty"`
-	ParticipantJID     *string                            `json:"participantJid,omitempty"`
-	Direction          projection_model.MessageDirection  `json:"direction" binding:"required"`
-	MessageType        string                             `json:"messageType" binding:"required"`
-	ContentText        *string                            `json:"contentText,omitempty"`
-	Caption            *string                            `json:"caption,omitempty"`
-	ContentSummary     *string                            `json:"contentSummary,omitempty"`
-	QuotedMessageID    *string                            `json:"quotedMessageId,omitempty"`
-	MediaType          *string                            `json:"mediaType,omitempty"`
-	MediaMIMEType      *string                            `json:"mediaMimeType,omitempty"`
-	MediaFileName      *string                            `json:"mediaFileName,omitempty"`
-	MediaSize          *int64                             `json:"mediaSize,omitempty"`
-	MediaDuration      *uint32                            `json:"mediaDurationSeconds,omitempty"`
-	MediaWidth         *uint32                            `json:"mediaWidth,omitempty"`
-	MediaHeight        *uint32                            `json:"mediaHeight,omitempty"`
-	MediaAssetID       *string                            `json:"mediaAssetId,omitempty" format:"uuid"`
-	Status             *string                            `json:"status,omitempty"`
-	ProviderTimestamp  time.Time                          `json:"providerTimestamp" binding:"required"`
-	SentAt             *time.Time                         `json:"sentAt,omitempty"`
-	DeliveredAt        *time.Time                         `json:"deliveredAt,omitempty"`
-	ReadAt             *time.Time                         `json:"readAt,omitempty"`
-	PlayedAt           *time.Time                         `json:"playedAt,omitempty"`
-	Provenance         projection_model.MessageProvenance `json:"provenance" binding:"required"`
-	HistorySyncID      *string                            `json:"historySyncId,omitempty"`
-	RetentionExpiresAt *time.Time                         `json:"retentionExpiresAt,omitempty"`
+	MessageID              string                             `json:"messageId" binding:"required"`
+	ConversationID         string                             `json:"conversationId" binding:"required" format:"uuid"`
+	ProviderChatID         string                             `json:"providerChatId,omitempty"`
+	SenderJID              *string                            `json:"senderJid,omitempty"`
+	SenderPhoneNumber      *string                            `json:"senderPhoneNumber,omitempty"`
+	RecipientJID           *string                            `json:"recipientJid,omitempty"`
+	RecipientPhoneNumber   *string                            `json:"recipientPhoneNumber,omitempty"`
+	ParticipantJID         *string                            `json:"participantJid,omitempty"`
+	ParticipantPhoneNumber *string                            `json:"participantPhoneNumber,omitempty"`
+	Direction              projection_model.MessageDirection  `json:"direction" binding:"required"`
+	MessageType            string                             `json:"messageType" binding:"required"`
+	ContentText            *string                            `json:"contentText,omitempty"`
+	Caption                *string                            `json:"caption,omitempty"`
+	ContentSummary         *string                            `json:"contentSummary,omitempty"`
+	QuotedMessageID        *string                            `json:"quotedMessageId,omitempty"`
+	MediaType              *string                            `json:"mediaType,omitempty"`
+	MediaMIMEType          *string                            `json:"mediaMimeType,omitempty"`
+	MediaFileName          *string                            `json:"mediaFileName,omitempty"`
+	MediaSize              *int64                             `json:"mediaSize,omitempty"`
+	MediaDuration          *uint32                            `json:"mediaDurationSeconds,omitempty"`
+	MediaWidth             *uint32                            `json:"mediaWidth,omitempty"`
+	MediaHeight            *uint32                            `json:"mediaHeight,omitempty"`
+	MediaAssetID           *string                            `json:"mediaAssetId,omitempty" format:"uuid"`
+	Status                 *string                            `json:"status,omitempty"`
+	ProviderTimestamp      time.Time                          `json:"providerTimestamp" binding:"required"`
+	SentAt                 *time.Time                         `json:"sentAt,omitempty"`
+	DeliveredAt            *time.Time                         `json:"deliveredAt,omitempty"`
+	ReadAt                 *time.Time                         `json:"readAt,omitempty"`
+	PlayedAt               *time.Time                         `json:"playedAt,omitempty"`
+	Provenance             projection_model.MessageProvenance `json:"provenance" binding:"required"`
+	HistorySyncID          *string                            `json:"historySyncId,omitempty"`
+	RetentionExpiresAt     *time.Time                         `json:"retentionExpiresAt,omitempty"`
 }
 
 func (r *ChatMessageReader) ListConversations(ctx context.Context, instanceID string, limit int, cursor string) ([]ProjectedConversation, *ProjectionReadMeta, error) {
@@ -94,6 +98,7 @@ func (r *ChatMessageReader) ListConversations(ctx context.Context, instanceID st
 	for index := range records {
 		items[index] = projectedCanonicalConversationView(&records[index])
 	}
+	r.enrichConversationPhones(ctx, instanceID, items)
 	return items, meta, nil
 }
 
@@ -110,6 +115,9 @@ func (r *ChatMessageReader) GetConversation(ctx context.Context, instanceID, con
 		return nil, meta, err
 	}
 	view := projectedCanonicalConversationView(record)
+	items := []ProjectedConversation{view}
+	r.enrichConversationPhones(ctx, instanceID, items)
+	view = items[0]
 	return &view, meta, nil
 }
 
@@ -132,6 +140,7 @@ func (r *ChatMessageReader) ListConversationMessages(ctx context.Context, instan
 			return nil, nil, err
 		}
 	}
+	r.enrichMessagePhones(ctx, instanceID, items)
 	return items, meta, nil
 }
 
@@ -158,7 +167,83 @@ func (r *ChatMessageReader) GetConversationMessage(ctx context.Context, instance
 	if err != nil {
 		return nil, meta, err
 	}
+	items := []ProjectedConversationMessage{view}
+	r.enrichMessagePhones(ctx, instanceID, items)
+	view = items[0]
 	return &view, meta, nil
+}
+
+func (r *ChatMessageReader) enrichConversationPhones(ctx context.Context, instanceID string, items []ProjectedConversation) {
+	identities := make([]string, 0, len(items)*2)
+	for index := range items {
+		if items[index].Type != ConversationTypeDirect {
+			continue
+		}
+		if items[index].AddressingJID != nil {
+			identities = append(identities, *items[index].AddressingJID)
+		}
+		identities = append(identities, items[index].Aliases...)
+	}
+	phones := r.phoneNumbers.Resolve(ctx, instanceID, identities)
+	for index := range items {
+		candidates := items[index].Aliases
+		if items[index].AddressingJID != nil {
+			candidates = append([]string{*items[index].AddressingJID}, candidates...)
+		}
+		items[index].PhoneNumber = firstResolvedPhone(phones, candidates)
+	}
+}
+
+func (r *ChatMessageReader) enrichMessagePhones(ctx context.Context, instanceID string, items []ProjectedConversationMessage) {
+	identities := make([]string, 0, len(items)*3)
+	for index := range items {
+		identities = append(identities, messageIdentities(items[index])...)
+	}
+	phones := r.phoneNumbers.Resolve(ctx, instanceID, identities)
+	for index := range items {
+		applyMessagePhones(&items[index], phones)
+	}
+}
+
+func messageIdentities(item ProjectedConversationMessage) []string {
+	values := make([]string, 0, 3)
+	for _, value := range []*string{item.SenderJID, item.RecipientJID, item.ParticipantJID} {
+		if value != nil {
+			values = append(values, *value)
+		}
+	}
+	return values
+}
+
+func applyMessagePhones(item *ProjectedConversationMessage, phones map[string]string) {
+	if item == nil {
+		return
+	}
+	if item.SenderJID != nil {
+		item.SenderPhoneNumber = stringValuePointer(phones[*item.SenderJID])
+	}
+	if item.RecipientJID != nil {
+		item.RecipientPhoneNumber = stringValuePointer(phones[*item.RecipientJID])
+	}
+	if item.ParticipantJID != nil {
+		item.ParticipantPhoneNumber = stringValuePointer(phones[*item.ParticipantJID])
+	}
+}
+
+func firstResolvedPhone(phones map[string]string, identities []string) *string {
+	for _, identity := range identities {
+		if phone := phones[identity]; phone != "" {
+			return stringValuePointer(phone)
+		}
+	}
+	return nil
+}
+
+func stringValuePointer(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func (r *ChatMessageReader) canonicalConversationMeta(instanceID, resource string, version int64, notReady error) (*ProjectionReadMeta, error) {

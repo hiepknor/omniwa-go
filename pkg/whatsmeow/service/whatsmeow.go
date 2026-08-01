@@ -38,6 +38,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/config"
 	event_emission "github.com/evolution-foundation/evolution-go/pkg/events/emission"
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
+	event_payload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
 	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
@@ -1573,16 +1574,16 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			messageSize = fmt.Sprintf("%d bytes", *evt.Message.GetAudioMessage().FileLength)
 		}
 
-		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== MESSAGE RECEIVED ===== ID: %s, From: %s, Type: %s, Size: %s", mycli.userID, evt.Info.ID, evt.Info.Chat.String(), evt.Info.Type, messageSize)
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=receive result=accepted message_id=%s type=%s size=%s", evt.Info.ID, evt.Info.Type, messageSize)
 
 		// se readMessages for true ele marca como lida
 		if mycli.Instance.ReadMessages {
 			messageIDs := []string{evt.Info.ID}
 			err := mycli.WAClient.MarkRead(context.Background(), messageIDs, time.Now(), evt.Info.Sender, evt.Info.Sender)
 			if err != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to auto-mark message as read: %v", mycli.userID, err)
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=auto_mark_read result=failed message_id=%s error_code=provider_failed", evt.Info.ID)
 			} else {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Auto-marked message as read from %s", mycli.userID, evt.Info.Chat.String())
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=auto_mark_read result=success message_id=%s", evt.Info.ID)
 			}
 		}
 
@@ -1613,7 +1614,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		chatStr := evt.Info.Chat.String()
 
 		if strings.Contains(senderStr, "@lid") && strings.Contains(senderAltStr, "@s.whatsapp.net") {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Detected LID/WhatsApp JID swap case - Sender: %s, SenderAlt: %s", mycli.userID, senderStr, senderAltStr)
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=normalize_identity result=paired_alt message_id=%s", evt.Info.ID)
 
 			// Limpa os IDs antes de fazer a troca
 			cleanSenderAlt := cleanSenderID(senderAltStr)
@@ -1632,8 +1633,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				evt.Info.SenderAlt = cleanedLID
 			}
 
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] JID swap completed - New Sender: %s, New SenderAlt: %s, New Chat: %s",
-				mycli.userID, evt.Info.Sender.String(), evt.Info.SenderAlt.String(), evt.Info.Chat.String())
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=normalize_identity result=success message_id=%s", evt.Info.ID)
 		} else {
 			// Comportamento normal: apenas limpa os IDs
 			cleanSender := cleanSenderID(senderStr)
@@ -1653,9 +1653,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				time.Sleep(1 * time.Second) // Pequeno delay para parecer mais natural
 				err := mycli.WAClient.MarkRead(context.Background(), []types.MessageID{evt.Info.ID}, evt.Info.Timestamp, evt.Info.Chat, evt.Info.Sender)
 				if err != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to auto-mark message as read: %v", mycli.userID, err)
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=auto_mark_read result=failed message_id=%s error_code=provider_failed", evt.Info.ID)
 				} else {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Auto-marked message as read from %s", mycli.userID, evt.Info.Chat.String())
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=auto_mark_read result=success message_id=%s", evt.Info.ID)
 				}
 			}()
 		}
@@ -1669,14 +1669,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if postMap["data"] != nil {
 			jsonBytes, err := json.Marshal(postMap["data"])
 			if err != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to marshal postMap['data']: %v", mycli.userID, err)
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=encode result=failed message_id=%s error_code=marshal_failed", evt.Info.ID)
 				return
 			}
 
 			var dataMap map[string]interface{}
 			err = json.Unmarshal(jsonBytes, &dataMap)
 			if err != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to unmarshal postMap['data'] to map[string]interface{}: %v", mycli.userID, err)
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=encode result=failed message_id=%s error_code=unmarshal_failed", evt.Info.ID)
 				return
 			}
 
@@ -1697,30 +1697,18 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		referral := extractReferralFromMessage(evt.Message)
 
 		if evt.Message.GetPollUpdateMessage() != nil {
-			fmt.Printf("[POLL DEBUG] 🎯 PollUpdateMessage detected!\n")
-			fmt.Printf("[POLL DEBUG] � BEFORE accessing evt.Info - Sender: %s, Server: %s\n", evt.Info.Sender.String(), evt.Info.Sender.Server)
-			fmt.Printf("[POLL DEBUG] 📍 BEFORE accessing evt.Info - SenderAlt: %s\n", evt.Info.SenderAlt.String())
-			fmt.Printf("[POLL DEBUG] �� mycli.WAClient is nil: %v\n", mycli.WAClient == nil)
-			if mycli.WAClient != nil {
-				fmt.Printf("[POLL DEBUG] ✅ mycli.WAClient is initialized: %s\n", mycli.WAClient.Store.ID)
-			}
-
 			decrypted, err := mycli.WAClient.DecryptPollVote(context.Background(), evt)
 			if err != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to decrypt vote: %v", mycli.userID, err)
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=decrypt_poll result=failed message_id=%s error_code=provider_failed", evt.Info.ID)
 			} else {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Selected options in decrypted vote:", mycli.userID)
-				for _, option := range decrypted.SelectedOptions {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("- %X", option)
-
-				}
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=decrypt_poll result=success message_id=%s", evt.Info.ID)
 
 				// NOVO: Salvar voto no banco de dados de forma NÃO-INVASIVA
 				if mycli.pollService != nil {
 					go func() {
 						defer func() {
 							if r := recover(); r != nil {
-								mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Panic ao salvar voto: %v", mycli.userID, r)
+								mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=save_poll result=failed message_id=%s error_code=panic", evt.Info.ID)
 							}
 						}()
 
@@ -1752,7 +1740,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 						defer cancel()
 
 						if err := mycli.pollService.SavePollVote(ctx, pollVote); err != nil {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to save poll vote to database: %v", mycli.userID, err)
+							mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=save_poll result=failed message_id=%s error_code=database_failed", evt.Info.ID)
 						} else {
 							mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Poll vote saved to database successfully", mycli.userID)
 						}
@@ -1866,7 +1854,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 						mediaSize = int64(*audio.FileLength)
 					}
 				} else if document != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Downloading document - ID: %s, FileName: %s, Size: %d bytes", mycli.userID, evt.Info.ID, document.GetFileName(), document.GetFileLength())
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=download_document result=started message_id=%s size=%d", evt.Info.ID, document.GetFileLength())
 					data, err = mycli.WAClient.Download(downloadCtx, document)
 					extension = getExtensionFromMimeType(document.GetMimetype())
 					mimeType = document.GetMimetype()
@@ -1894,13 +1882,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 						webpReader := bytes.NewReader(data)
 						img, decErr := webp.Decode(webpReader)
 						if decErr != nil {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to decode webp sticker, keeping raw webp: %v", mycli.userID, decErr)
+							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=message_event action=decode_sticker result=failed message_id=%s error_code=decode_failed", evt.Info.ID)
 							extension = ".webp"
 							mimeType = "image/webp"
 						} else {
 							var pngBuffer bytes.Buffer
 							if encErr := png.Encode(&pngBuffer, img); encErr != nil {
-								mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to encode png from sticker, keeping raw webp: %v", mycli.userID, encErr)
+								mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=message_event action=encode_sticker result=failed message_id=%s error_code=encode_failed", evt.Info.ID)
 								extension = ".webp"
 								mimeType = "image/webp"
 							} else {
@@ -1939,13 +1927,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 						webpReader := bytes.NewReader(data)
 						img, decErr := webp.Decode(webpReader)
 						if decErr != nil {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to decode webp sticker, keeping raw webp: %v", mycli.userID, decErr)
+							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=message_event action=decode_child_sticker result=failed message_id=%s error_code=decode_failed", evt.Info.ID)
 							extension = ".webp"
 							mimeType = "image/webp"
 						} else {
 							var pngBuffer bytes.Buffer
 							if encErr := png.Encode(&pngBuffer, img); encErr != nil {
-								mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to encode png from associated sticker, keeping raw webp: %v", mycli.userID, encErr)
+								mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("component=message_event action=encode_child_sticker result=failed message_id=%s error_code=encode_failed", evt.Info.ID)
 								extension = ".webp"
 								mimeType = "image/webp"
 							} else {
@@ -1958,7 +1946,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				downloadDuration := time.Since(downloadStart)
 
 				if err != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to download media - ID: %s, Size: %d bytes, Duration: %v, Error: %v", mycli.userID, evt.Info.ID, mediaSize, downloadDuration, err)
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=download_media result=failed message_id=%s size=%d duration=%v error_code=download_failed", evt.Info.ID, mediaSize, downloadDuration)
 
 					// Check if it's a timeout error
 					if downloadCtx.Err() == context.DeadlineExceeded {
@@ -1993,13 +1981,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 						fileName := evt.Info.ID + extension
 						storageStart := time.Now()
 
-						mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Uploading to S3/Minio - ID: %s, FileName: %s, Size: %d bytes", mycli.userID, evt.Info.ID, fileName, len(data))
+						mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=store_media result=started message_id=%s size=%d", evt.Info.ID, len(data))
 
 						mediaURL, err := mycli.mediaStorage.Store(context.Background(), data, fileName, mimeType)
 						storageDuration := time.Since(storageStart)
 
 						if err != nil {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to store media in S3/Minio - ID: %s, Size: %d bytes, Duration: %v, Error: %v", mycli.userID, evt.Info.ID, len(data), storageDuration, err)
+							mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=store_media result=failed message_id=%s size=%d duration=%v error_code=storage_failed", evt.Info.ID, len(data), storageDuration)
 
 							// Continue processing without storage URL
 							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Continuing message processing without S3 URL - ID: %s", mycli.userID, evt.Info.ID)
@@ -2087,7 +2075,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				"buttonText": resp.GetSelectedDisplayText(),
 				"type":       "buttons_response",
 			}
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Button click detected (legacy): buttonId=%s, buttonText=%s", mycli.userID, resp.GetSelectedButtonID(), resp.GetSelectedDisplayText())
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=button_click result=detected message_id=%s type=legacy", evt.Info.ID)
 		} else if resp := evt.Message.GetInteractiveResponseMessage(); resp != nil {
 			// NativeFlow interactive response (quick_reply, cta_url, cta_call, cta_copy)
 			if nf := resp.GetNativeFlowResponseMessage(); nf != nil {
@@ -2112,7 +2100,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					"name":       nf.GetName(),
 					"paramsJSON": nf.GetParamsJSON(),
 				}
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Button click detected (native_flow): name=%s, buttonId=%s, buttonText=%s", mycli.userID, nf.GetName(), buttonId, buttonText)
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=button_click result=detected message_id=%s type=native_flow", evt.Info.ID)
 			}
 		} else if resp := evt.Message.GetTemplateButtonReplyMessage(); resp != nil {
 			// Template button reply
@@ -2121,7 +2109,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				"buttonText": resp.GetSelectedDisplayText(),
 				"type":       "template_button_reply",
 			}
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Button click detected (template): buttonId=%s, buttonText=%s", mycli.userID, resp.GetSelectedID(), resp.GetSelectedDisplayText())
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=button_click result=detected message_id=%s type=template", evt.Info.ID)
 		} else if resp := evt.Message.GetListResponseMessage(); resp != nil {
 			// List response (single select)
 			buttonClickData = map[string]interface{}{
@@ -2130,7 +2118,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				"type":        "list_response",
 				"description": resp.GetDescription(),
 			}
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] List selection detected: rowId=%s, title=%s", mycli.userID, resp.GetSingleSelectReply().GetSelectedRowID(), resp.GetTitle())
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=list_selection result=detected message_id=%s", evt.Info.ID)
 		}
 
 		// Se detectou clique em botão, emite evento separado "ButtonClick"
@@ -2160,11 +2148,11 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			} else {
 				buttonClickQueue := strings.ToLower(fmt.Sprintf("%s.buttonclick", userID))
 				mycli.service.EmitExternalEvent(mycli.Instance, "ButtonClick", evt, buttonClickQueue, buttonClickJSON)
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== BUTTON CLICK EVENT DISPATCHED ===== Type: %s, ButtonId: %s", mycli.userID, buttonClickData["type"], buttonClickData["buttonId"])
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=button_click_dispatch result=success message_id=%s", evt.Info.ID)
 			}
 		}
 
-		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== MESSAGE PROCESSING COMPLETED ===== ID: %s, From: %s, Type: %s, Webhook: %v", mycli.userID, evt.Info.ID, evt.Info.Chat.String(), evt.Info.Type, doWebhook)
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=message_event action=process result=success message_id=%s type=%s external_event=%v", evt.Info.ID, evt.Info.Type, doWebhook)
 	case *events.Receipt:
 		doWebhook = true
 		postMap["event"] = "Receipt"
@@ -2519,6 +2507,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 }
 
 func (w *whatsmeowService) sendToRealtimeTransports(instance *instance_model.Instance, eventType, queueName string, payload []byte) {
+	safePayload, err := event_payload.NewPhonePayloadPolicy(w.config.PhoneNumberExposureEnabled).Apply(payload)
+	if err != nil {
+		w.loggerWrapper.GetLogger(instance.Id).LogError("component=external_event action=realtime_policy result=failed error_code=payload_policy_failed")
+		return
+	}
+	payload = safePayload
 	if !event_emission.InstanceSubscribed(instance.Events, eventType, payload) {
 		return
 	}
@@ -2541,6 +2535,7 @@ func (w *whatsmeowService) EmitExternalEvent(instance *instance_model.Instance, 
 		}
 		return false
 	}
+	payload = enrichCurrentPhoneMetadata(payload, raw, w.config.PhoneNumberExposureEnabled)
 	parent := w.appCtx
 	if parent == nil {
 		parent = context.Background()
@@ -2558,6 +2553,77 @@ func (w *whatsmeowService) EmitExternalEvent(instance *instance_model.Instance, 
 		go w.sendToGlobalNATS(eventType, payload, instance.Id)
 	}
 	return true
+}
+
+func enrichCurrentPhoneMetadata(payload []byte, raw any, enabled bool) []byte {
+	if !enabled {
+		return payload
+	}
+	var source *types.MessageSource
+	receipt := false
+	switch event := raw.(type) {
+	case *events.Message:
+		source = &event.Info.MessageSource
+	case *events.Receipt:
+		source = &event.MessageSource
+		receipt = true
+	}
+	if source == nil {
+		return payload
+	}
+	var root map[string]any
+	if json.Unmarshal(payload, &root) != nil {
+		return payload
+	}
+	data, ok := root["data"].(map[string]any)
+	if !ok {
+		return payload
+	}
+	if receipt {
+		if phone := explicitPhoneDigits(source.Sender, source.SenderAlt); phone != "" {
+			data["recipientPhoneNumber"] = phone
+		}
+	} else if source.IsGroup {
+		if phone := explicitPhoneDigits(source.Sender, source.SenderAlt); phone != "" {
+			data["participantPhoneNumber"] = phone
+		}
+	} else {
+		if phone := explicitPhoneDigits(source.Sender, source.SenderAlt); phone != "" {
+			data["senderPhoneNumber"] = phone
+		}
+		if source.IsFromMe {
+			if phone := explicitPhoneDigits(source.Chat, source.RecipientAlt); phone != "" {
+				data["recipientPhoneNumber"] = phone
+			}
+		} else if phone := explicitPhoneDigits(source.RecipientAlt); phone != "" {
+			data["recipientPhoneNumber"] = phone
+		}
+	}
+	result, err := json.Marshal(root)
+	if err != nil {
+		return payload
+	}
+	return result
+}
+
+func explicitPhoneDigits(jids ...types.JID) string {
+	for _, jid := range jids {
+		jid = jid.ToNonAD()
+		if jid.Server != types.DefaultUserServer && jid.Server != types.LegacyUserServer {
+			continue
+		}
+		valid := jid.User != ""
+		for _, char := range jid.User {
+			if char < '0' || char > '9' {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return jid.User
+		}
+	}
+	return ""
 }
 
 func contains(subscriptions []string, event string) bool {
@@ -2724,6 +2790,12 @@ func (w *whatsmeowService) sendToGlobalNATS(eventType string, payload []byte, us
 	if group == "" || !utils.Find(w.config.NatsGlobalEvents, group) {
 		return
 	}
+	safePayload, err := event_payload.NewPhonePayloadPolicy(w.config.PhoneNumberExposureEnabled).Apply(payload)
+	if err != nil {
+		w.loggerWrapper.GetLogger(userID).LogError("component=external_event action=global_nats_policy result=failed error_code=payload_policy_failed")
+		return
+	}
+	payload = safePayload
 	if err := w.natsProducer.Produce(strings.ToLower(eventType), payload, "global", userID); err != nil {
 		w.loggerWrapper.GetLogger(userID).LogError("[%s] Failed to send message to NATS global subject: %v", userID, err)
 	}

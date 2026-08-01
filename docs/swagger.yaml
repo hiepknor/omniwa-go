@@ -2200,6 +2200,8 @@ definitions:
         type: string
       mutedUntil:
         type: string
+      phoneNumber:
+        type: string
       pinned:
         type: boolean
       type:
@@ -2263,6 +2265,8 @@ definitions:
         type: string
       participantJid:
         type: string
+      participantPhoneNumber:
+        type: string
       playedAt:
         type: string
       provenance:
@@ -2277,9 +2281,13 @@ definitions:
         type: string
       recipientJid:
         type: string
+      recipientPhoneNumber:
+        type: string
       retentionExpiresAt:
         type: string
       senderJid:
+        type: string
+      senderPhoneNumber:
         type: string
       sentAt:
         type: string
@@ -2302,6 +2310,8 @@ definitions:
       receiptType:
         type: string
       recipientJid:
+        type: string
+      recipientPhoneNumber:
         type: string
     type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ProjectionFailureItem:
@@ -2997,6 +3007,8 @@ definitions:
         type: string
       identityUpdatedAt:
         type: string
+      phoneNumber:
+        type: string
     required:
     - addressingJid
     - aliases
@@ -3041,6 +3053,8 @@ definitions:
         type: string
       lid:
         type: string
+      phoneNumber:
+        type: string
       query:
         type: string
       remoteJID:
@@ -3063,6 +3077,8 @@ definitions:
         type: array
       lid:
         description: The local ID (if available)
+        type: string
+      phoneNumber:
         type: string
       pictureID:
         type: string

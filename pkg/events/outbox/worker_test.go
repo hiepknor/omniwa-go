@@ -275,6 +275,10 @@ func (f *fakeRabbitDeliverer) DeliverConfirmed(_ context.Context, _ string, _ []
 
 type fakeTargets struct{}
 
+type passthroughPayloadPolicy struct{}
+
+func (passthroughPayloadPolicy) Apply(payload []byte) ([]byte, error) { return payload, nil }
+
 func (fakeTargets) WebhookTarget(context.Context, Destination, string) (string, error) {
 	return "https://example.test/events", nil
 }
@@ -286,7 +290,7 @@ func TestTransportDispatcherForwardsStableIdentityAndRejectsNATS(t *testing.T) {
 	t.Parallel()
 	webhook := &fakeWebhookDeliverer{}
 	rabbit := &fakeRabbitDeliverer{}
-	dispatcher, err := NewTransportDispatcher(webhook, rabbit, fakeTargets{})
+	dispatcher, err := NewTransportDispatcher(webhook, rabbit, fakeTargets{}, passthroughPayloadPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}

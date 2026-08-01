@@ -45,6 +45,7 @@ type userService struct {
 	identityResolver waquery.IdentityResolver
 	contactReader    *projection_service.ContactReader
 	mediaFetcher     netguard.Fetcher
+	phoneNumbers     *projection_service.PhoneNumberResolver
 }
 
 type ContactInfo struct {
@@ -55,6 +56,7 @@ type ContactInfo struct {
 	DisplayName       string     `json:"displayName,omitempty"`
 	DisplayNameSource string     `json:"displayNameSource,omitempty" enums:"full_name,business_name,push_name,first_name,username"`
 	IdentityUpdatedAt time.Time  `json:"identityUpdatedAt" binding:"required"`
+	PhoneNumber       *string    `json:"phoneNumber,omitempty"`
 	Jid               string     `json:"Jid"`
 	Found             bool       `json:"Found"`
 	FirstName         string     `json:"FirstName"`
@@ -78,6 +80,7 @@ type UserInfo struct {
 	PictureID    string
 	Devices      []types.JID
 	LID          *string // The local ID (if available)
+	PhoneNumber  *string `json:"phoneNumber,omitempty"`
 }
 
 type UserCollection struct {
@@ -91,6 +94,7 @@ type User struct {
 	RemoteJID    string
 	LID          *string
 	VerifiedName string
+	PhoneNumber  *string `json:"phoneNumber,omitempty"`
 }
 
 type CheckUserCollection struct {
@@ -221,6 +225,21 @@ func (u *userService) GetUser(ctx context.Context, data *CheckUserStruct, instan
 		}
 		uc.Users[jid] = info
 	}
+	identities := make([]string, 0, len(uc.Users)*2)
+	for jid, info := range uc.Users {
+		identities = append(identities, jid.String())
+		if info.LID != nil {
+			identities = append(identities, *info.LID)
+		}
+	}
+	phones := u.phoneNumbers.Resolve(ctx, instance.Id, identities)
+	for jid, info := range uc.Users {
+		info.PhoneNumber = stringPointer(phones[jid.String()])
+		if info.PhoneNumber == nil && info.LID != nil {
+			info.PhoneNumber = stringPointer(phones[*info.LID])
+		}
+		uc.Users[jid] = info
+	}
 
 	return uc, nil
 }
@@ -294,6 +313,9 @@ func (u *userService) performCheckUser(ctx context.Context, client *whatsmeow.Cl
 	shouldRetry := false
 
 	for _, item := range resp {
+		if item.IsIn {
+			u.phoneNumbers.ObserveCurrentProviderResult(ctx, instanceId, time.Now().UTC(), item.PhoneNumber, item.JID)
+		}
 		// Consultar LID Store para obter LID associado ao JID
 		var lidStr *string
 		if client.Store.LIDs != nil {
@@ -333,6 +355,25 @@ func (u *userService) performCheckUser(ctx context.Context, client *whatsmeow.Cl
 				VerifiedName: "",
 			}
 			uc.Users = append(uc.Users, msg)
+		}
+	}
+	identities := make([]string, 0, len(uc.Users)*2)
+	for index := range uc.Users {
+		identities = append(identities, uc.Users[index].JID)
+		if uc.Users[index].LID != nil {
+			identities = append(identities, *uc.Users[index].LID)
+		}
+	}
+	phones := u.phoneNumbers.Resolve(ctx, instanceId, identities)
+	for index := range uc.Users {
+		if !uc.Users[index].IsInWhatsapp {
+			continue
+		}
+		if phone := phones[uc.Users[index].JID]; phone != "" {
+			uc.Users[index].PhoneNumber = stringPointer(phone)
+		}
+		if uc.Users[index].PhoneNumber == nil && uc.Users[index].LID != nil {
+			uc.Users[index].PhoneNumber = stringPointer(phones[*uc.Users[index].LID])
 		}
 	}
 
@@ -428,6 +469,7 @@ func (u *userService) GetContacts(ctx context.Context, instance *instance_model.
 	for index := range contacts {
 		result[index] = contactInfoFromProjection(&contacts[index])
 	}
+	u.enrichContactPhones(ctx, instance.Id, contacts, result, true)
 	return result, meta, nil
 }
 
@@ -443,6 +485,7 @@ func (u *userService) SearchContacts(ctx context.Context, instance *instance_mod
 	for index := range contacts {
 		result[index] = contactInfoFromProjection(&contacts[index])
 	}
+	u.enrichContactPhones(ctx, instance.Id, contacts, result, false)
 	return result, meta, nil
 }
 
@@ -458,7 +501,58 @@ func (u *userService) GetContact(ctx context.Context, instance *instance_model.I
 		return nil, nil, errors.New("projected contact is missing")
 	}
 	result := contactInfoFromProjection(contact)
+	phones := u.phoneNumbers.Resolve(ctx, instance.Id, contactPhoneIdentities(contact))
+	result.PhoneNumber = firstContactPhone(phones, contactPhoneIdentities(contact))
 	return &result, meta, nil
+}
+
+func (u *userService) enrichContactPhones(ctx context.Context, instanceID string, contacts []projection_model.Contact, result []ContactInfo, fullList bool) {
+	phones := map[string]string{}
+	if fullList {
+		phones = u.phoneNumbers.List(ctx, instanceID)
+	} else {
+		identities := make([]string, 0, len(contacts)*3)
+		for index := range contacts {
+			identities = append(identities, contactPhoneIdentities(&contacts[index])...)
+		}
+		phones = u.phoneNumbers.Resolve(ctx, instanceID, identities)
+	}
+	for index := range contacts {
+		result[index].PhoneNumber = firstContactPhone(phones, contactPhoneIdentities(&contacts[index]))
+	}
+}
+
+func contactPhoneIdentities(contact *projection_model.Contact) []string {
+	if contact == nil {
+		return nil
+	}
+	values := []string{contact.AddressingJID(), contact.PreferredJID}
+	if contact.PhoneJID != nil {
+		values = append(values, *contact.PhoneJID)
+	}
+	if contact.LID != nil {
+		values = append(values, *contact.LID)
+	}
+	for _, alias := range contact.Aliases {
+		values = append(values, alias.Value)
+	}
+	return values
+}
+
+func firstContactPhone(phones map[string]string, identities []string) *string {
+	for _, identity := range identities {
+		if phone := phones[identity]; phone != "" {
+			return stringPointer(phone)
+		}
+	}
+	return nil
+}
+
+func stringPointer(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func contactInfoFromProjection(contact *projection_model.Contact) ContactInfo {
@@ -687,7 +781,12 @@ func NewUserService(
 	contactReader *projection_service.ContactReader,
 	mediaFetcher netguard.Fetcher,
 	loggerWrapper *logger_wrapper.LoggerManager,
+	phoneNumberResolvers ...*projection_service.PhoneNumberResolver,
 ) UserService {
+	var phoneNumbers *projection_service.PhoneNumberResolver
+	if len(phoneNumberResolvers) > 0 {
+		phoneNumbers = phoneNumberResolvers[0]
+	}
 	return &userService{
 		clients:          clients,
 		whatsmeowService: whatsmeowService,
@@ -696,5 +795,6 @@ func NewUserService(
 		contactReader:    contactReader,
 		mediaFetcher:     mediaFetcher,
 		loggerWrapper:    loggerWrapper,
+		phoneNumbers:     phoneNumbers,
 	}
 }

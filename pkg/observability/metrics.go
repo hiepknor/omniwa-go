@@ -82,6 +82,8 @@ type Registry struct {
 	emitterRouteCount            *prometheus.HistogramVec
 	emitterRoutes                *prometheus.CounterVec
 	phoneIdentityEvidence        *prometheus.CounterVec
+	phoneNumberResolution        *prometheus.CounterVec
+	phonePayloadPolicy           *prometheus.CounterVec
 }
 
 // NewRegistry constructs an isolated registry. Registration failures are
@@ -155,6 +157,14 @@ func NewRegistry() (*Registry, error) {
 			Namespace: "omniwa", Subsystem: "phone_identity", Name: "evidence_total",
 			Help: "Instance-scoped phone identity evidence observations by bounded outcome.",
 		}, []string{"outcome"}),
+		phoneNumberResolution: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "omniwa", Subsystem: "phone_identity", Name: "resolution_total",
+			Help: "Instance-scoped phone number resolution attempts by bounded outcome.",
+		}, []string{"outcome"}),
+		phonePayloadPolicy: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "omniwa", Subsystem: "phone_identity", Name: "payload_policy_total",
+			Help: "Phone payload policy applications by bounded outcome.",
+		}, []string{"outcome"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -164,13 +174,27 @@ func NewRegistry() (*Registry, error) {
 		result.outboxAttempts, result.outboxAttemptDuration, result.outboxClaimed,
 		result.outboxQueue, result.outboxOldestPending, result.outboxInfrastructureFailures,
 		result.emitterRecords, result.emitterRouteCount, result.emitterRoutes,
-		result.phoneIdentityEvidence,
+		result.phoneIdentityEvidence, result.phoneNumberResolution, result.phonePayloadPolicy,
 	} {
 		if err := result.registry.Register(collector); err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
+}
+
+func (r *Registry) ObservePhoneNumberResolution(outcome string) {
+	if r == nil || (outcome != "direct" && outcome != "paired" && outcome != "unresolved" && outcome != "failed") {
+		return
+	}
+	r.phoneNumberResolution.WithLabelValues(outcome).Inc()
+}
+
+func (r *Registry) ObservePhonePayloadPolicy(outcome string) {
+	if r == nil || (outcome != "preserved" && outcome != "redacted" && outcome != "failed") {
+		return
+	}
+	r.phonePayloadPolicy.WithLabelValues(outcome).Inc()
 }
 
 // ObservePhoneIdentityEvidence records aggregate outcomes without provider or

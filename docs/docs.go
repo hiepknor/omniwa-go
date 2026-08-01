@@ -11901,6 +11901,9 @@ const docTemplate = `{
                 "mutedUntil": {
                     "type": "string"
                 },
+                "phoneNumber": {
+                    "type": "string"
+                },
                 "pinned": {
                     "type": "boolean"
                 },
@@ -11994,6 +11997,9 @@ const docTemplate = `{
                 "participantJid": {
                     "type": "string"
                 },
+                "participantPhoneNumber": {
+                    "type": "string"
+                },
                 "playedAt": {
                     "type": "string"
                 },
@@ -12015,10 +12021,16 @@ const docTemplate = `{
                 "recipientJid": {
                     "type": "string"
                 },
+                "recipientPhoneNumber": {
+                    "type": "string"
+                },
                 "retentionExpiresAt": {
                     "type": "string"
                 },
                 "senderJid": {
+                    "type": "string"
+                },
+                "senderPhoneNumber": {
                     "type": "string"
                 },
                 "sentAt": {
@@ -12042,6 +12054,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "recipientJid": {
+                    "type": "string"
+                },
+                "recipientPhoneNumber": {
                     "type": "string"
                 }
             }
@@ -13044,6 +13059,9 @@ const docTemplate = `{
                 },
                 "identityUpdatedAt": {
                     "type": "string"
+                },
+                "phoneNumber": {
+                    "type": "string"
                 }
             }
         },
@@ -13104,6 +13122,9 @@ const docTemplate = `{
                 "lid": {
                     "type": "string"
                 },
+                "phoneNumber": {
+                    "type": "string"
+                },
                 "query": {
                     "type": "string"
                 },
@@ -13137,6 +13158,9 @@ const docTemplate = `{
                 },
                 "lid": {
                     "description": "The local ID (if available)",
+                    "type": "string"
+                },
+                "phoneNumber": {
                     "type": "string"
                 },
                 "pictureID": {
