@@ -52,6 +52,7 @@ const defaultProjectionPageSize = 50
 // @ID listConversations
 // @Router /conversations [get]
 func (c *chatHandler) ListConversations(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "private, no-store")
 	instance, ok := projectionInstance(ctx)
 	if !ok {
 		return
@@ -82,6 +83,7 @@ func (c *chatHandler) ListConversations(ctx *gin.Context) {
 // @ID getConversation
 // @Router /conversations/{conversationRef} [get]
 func (c *chatHandler) GetConversation(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "private, no-store")
 	instance, ok := projectionInstance(ctx)
 	if !ok {
 		return
@@ -111,6 +113,7 @@ func (c *chatHandler) GetConversation(ctx *gin.Context) {
 // @ID listConversationMessages
 // @Router /conversations/{conversationRef}/messages [get]
 func (c *chatHandler) ConversationMessages(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "private, no-store")
 	instance, ok := projectionInstance(ctx)
 	if !ok {
 		return
@@ -142,6 +145,7 @@ func (c *chatHandler) ConversationMessages(ctx *gin.Context) {
 // @ID getConversationMessage
 // @Router /conversations/{conversationRef}/messages/{messageId} [get]
 func (c *chatHandler) ConversationMessage(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "private, no-store")
 	instance, ok := projectionInstance(ctx)
 	if !ok {
 		return

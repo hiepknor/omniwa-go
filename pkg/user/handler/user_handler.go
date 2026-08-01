@@ -34,7 +34,12 @@ type userHandler struct {
 	userService user_service.UserService
 }
 
-const defaultContactSearchLimit = 50
+const (
+	defaultContactSearchLimit = 50
+	maxUserCheckNumbers       = 100
+)
+
+func privateNoStore(ctx *gin.Context) { ctx.Header("Cache-Control", "private, no-store") }
 
 // Get a user
 // @Summary Get a user
@@ -50,6 +55,7 @@ const defaultContactSearchLimit = 50
 // @Security ApiKeyAuth
 // @Router /user/info [post]
 func (u *userHandler) GetUser(ctx *gin.Context) {
+	privateNoStore(ctx)
 	getInstance := ctx.MustGet("instance")
 
 	instance, ok := getInstance.(*instance_model.Instance)
@@ -96,6 +102,7 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 // @Security ApiKeyAuth
 // @Router /user/check [post]
 func (u *userHandler) CheckUser(ctx *gin.Context) {
+	privateNoStore(ctx)
 	getInstance := ctx.MustGet("instance")
 
 	instance, ok := getInstance.(*instance_model.Instance)
@@ -113,6 +120,10 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 
 	if len(data.Number) < 1 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		return
+	}
+	if len(data.Number) > maxUserCheckNumbers {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "a maximum of 100 phone numbers is allowed"})
 		return
 	}
 
@@ -195,6 +206,7 @@ func (u *userHandler) GetAvatar(ctx *gin.Context) {
 // @Security ApiKeyAuth
 // @Router /user/contacts [get]
 func (u *userHandler) GetContacts(ctx *gin.Context) {
+	privateNoStore(ctx)
 	getInstance := ctx.MustGet("instance")
 
 	instance, ok := getInstance.(*instance_model.Instance)
@@ -227,6 +239,7 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 // @Security ApiKeyAuth
 // @Router /user/contacts/search [get]
 func (u *userHandler) SearchContacts(ctx *gin.Context) {
+	privateNoStore(ctx)
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
 		httpapi.WriteInternal(ctx, nil)
@@ -263,6 +276,7 @@ func (u *userHandler) SearchContacts(ctx *gin.Context) {
 // @Security ApiKeyAuth
 // @Router /user/contact/{contactId} [get]
 func (u *userHandler) GetContact(ctx *gin.Context) {
+	privateNoStore(ctx)
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
 		httpapi.WriteInternal(ctx, nil)

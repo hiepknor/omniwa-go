@@ -11898,6 +11898,9 @@
                 "mutedUntil": {
                     "type": "string"
                 },
+                "phoneNumber": {
+                    "type": "string"
+                },
                 "pinned": {
                     "type": "boolean"
                 },
@@ -11991,6 +11994,9 @@
                 "participantJid": {
                     "type": "string"
                 },
+                "participantPhoneNumber": {
+                    "type": "string"
+                },
                 "playedAt": {
                     "type": "string"
                 },
@@ -12012,10 +12018,16 @@
                 "recipientJid": {
                     "type": "string"
                 },
+                "recipientPhoneNumber": {
+                    "type": "string"
+                },
                 "retentionExpiresAt": {
                     "type": "string"
                 },
                 "senderJid": {
+                    "type": "string"
+                },
+                "senderPhoneNumber": {
                     "type": "string"
                 },
                 "sentAt": {
@@ -12039,6 +12051,9 @@
                     "type": "string"
                 },
                 "recipientJid": {
+                    "type": "string"
+                },
+                "recipientPhoneNumber": {
                     "type": "string"
                 }
             }
@@ -13041,6 +13056,9 @@
                 },
                 "identityUpdatedAt": {
                     "type": "string"
+                },
+                "phoneNumber": {
+                    "type": "string"
                 }
             }
         },
@@ -13101,6 +13119,9 @@
                 "lid": {
                     "type": "string"
                 },
+                "phoneNumber": {
+                    "type": "string"
+                },
                 "query": {
                     "type": "string"
                 },
@@ -13134,6 +13155,9 @@
                 },
                 "lid": {
                     "description": "The local ID (if available)",
+                    "type": "string"
+                },
+                "phoneNumber": {
                     "type": "string"
                 },
                 "pictureID": {

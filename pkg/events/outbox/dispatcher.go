@@ -23,23 +23,31 @@ type TargetResolver interface {
 	RabbitMQMode(context.Context, Destination, string) (string, error)
 }
 
+type PayloadPolicy interface{ Apply([]byte) ([]byte, error) }
+
 type TransportDispatcher struct {
 	webhook WebhookDeliverer
 	rabbit  RabbitMQDeliverer
 	targets TargetResolver
+	policy  PayloadPolicy
 }
 
-func NewTransportDispatcher(webhook WebhookDeliverer, rabbit RabbitMQDeliverer, targets TargetResolver) (*TransportDispatcher, error) {
-	if webhook == nil || rabbit == nil || targets == nil {
+func NewTransportDispatcher(webhook WebhookDeliverer, rabbit RabbitMQDeliverer, targets TargetResolver, policy PayloadPolicy) (*TransportDispatcher, error) {
+	if webhook == nil || rabbit == nil || targets == nil || policy == nil {
 		return nil, errors.New("external event outbox transport dependencies are required")
 	}
-	return &TransportDispatcher{webhook: webhook, rabbit: rabbit, targets: targets}, nil
+	return &TransportDispatcher{webhook: webhook, rabbit: rabbit, targets: targets, policy: policy}, nil
 }
 
 func (d *TransportDispatcher) Deliver(ctx context.Context, delivery Delivery) error {
 	if d == nil || ctx == nil || uuid.Validate(delivery.ID) != nil || uuid.Validate(delivery.InstanceID) != nil {
 		return &DeliveryError{Code: "invalid_delivery", Retryable: false}
 	}
+	payload, err := d.policy.Apply(delivery.Payload)
+	if err != nil {
+		return &DeliveryError{Code: "payload_policy_failed", Retryable: false, Cause: err}
+	}
+	delivery.Payload = payload
 	switch delivery.Transport {
 	case TransportWebhook:
 		target, err := d.targets.WebhookTarget(ctx, delivery.Destination, delivery.InstanceID)

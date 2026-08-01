@@ -38,6 +38,7 @@ import (
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	nats_producer "github.com/evolution-foundation/evolution-go/pkg/events/nats"
 	event_outbox "github.com/evolution-foundation/evolution-go/pkg/events/outbox"
+	event_payload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	rabbitmq_producer "github.com/evolution-foundation/evolution-go/pkg/events/rabbitmq"
 	webhook_producer "github.com/evolution-foundation/evolution-go/pkg/events/webhook"
 	websocket_producer "github.com/evolution-foundation/evolution-go/pkg/events/websocket"
@@ -204,7 +205,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if resolveErr != nil {
 		logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=target_resolver_unavailable")
 	}
-	dispatcher, dispatchErr := event_outbox.NewTransportDispatcher(webhookProducer, rabbitmqProducer, targetResolver)
+	phonePayloadPolicy := event_payload.NewPhonePayloadPolicy(config.PhoneNumberExposureEnabled, metricsRegistry)
+	dispatcher, dispatchErr := event_outbox.NewTransportDispatcher(webhookProducer, rabbitmqProducer, targetResolver, phonePayloadPolicy)
 	if dispatchErr != nil {
 		logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=dispatcher_unavailable")
 	}
@@ -464,17 +466,20 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	labelProjectionRepository := projection_repository.NewLabelProjectionRepository(db)
 	labelProjector := projection_service.NewLabelProjector(labelProjectionRepository, projectionStateService, projection_repository.NewReadinessRepository(db))
 	contactProjectionRepository := projection_repository.NewContactRepository(db)
+	phoneEvidenceRepository := projection_repository.NewPhoneIdentityEvidenceRepository(db)
+	phoneNumberResolver := projection_service.NewPhoneNumberResolver(phoneEvidenceRepository, config.PhoneNumberExposureEnabled, metricsRegistry)
 	var phoneIdentityEvidence *projection_service.PhoneIdentityEvidenceRecorder
 	if config.PhoneIdentityEvidenceEnabled {
 		phoneIdentityEvidence = projection_service.NewPhoneIdentityEvidenceRecorder(
-			projection_repository.NewPhoneIdentityEvidenceRepository(db), metricsRegistry,
+			phoneEvidenceRepository, metricsRegistry,
 		)
 	}
 	projectionReadinessRepository := projection_repository.NewReadinessRepository(db)
 	contactProjector := projection_service.NewContactProjector(contactProjectionRepository, projectionStateService, projectionReadinessRepository)
 	chatMessageProjectionRepository := projection_repository.NewChatMessageRepository(db)
 	chatMessageProjector := projection_service.NewChatMessageProjector(chatMessageProjectionRepository, projectionStateService, config.MessageRetention)
-	chatMessageReader := projection_service.NewChatMessageReader(chatMessageProjectionRepository, projectionStateService, config.MessageRetention)
+	chatMessageReader := projection_service.NewChatMessageReader(chatMessageProjectionRepository, projectionStateService, config.MessageRetention).
+		WithPhoneNumberResolver(phoneNumberResolver)
 	canonicalConversationServing := func(instanceID string) (bool, error) {
 		capabilities, err := projectionStateService.Capabilities(instanceID)
 		if err != nil {
@@ -895,7 +900,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		},
 	)
 	startBackground(backgroundWorkers, "campaign.delivery", campaignWorker.Run)
-	userService := user_service.NewUserService(runtimeRegistry, whatsmeowService, queryGuard, identityResolver, contactReader, remoteMediaFetcher, loggerWrapper)
+	userService := user_service.NewUserService(runtimeRegistry, whatsmeowService, queryGuard, identityResolver, contactReader, remoteMediaFetcher, loggerWrapper, phoneNumberResolver)
 	messageServiceOptions := []message_service.MessageServiceOption{}
 	if config.CanonicalConversationIdentityEnabled {
 		messageServiceOptions = append(messageServiceOptions, message_service.WithProjectedUnread(chatMessageProjectionRepository, projectionStateService))

@@ -31,13 +31,20 @@ type ChatMessageReader struct {
 	state          groupReadState
 	retention      time.Duration
 	canonicalReady func(string) (bool, error)
+	phoneNumbers   *PhoneNumberResolver
 }
 
 type ProjectedMessageReceipt struct {
-	MessageID    string    `json:"messageId"`
-	RecipientJID string    `json:"recipientJid"`
-	ReceiptType  string    `json:"receiptType"`
-	ReceiptAt    time.Time `json:"receiptAt"`
+	MessageID            string    `json:"messageId"`
+	RecipientJID         string    `json:"recipientJid"`
+	RecipientPhoneNumber *string   `json:"recipientPhoneNumber,omitempty"`
+	ReceiptType          string    `json:"receiptType"`
+	ReceiptAt            time.Time `json:"receiptAt"`
+}
+
+func (r *ChatMessageReader) WithPhoneNumberResolver(resolver *PhoneNumberResolver) *ChatMessageReader {
+	r.phoneNumbers = resolver
+	return r
 }
 
 type projectionCursor struct {
@@ -83,6 +90,14 @@ func (r *ChatMessageReader) ListReceipts(ctx context.Context, instanceID, messag
 			MessageID: receipts[index].MessageID, RecipientJID: receipts[index].RecipientJID,
 			ReceiptType: receipts[index].ReceiptType, ReceiptAt: receipts[index].ReceiptAt,
 		}
+	}
+	identities := make([]string, len(items))
+	for index := range items {
+		identities[index] = items[index].RecipientJID
+	}
+	phones := r.phoneNumbers.Resolve(ctx, instanceID, identities)
+	for index := range items {
+		items[index].RecipientPhoneNumber = stringValuePointer(phones[items[index].RecipientJID])
 	}
 	return items, meta, nil
 }

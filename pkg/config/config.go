@@ -129,6 +129,7 @@ type Config struct {
 
 	ContactIdentityReconciliationEnabled bool
 	PhoneIdentityEvidenceEnabled         bool
+	PhoneNumberExposureEnabled           bool
 	ContactIdentityBackfillBatch         int
 	ContactIdentityBackfillMaxBatches    int
 	CanonicalConversationIdentityEnabled bool
@@ -344,6 +345,10 @@ func Load() *Config {
 		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 1000", config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES)
 	}
 	phoneIdentityEvidenceEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_PHONE_IDENTITY_EVIDENCE_ENABLED)), "true")
+	phoneNumberExposureEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_PHONE_NUMBER_EXPOSURE_ENABLED)), "true")
+	if err := validatePhoneIdentityFeatureFlags(phoneIdentityEvidenceEnabled, phoneNumberExposureEnabled); err != nil {
+		logger.LogFatal("[CONFIG] %v", err)
+	}
 	contactIdentityReconciliationEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED)), "true")
 	contactIdentityBackfillBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH), "100"))
 	if err != nil || contactIdentityBackfillBatch > 1000 {
@@ -910,6 +915,7 @@ func Load() *Config {
 
 		ContactIdentityReconciliationEnabled: contactIdentityReconciliationEnabled,
 		PhoneIdentityEvidenceEnabled:         phoneIdentityEvidenceEnabled,
+		PhoneNumberExposureEnabled:           phoneNumberExposureEnabled,
 		ContactIdentityBackfillBatch:         contactIdentityBackfillBatch,
 		ContactIdentityBackfillMaxBatches:    contactIdentityBackfillMaxBatches,
 		CanonicalConversationIdentityEnabled: canonicalConversationIdentityEnabled,
@@ -926,6 +932,13 @@ func Load() *Config {
 	}
 
 	return config
+}
+
+func validatePhoneIdentityFeatureFlags(evidenceEnabled, exposureEnabled bool) error {
+	if exposureEnabled && !evidenceEnabled {
+		return fmt.Errorf("%s=true requires %s=true", config_env.WA_PHONE_NUMBER_EXPOSURE_ENABLED, config_env.WA_PHONE_IDENTITY_EVIDENCE_ENABLED)
+	}
+	return nil
 }
 
 func defaultIfEmpty(value, fallback string) string {

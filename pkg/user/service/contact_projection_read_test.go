@@ -15,6 +15,23 @@ import (
 
 type userContactReadRepositoryStub struct{ contacts []projection_model.Contact }
 
+type contactPhoneEvidenceStub struct {
+	listCalls, resolveCalls int
+	rows                    []projection_model.PhoneIdentityEvidence
+}
+
+func (*contactPhoneEvidenceStub) Observe(context.Context, projection_model.PhoneIdentityEvidence) (bool, error) {
+	return false, nil
+}
+func (s *contactPhoneEvidenceStub) Resolve(context.Context, string, []string) (map[string]string, error) {
+	s.resolveCalls++
+	return nil, nil
+}
+func (s *contactPhoneEvidenceStub) List(context.Context, string) ([]projection_model.PhoneIdentityEvidence, error) {
+	s.listCalls++
+	return s.rows, nil
+}
+
 func (s *userContactReadRepositoryStub) List(context.Context, string) ([]projection_model.Contact, error) {
 	return s.contacts, nil
 }
@@ -73,6 +90,21 @@ func TestGetContactsUsesProjectionWithoutWhatsAppConnection(t *testing.T) {
 		contacts[0].PictureRemoved == nil || *contacts[0].PictureRemoved || contacts[0].PictureUpdatedAt == nil || contacts[0].About != about ||
 		contacts[0].AboutUpdatedAt == nil || meta == nil || meta.Source != "projection" || meta.Total == nil || *meta.Total != 1 {
 		t.Fatalf("projection contacts = %#v, meta=%#v, error=%v", contacts, meta, err)
+	}
+}
+
+func TestGetContactsResolvesPhoneNumbersWithOneInstanceQuery(t *testing.T) {
+	phoneJID, lid := "15550001@s.whatsapp.net", "900000000001@lid"
+	reconciledAt := time.Unix(500, 0)
+	reader := projection_service.NewContactReader(&userContactReadRepositoryStub{contacts: []projection_model.Contact{
+		{ContactID: "11111111-1111-1111-1111-111111111111", PreferredJID: lid, LID: &lid, UpdatedAt: reconciledAt},
+		{ContactID: "22222222-2222-2222-2222-222222222222", PreferredJID: "other@lid", UpdatedAt: reconciledAt},
+	}}, &userContactReadStateStub{state: &projection_model.State{SyncStatus: projection_model.SyncStatusReady, SchemaVersion: projection_service.ContactsProjectionSchemaVersion, LastReconciledAt: &reconciledAt}})
+	evidence := &contactPhoneEvidenceStub{rows: []projection_model.PhoneIdentityEvidence{{PhoneJID: phoneJID, LIDJID: &lid}}}
+	service := &userService{contactReader: reader, phoneNumbers: projection_service.NewPhoneNumberResolver(evidence, true, nil)}
+	contacts, _, err := service.GetContacts(context.Background(), &instance_model.Instance{Id: "11111111-1111-1111-1111-111111111111"})
+	if err != nil || evidence.listCalls != 1 || evidence.resolveCalls != 0 || contacts[0].PhoneNumber == nil || *contacts[0].PhoneNumber != "15550001" || contacts[1].PhoneNumber != nil {
+		t.Fatalf("contacts=%#v list=%d resolve=%d err=%v", contacts, evidence.listCalls, evidence.resolveCalls, err)
 	}
 }
 

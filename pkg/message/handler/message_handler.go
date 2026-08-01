@@ -41,6 +41,7 @@ type messageHandler struct {
 // @Security ApiKeyAuth
 // @Router /message/{messageId}/delivery [get]
 func (m *messageHandler) Receipts(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "private, no-store")
 	instance, ok := messageProjectionInstance(ctx)
 	if !ok {
 		return
