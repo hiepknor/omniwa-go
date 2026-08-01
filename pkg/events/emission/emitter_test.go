@@ -132,6 +132,35 @@ func TestGlobalRabbitSpecificEventsRemainAuthoritative(t *testing.T) {
 	}
 }
 
+func TestGlobalRabbitLegacyEventAliasesRemainCompatible(t *testing.T) {
+	t.Parallel()
+	emitter, err := NewEmitter(builderFunc(testBuilder), &recordingStore{}, Settings{
+		GlobalRabbitEnabled: true,
+		AMQPGlobalEvents:    []string{"messages.upsert", "messages.update", "connection.update"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		event string
+		queue string
+		want  bool
+	}{
+		{event: "Message", queue: "message", want: true},
+		{event: "SendMessage", queue: "sendmessage", want: true},
+		{event: "Receipt", queue: "receipt", want: true},
+		{event: "Connected", queue: "connected", want: true},
+		{event: "CallOffer", want: false},
+	} {
+		t.Run(test.event, func(t *testing.T) {
+			queue, ok := emitter.GlobalRabbitQueue(test.event)
+			if ok != test.want || queue != test.queue {
+				t.Fatalf("queue = %q, %t; want %q, %t", queue, ok, test.queue, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitterPropagatesAtomicFailure(t *testing.T) {
 	t.Parallel()
 	want := errors.New("transaction failed")
