@@ -630,3 +630,27 @@ func TestExternalEventOutboxMigrationIsAdditiveAndFenced(t *testing.T) {
 		}
 	}
 }
+
+func TestPhoneIdentityEvidenceMigrationIsTenantScopedAndAdditive(t *testing.T) {
+	migration := registeredMigration(t, 40)
+	if migration.Name != "create_phone_identity_evidence" {
+		t.Fatalf("phone identity evidence migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"CREATE TABLE projection_phone_identity_evidence",
+		"PRIMARY KEY (instance_id, phone_jid)",
+		"ON DELETE CASCADE",
+		"projection_phone_identity_evidence_lid_unique_idx",
+		"WHERE lid_jid IS NOT NULL",
+		"evidence_kind IN ('direct_phone', 'paired_alt')",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("phone identity evidence migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"whatsmeow_lid_map", "UPDATE projected_contacts", "DROP TABLE", "DELETE FROM"} {
+		if strings.Contains(migration.SQL, forbidden) {
+			t.Fatalf("phone identity evidence migration contains unsafe SQL %q", forbidden)
+		}
+	}
+}

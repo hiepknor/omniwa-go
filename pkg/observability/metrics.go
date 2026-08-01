@@ -81,6 +81,7 @@ type Registry struct {
 	emitterRecords               *prometheus.CounterVec
 	emitterRouteCount            *prometheus.HistogramVec
 	emitterRoutes                *prometheus.CounterVec
+	phoneIdentityEvidence        *prometheus.CounterVec
 }
 
 // NewRegistry constructs an isolated registry. Registration failures are
@@ -150,6 +151,10 @@ func NewRegistry() (*Registry, error) {
 			Namespace: "omniwa", Subsystem: "external_event_emitter", Name: "routes_total",
 			Help: "Successfully recorded durable routes by bounded transport and destination.",
 		}, []string{"transport", "destination"}),
+		phoneIdentityEvidence: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "omniwa", Subsystem: "phone_identity", Name: "evidence_total",
+			Help: "Instance-scoped phone identity evidence observations by bounded outcome.",
+		}, []string{"outcome"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -159,12 +164,22 @@ func NewRegistry() (*Registry, error) {
 		result.outboxAttempts, result.outboxAttemptDuration, result.outboxClaimed,
 		result.outboxQueue, result.outboxOldestPending, result.outboxInfrastructureFailures,
 		result.emitterRecords, result.emitterRouteCount, result.emitterRoutes,
+		result.phoneIdentityEvidence,
 	} {
 		if err := result.registry.Register(collector); err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
+}
+
+// ObservePhoneIdentityEvidence records aggregate outcomes without provider or
+// instance identifiers.
+func (r *Registry) ObservePhoneIdentityEvidence(outcome string) {
+	if r == nil || (outcome != "new" && outcome != "existing" && outcome != "conflict" && outcome != "failed") {
+		return
+	}
+	r.phoneIdentityEvidence.WithLabelValues(outcome).Inc()
 }
 
 // ExternalEventEmitter returns aggregate-only acceptance instrumentation.

@@ -1813,6 +1813,34 @@ WHERE status = 'processing';
 CREATE INDEX external_event_outbox_health_idx
 ON external_event_outbox (instance_id, status, updated_at);`,
 	},
+	{
+		Version: 40,
+		Name:    "create_phone_identity_evidence",
+		SQL: `CREATE TABLE projection_phone_identity_evidence (
+    instance_id UUID NOT NULL,
+    phone_jid VARCHAR(255) NOT NULL,
+    lid_jid VARCHAR(255) NULL,
+    evidence_kind VARCHAR(32) NOT NULL,
+    first_observed_at TIMESTAMPTZ NOT NULL,
+    last_observed_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (instance_id, phone_jid),
+    CONSTRAINT projection_phone_identity_evidence_instance_fk
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
+    CONSTRAINT projection_phone_identity_evidence_kind_check
+        CHECK (evidence_kind IN ('direct_phone', 'paired_alt')),
+    CONSTRAINT projection_phone_identity_evidence_time_check
+        CHECK (last_observed_at >= first_observed_at),
+    CONSTRAINT projection_phone_identity_evidence_pair_check
+        CHECK ((evidence_kind = 'paired_alt' AND lid_jid IS NOT NULL)
+            OR (evidence_kind = 'direct_phone' AND lid_jid IS NULL))
+);
+
+CREATE UNIQUE INDEX projection_phone_identity_evidence_lid_unique_idx
+ON projection_phone_identity_evidence (instance_id, lid_jid)
+WHERE lid_jid IS NOT NULL;
+CREATE INDEX projection_phone_identity_evidence_lookup_idx
+ON projection_phone_identity_evidence (instance_id, last_observed_at DESC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

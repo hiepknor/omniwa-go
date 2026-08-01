@@ -80,11 +80,15 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "")
 	t.Setenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED, "")
+	t.Setenv(config_env.WA_PHONE_IDENTITY_EVIDENCE_ENABLED, "")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH, "")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES, "")
 	t.Setenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED, "")
 
 	config := Load()
+	if config.PhoneIdentityEvidenceEnabled {
+		t.Fatal("expected phone identity evidence to be disabled by default")
+	}
 	if math.Abs(config.WAInfoRatePerSecond-(5.0/60.0)) > 1e-12 {
 		t.Fatalf("WAInfoRatePerSecond = %v", config.WAInfoRatePerSecond)
 	}
@@ -242,6 +246,7 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_BATCH, "25")
 	t.Setenv(config_env.INSTANCE_TOKEN_BACKFILL_MAX_BATCHES, "4")
 	t.Setenv(config_env.WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED, "true")
+	t.Setenv(config_env.WA_PHONE_IDENTITY_EVIDENCE_ENABLED, "true")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_BATCH, "25")
 	t.Setenv(config_env.CONTACT_IDENTITY_BACKFILL_MAX_BATCHES, "4")
 	t.Setenv(config_env.WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED, "true")
@@ -251,6 +256,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.CONVERSATION_BACKFILL_MAX_BATCHES, "3")
 
 	config := Load()
+	if !config.PhoneIdentityEvidenceEnabled {
+		t.Fatal("expected phone identity evidence override to be enabled")
+	}
 	if config.RemoteMedia.Policy != "allowlist" || config.RemoteMedia.Timeout != 3*time.Second || config.RemoteMedia.MaxBytes != 4096 || len(config.RemoteMedia.AllowedHosts) != 2 {
 		t.Fatalf("remote media overrides = %+v", config.RemoteMedia)
 	}

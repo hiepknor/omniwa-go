@@ -51,6 +51,8 @@ services:
       # Canonical identity rollouts remain disabled unless explicitly enabled
       # by the developer. Canonical Chat requires canonical Contact.
       WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED: "${WA_CONTACT_IDENTITY_RECONCILIATION_ENABLED:-false}"
+      # Opt-in storage of instance-scoped phone identity evidence (migration 40).
+      WA_PHONE_IDENTITY_EVIDENCE_ENABLED: "${WA_PHONE_IDENTITY_EVIDENCE_ENABLED:-false}"
       CONTACT_IDENTITY_BACKFILL_BATCH: "${CONTACT_IDENTITY_BACKFILL_BATCH:-100}"
       CONTACT_IDENTITY_BACKFILL_MAX_BATCHES: "${CONTACT_IDENTITY_BACKFILL_MAX_BATCHES:-10}"
       WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED: "${WA_CANONICAL_CONVERSATION_IDENTITY_ENABLED:-false}"
