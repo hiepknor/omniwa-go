@@ -25,17 +25,14 @@ func (f instanceReaderFake) GetInstanceByID(string) (*instance_model.Instance, e
 }
 
 type textSendServiceFake struct {
-	input *send_service.TextStruct
-	info  *send_service.MessageSendStruct
-	err   error
-}
-
-func (f *textSendServiceFake) SendText(input *send_service.TextStruct, _ *instance_model.Instance) (*send_service.MessageSendStruct, error) {
-	f.input = input
-	return f.info, f.err
+	input     *send_service.TextStruct
+	info      *send_service.MessageSendStruct
+	err       error
+	onceCalls int
 }
 
 func (f *textSendServiceFake) SendTextOnce(_ context.Context, input *send_service.TextStruct, _ *instance_model.Instance) (*send_service.MessageSendStruct, error) {
+	f.onceCalls++
 	f.input = input
 	return f.info, f.err
 }
@@ -50,8 +47,31 @@ func TestTextSenderUsesNormalizedJobAndDeterministicIdentity(t *testing.T) {
 	if err != nil || providerID != "provider-id" {
 		t.Fatalf("Send() = %q, %v", providerID, err)
 	}
-	if sends.input == nil || sends.input.Number != "15550001@s.whatsapp.net" || sends.input.Text != "hello" || sends.input.Id != deterministicMessageID(recipientID) {
+	if sends.onceCalls != 1 || sends.input == nil || sends.input.Number != "15550001@s.whatsapp.net" || sends.input.Text != "hello" || sends.input.Id != deterministicMessageID(recipientID) {
 		t.Fatalf("send input = %#v", sends.input)
+	}
+}
+
+func TestTextSenderUsesSingleAttemptForDirectAndGroupTargets(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		targetType campaign_model.RecipientTargetType
+		jid        string
+	}{
+		{name: "direct", jid: "15550001@s.whatsapp.net"},
+		{name: "group", targetType: campaign_model.RecipientTargetGroup, jid: "120363000001@g.us"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			instanceID, campaignID := uuid.NewString(), uuid.NewString()
+			sends := &textSendServiceFake{info: &send_service.MessageSendStruct{Info: types.MessageInfo{ID: "provider-id"}}}
+			sender := NewTextSender(instanceReaderFake{instance: &instance_model.Instance{Id: instanceID}}, sends)
+			_, err := sender.Send(context.Background(),
+				&campaign_model.Campaign{ID: campaignID, InstanceID: instanceID, ContentType: "text", TextBody: "hello"},
+				&campaign_model.Recipient{ID: uuid.NewString(), CampaignID: campaignID, InstanceID: instanceID, TargetType: test.targetType, RecipientJID: test.jid})
+			if err != nil || sends.onceCalls != 1 {
+				t.Fatalf("Send() error = %v, single-attempt calls = %d", err, sends.onceCalls)
+			}
+		})
 	}
 }
 

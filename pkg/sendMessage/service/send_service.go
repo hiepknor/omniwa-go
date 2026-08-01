@@ -619,11 +619,12 @@ func findURL(text string) string {
 }
 
 func (s *sendService) SendText(data *TextStruct, instance *instance_model.Instance) (*MessageSendStruct, error) {
-	return s.sendTextWithRetry(data, instance, 3) // 3 tentativas máximas
+	return s.SendTextOnce(context.Background(), data, instance)
 }
 
-// SendTextOnce is the context-aware, single-provider-attempt path used by the
-// campaign worker, which owns retry and unknown-outcome policy.
+// SendTextOnce is the context-aware, single-provider-attempt path used by HTTP
+// commands and the campaign worker. Once the provider call is admitted, an
+// error has an unknown delivery outcome and must never be retried implicitly.
 func (s *sendService) SendTextOnce(ctx context.Context, data *TextStruct, instance *instance_model.Instance) (*MessageSendStruct, error) {
 	if ctx == nil || data == nil || instance == nil || instance.Id == "" {
 		return nil, errors.New("send context, payload, and instance are required")
@@ -633,56 +634,6 @@ func (s *sendService) SendTextOnce(ctx context.Context, data *TextStruct, instan
 		Id: data.Id, Number: data.Number, Quoted: data.Quoted, Delay: data.Delay, MentionAll: data.MentionAll,
 		MentionedJID: data.MentionedJID, FormatJid: data.FormatJid, ForwardingScore: data.ForwardingScore,
 	}, true)
-}
-
-func (s *sendService) sendTextWithRetry(data *TextStruct, instance *instance_model.Instance, maxRetries int) (*MessageSendStruct, error) {
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] SendText attempt %d/%d", instance.Id, attempt, maxRetries)
-
-		_, err := s.ensureClientConnectedWithRetry(instance.Id, 2)
-		if err != nil {
-			if attempt == maxRetries {
-				return nil, err
-			}
-			continue
-		}
-
-		msg := &waE2E.Message{
-			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
-				Text: &data.Text,
-			},
-		}
-
-		message, err := s.SendMessage(instance, msg, "ExtendedTextMessage", &SendDataStruct{
-			Id:              data.Id,
-			Number:          data.Number,
-			Quoted:          data.Quoted,
-			Delay:           data.Delay,
-			MentionAll:      data.MentionAll,
-			MentionedJID:    data.MentionedJID,
-			FormatJid:       data.FormatJid,
-			ForwardingScore: data.ForwardingScore,
-		})
-
-		if err != nil {
-			// Check if it's a client disconnection error
-			if strings.Contains(err.Error(), "client disconnected") || strings.Contains(err.Error(), "no active session") {
-				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] SendText failed due to disconnection on attempt %d/%d: %v", instance.Id, attempt, maxRetries, err)
-				if attempt < maxRetries {
-					waitTime := time.Duration(attempt) * time.Second
-					s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Waiting %v before retry", instance.Id, waitTime)
-					time.Sleep(waitTime)
-					continue
-				}
-			}
-			return nil, err
-		}
-
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] SendText successful on attempt %d", instance.Id, attempt)
-		return message, nil
-	}
-
-	return nil, fmt.Errorf("failed to send text after %d attempts", maxRetries)
 }
 
 func (s *sendService) fetchLinkMetadata(url string) (string, string, string, error) {
@@ -2444,6 +2395,7 @@ func (s *sendService) sendMessageContext(ctx context.Context, instance *instance
 	} else {
 		message = data.Id
 	}
+	correlation := logger_wrapper.OpaqueCorrelationID(message)
 
 	if data.Delay > 0 {
 		media := ""
@@ -2836,7 +2788,7 @@ func (s *sendService) sendMessageContext(ctx context.Context, instance *instance
 
 	recipient.User = strings.ReplaceAll(recipient.User, "+", "")
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound message admitted", instance.Id)
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("component=outbound action=send instance_id=%s correlation=%s result=attempting type=%s", instance.Id, correlation, messageType)
 
 	// Preparar extra parameters para o envio
 	sendExtra := whatsmeow.SendRequestExtra{ID: message}
@@ -2857,14 +2809,14 @@ func (s *sendService) sendMessageContext(ctx context.Context, instance *instance
 	}
 	response, err := client.SendMessage(ctx, recipient, msg, sendExtra)
 	if err != nil {
-		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Outbound message failed error_code=send_failed", instance.Id)
+		s.loggerWrapper.GetLogger(instance.Id).LogError("component=outbound action=send instance_id=%s correlation=%s result=unacknowledged error_code=send_failed type=%s", instance.Id, correlation, messageType)
 		if classifyOutcome {
 			return nil, &ProviderSendError{Cause: err}
 		}
 		return nil, err
 	}
 
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound message sent", instance.Id)
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("component=outbound action=send instance_id=%s correlation=%s result=acknowledged type=%s", instance.Id, correlation, messageType)
 
 	sentAt := response.Timestamp.UTC()
 	if sentAt.IsZero() {
@@ -3423,7 +3375,13 @@ func (s *sendService) writeMessageProjection(instanceID string, message *Message
 	writeCtx, cancel := context.WithTimeout(context.Background(), projectionWriteThroughTimeout)
 	defer cancel()
 	if err := s.messageWriter.WriteSent(writeCtx, instanceID, message.Info, message.Message); err != nil {
-		s.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=write_through resource=messages instance_id=%s result=failed error_code=projection_write_failed", instanceID)
+		if s.loggerWrapper != nil {
+			s.loggerWrapper.GetLogger(instanceID).LogError("component=projection action=write_through resource=messages instance_id=%s correlation=%s result=failed error_code=projection_write_failed", instanceID, logger_wrapper.OpaqueCorrelationID(string(message.Info.ID)))
+		}
+		return
+	}
+	if s.loggerWrapper != nil {
+		s.loggerWrapper.GetLogger(instanceID).LogInfo("component=projection action=write_through resource=messages instance_id=%s correlation=%s result=applied", instanceID, logger_wrapper.OpaqueCorrelationID(string(message.Info.ID)))
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	campaign_model "github.com/evolution-foundation/evolution-go/pkg/campaign/model"
 	campaign_repository "github.com/evolution-foundation/evolution-go/pkg/campaign/repository"
 	"github.com/evolution-foundation/evolution-go/pkg/outbound"
+	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
 	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 )
 
@@ -128,7 +129,7 @@ func (w *Worker) RunOnce(ctx context.Context) (BatchResult, error) {
 			result.Sent++
 			continue
 		}
-		if ctx.Err() != nil && recipient.TargetType != campaign_model.RecipientTargetGroup {
+		if ctx.Err() != nil && recipient.TargetType != campaign_model.RecipientTargetGroup && !isUnknownSendOutcome(sendErr) {
 			return result, errors.Join(append(errorsList, ctx.Err())...)
 		}
 		recordContext := ctx
@@ -152,6 +153,15 @@ func (w *Worker) RunOnce(ctx context.Context) (BatchResult, error) {
 		}
 	}
 	return result, errors.Join(errorsList...)
+}
+
+func isUnknownSendOutcome(err error) bool {
+	var providerSend *send_service.ProviderSendError
+	if errors.As(err, &providerSend) {
+		return true
+	}
+	var delivery *DeliveryError
+	return errors.As(err, &delivery) && delivery.Kind == DeliveryFailureUnknown
 }
 
 func (w *Worker) recordSendFailure(ctx context.Context, recipient *campaign_model.Recipient, errorCode string, sendErr error, result *BatchResult) error {
@@ -190,6 +200,14 @@ func (w *Worker) recordSendFailure(ctx context.Context, recipient *campaign_mode
 	}
 	if delay, limited := retryAfter(sendErr); limited {
 		return w.deferFailure(ctx, recipient, errorCode, delay, result)
+	}
+	var providerSend *send_service.ProviderSendError
+	if errors.As(sendErr, &providerSend) {
+		if err := w.repository.MarkUnknownOutcome(ctx, recipient); err != nil {
+			return err
+		}
+		result.Failed++
+		return nil
 	}
 	if recipient.AttemptCount+1 >= w.settings.MaxAttempts {
 		if err := w.repository.MarkFailed(ctx, recipient, errorCode); err != nil {

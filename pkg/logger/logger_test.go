@@ -40,6 +40,17 @@ func TestRedactSensitive(t *testing.T) {
 	}
 }
 
+func TestOpaqueCorrelationIDIsStableAndDoesNotDiscloseSource(t *testing.T) {
+	const source = "3EB0F07E633C694B0CF469"
+	first := OpaqueCorrelationID(source)
+	if first == "" || first != OpaqueCorrelationID(source) || first == OpaqueCorrelationID("different-message") || strings.Contains(first, source) {
+		t.Fatalf("unsafe or unstable opaque correlation: %q", first)
+	}
+	if OpaqueCorrelationID("") != "" {
+		t.Fatal("empty source produced a correlation identity")
+	}
+}
+
 func TestLoggerRedactsPersistedMessage(t *testing.T) {
 	directory := t.TempDir()
 	manager := NewLoggerManager(&config.Config{

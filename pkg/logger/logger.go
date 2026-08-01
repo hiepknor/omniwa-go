@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +14,17 @@ import (
 	"github.com/gomessguii/logger"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+// OpaqueCorrelationID returns a stable, non-reversible handle for correlating
+// high-entropy provider identities across logs without disclosing the source
+// identity. It must not be used as a domain identity or a metric label.
+func OpaqueCorrelationID(value string) string {
+	if value == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum[:8])
+}
 
 var sensitiveLogPatterns = []struct {
 	pattern     *regexp.Regexp

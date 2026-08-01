@@ -18,7 +18,6 @@ type instanceReader interface {
 }
 
 type textSendService interface {
-	SendText(*send_service.TextStruct, *instance_model.Instance) (*send_service.MessageSendStruct, error)
 	SendTextOnce(context.Context, *send_service.TextStruct, *instance_model.Instance) (*send_service.MessageSendStruct, error)
 }
 
@@ -78,12 +77,7 @@ func (s *TextSender) Send(ctx context.Context, campaign *campaign_model.Campaign
 		Text:   campaign.TextBody,
 		Id:     deterministicMessageID(recipient.ID),
 	}
-	var result *send_service.MessageSendStruct
-	if recipient.TargetType == campaign_model.RecipientTargetGroup {
-		result, err = s.sends.SendTextOnce(ctx, data, instance)
-	} else {
-		result, err = s.sends.SendText(data, instance)
-	}
+	result, err := s.sends.SendTextOnce(ctx, data, instance)
 	if err != nil {
 		if recipient.TargetType == campaign_model.RecipientTargetGroup {
 			return "", classifyGroupDeliveryError(err)
