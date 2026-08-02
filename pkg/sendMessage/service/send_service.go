@@ -2956,6 +2956,11 @@ func confirmedOutboundPhoneMetadata(requested types.JID, validationErr error, ac
 	if requested.Server != types.DefaultUserServer && requested.Server != types.LegacyUserServer {
 		return nil
 	}
+	// validateMessageFields uses the legacy CreateJID formatter, which adds one
+	// leading plus sign before parsing a PN JID. The provider recipient is
+	// normalized immediately before send, so mirror that normalization in the
+	// internal metadata without accepting any other non-digit characters.
+	requested.User = strings.TrimPrefix(requested.User, "+")
 	if requested.User == "" {
 		return nil
 	}
