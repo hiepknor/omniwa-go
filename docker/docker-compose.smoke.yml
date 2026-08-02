@@ -1,5 +1,6 @@
 services:
   omniwa-go:
+    image: ${SMOKE_IMAGE:?Set SMOKE_IMAGE}
     build:
       context: ..
       dockerfile: Dockerfile

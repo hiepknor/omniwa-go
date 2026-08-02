@@ -47,6 +47,24 @@ services:
       postgres:
         condition: service_healthy
 
+  omniwa-standby:
+    image: ${OMNIWA_IMAGE:?Set OMNIWA_IMAGE to an immutable sha256 digest}
+    profiles: ["standby"]
+    container_name: omniwa-standby
+    restart: unless-stopped
+    environment:
+      RUNTIME_MODE: standby
+      SERVER_PORT: "4000"
+    ports:
+      - "127.0.0.1:4001:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:4000/server/live >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - standby_control
+
   postgres:
     image: ${POSTGRES_IMAGE:?Set POSTGRES_IMAGE to an immutable sha256 digest}
     container_name: omniwa-postgres
@@ -74,6 +92,8 @@ volumes:
 
 networks:
   omniwa_network:
+    driver: bridge
+  standby_control:
     driver: bridge
 
 secrets:

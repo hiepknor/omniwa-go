@@ -69,6 +69,7 @@ Create a `.env` file (see [.env.example](./.env.example)):
 ```env
 # Server
 SERVER_PORT=8080
+RUNTIME_MODE=active
 CLIENT_NAME=omniwa
 
 # Security
@@ -86,8 +87,9 @@ DATABASE_SAVE_MESSAGES=false
 | Variable | Description | Default |
 |---|---|---|
 | `SERVER_PORT` | Server port | `8080` |
+| `RUNTIME_MODE` | Process topology: `active` or secretless `standby` | `active` |
 | `CLIENT_NAME` | Client identifier | `omniwa` |
-| `GLOBAL_API_KEY` | API authentication key | **Required** |
+| `GLOBAL_API_KEY` | API authentication key | **Required in active mode** |
 | `INSTANCE_TOKEN_HMAC_KEY` | Optional base64 HMAC key for instance-token lookup digests (minimum 32 decoded bytes) | disabled |
 | `INSTANCE_TOKEN_HMAC_KEY_VERSION` | Positive version shared with the HMAC key across replicas | `1` when enabled |
 | `INSTANCE_TOKEN_BACKFILL_BATCH` | Legacy-token rows processed per backfill transaction | `100` |

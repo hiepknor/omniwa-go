@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -104,6 +105,56 @@ func startBackground(supervisor *bootstrap.Supervisor, name string, work bootstr
 	if err := supervisor.Start(name, work); err != nil {
 		logger.LogFatal("component=bootstrap action=register_worker worker=%s result=failed", name)
 	}
+}
+
+func runStandbyServer(ctx context.Context, address string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	processState := bootstrap.NewProcessState(nil)
+	standbyRuntime, err := bootstrap.NewStandbyRuntime(processState)
+	if err != nil {
+		return err
+	}
+	handler, err := standbyRuntime.Start()
+	if err != nil {
+		return err
+	}
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return errors.Join(err, standbyRuntime.Stop())
+	}
+
+	server := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	serveResult := make(chan error, 1)
+	go func() {
+		serveResult <- server.Serve(listener)
+	}()
+	logger.LogInfo("component=standby_runtime action=serve result=started address=%s", listener.Addr().String())
+
+	var serveErr error
+	select {
+	case <-ctx.Done():
+	case result := <-serveResult:
+		if result != nil && !errors.Is(result, http.ErrServerClosed) {
+			serveErr = result
+		}
+	}
+	if err := standbyRuntime.BeginDrain(); err != nil {
+		serveErr = errors.Join(serveErr, err)
+	}
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	shutdownErr := server.Shutdown(shutdownCtx)
+	stopErr := standbyRuntime.Stop()
+	return errors.Join(serveErr, shutdownErr, stopErr)
 }
 
 func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *bootstrap.Supervisor, metricsRegistry *observability.Registry, processState *bootstrap.ProcessState) *gin.Engine {
@@ -1095,17 +1146,16 @@ func initPostgresAuthDB(config *config.Config) (*sql.DB, error) {
 // @security ApiKeyAuth
 func main() {
 	flag.Parse()
-	if *devMode {
-		err := godotenv.Load(".env")
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 	command, err := bootstrap.ParseCommand(flag.Args())
 	if err != nil {
 		log.Fatal(err)
 	}
 	if command == bootstrap.CommandMigrate {
+		if *devMode {
+			if err := godotenv.Load(".env"); err != nil {
+				log.Fatal(err)
+			}
+		}
 		migrationConfig, err := config.LoadMigration()
 		if err != nil {
 			log.Fatal(err)
@@ -1118,6 +1168,27 @@ func main() {
 		}
 		logger.LogInfo("component=migrations action=run result=success")
 		return
+	}
+	runtimeMode, err := bootstrap.ParseRuntimeMode(os.Getenv("RUNTIME_MODE"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if runtimeMode == bootstrap.RuntimeModeStandby {
+		serverPort := strings.TrimSpace(os.Getenv("SERVER_PORT"))
+		if serverPort == "" {
+			log.Fatal("SERVER_PORT is required in standby mode")
+		}
+		standbyCtx, stopStandby := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stopStandby()
+		if err := runStandbyServer(standbyCtx, net.JoinHostPort("", serverPort)); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	if *devMode {
+		if err := godotenv.Load(".env"); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	cfg := config.Load()
