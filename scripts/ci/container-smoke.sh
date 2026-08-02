@@ -31,7 +31,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"${compose[@]}" up --detach --build
+"${compose[@]}" build omniwa-go
+"${compose[@]}" up --detach --wait postgres
+"${compose[@]}" run --rm --no-deps omniwa-go migrate
+"${compose[@]}" run --rm --no-deps omniwa-go migrate
+
+if [[ -n "$("${compose[@]}" ps --quiet omniwa-go)" ]]; then
+  echo "one-shot migration unexpectedly left an application container running" >&2
+  exit 1
+fi
+
+"${compose[@]}" up --detach omniwa-go
 
 refresh_runtime_coordinates() {
   container_id="$("${compose[@]}" ps --all --quiet omniwa-go)"
@@ -87,10 +97,34 @@ assert_migrations() {
   fi
 }
 
+assert_auth_migrations() {
+  local auth_schema_rows auth_migration_state
+  auth_schema_rows="$("${compose[@]}" exec --no-TTY postgres psql \
+    --username postgres --dbname omniwa_auth --tuples-only --no-align \
+    --command "SELECT COUNT(*) FROM whatsmeow_version")"
+  if [[ "$auth_schema_rows" != "1" ]]; then
+    echo "WhatsApp auth migration state mismatch: expected one version row, got $auth_schema_rows" >&2
+    return 1
+  fi
+  auth_migration_state="$("${compose[@]}" exec --no-TTY postgres psql \
+    --username postgres --dbname omniwa_auth --tuples-only --no-align \
+    --command "SELECT COALESCE(MAX(version), 0) || ':' || COUNT(*) FROM omniwa_auth_schema_migrations")"
+  if [[ "$auth_migration_state" != "1:1" ]]; then
+    echo "application auth migration state mismatch: expected 1:1, got $auth_migration_state" >&2
+    return 1
+  fi
+}
+
 wait_for_liveness
 assert_runtime_health_contract
 assert_artifact_identity
 assert_migrations
+assert_auth_migrations
+
+if "${compose[@]}" run --rm --no-deps omniwa-go migrate; then
+  echo "migration command acquired ownership while the application was active" >&2
+  exit 1
+fi
 
 "${compose[@]}" restart omniwa-go
 refresh_runtime_coordinates
@@ -98,5 +132,6 @@ wait_for_liveness
 assert_runtime_health_contract
 assert_artifact_identity
 assert_migrations
+assert_auth_migrations
 
 echo "container smoke test passed for revision $source_sha with migrations $expected_migrations"

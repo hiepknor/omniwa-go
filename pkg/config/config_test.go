@@ -518,6 +518,69 @@ func TestLoadReadsRequiredSensitiveValuesFromFiles(t *testing.T) {
 	}
 }
 
+func TestLoadMigrationRequiresOnlyDatabaseConfiguration(t *testing.T) {
+	t.Setenv(config_env.POSTGRES_USERS_DB, "postgres://user:password@localhost:5432/users")
+	t.Setenv(config_env.POSTGRES_USERS_DB+"_FILE", "")
+	t.Setenv(config_env.POSTGRES_AUTH_DB, "postgres://user:password@localhost:5432/auth")
+	t.Setenv(config_env.POSTGRES_AUTH_DB+"_FILE", "")
+	t.Setenv(config_env.POSTGRES_PASSWORD, "")
+	t.Setenv(config_env.POSTGRES_PASSWORD+"_FILE", "")
+	t.Setenv(config_env.GLOBAL_API_KEY, "")
+	t.Setenv(config_env.DATABASE_SAVE_MESSAGES, "")
+	t.Setenv(config_env.LICENSE_GATE_ENABLED, "false")
+
+	loaded, err := LoadMigration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.postgresUsersDB != "postgres://user:password@localhost:5432/users" || loaded.PostgresAuthDB != "postgres://user:password@localhost:5432/auth" {
+		t.Fatalf("unexpected database configuration: %#v", loaded)
+	}
+	if loaded.LicenseGateEnabled {
+		t.Fatal("license gate should be disabled")
+	}
+}
+
+func TestLoadMigrationReadsFileBackedDSNs(t *testing.T) {
+	usersDSNFile := writeSecretFixture(t, "postgres://user:password@localhost:5432/users\n")
+	authDSNFile := writeSecretFixture(t, "postgres://user:password@localhost:5432/auth\n")
+	t.Setenv(config_env.POSTGRES_USERS_DB, "")
+	t.Setenv(config_env.POSTGRES_USERS_DB+"_FILE", usersDSNFile)
+	t.Setenv(config_env.POSTGRES_AUTH_DB, "")
+	t.Setenv(config_env.POSTGRES_AUTH_DB+"_FILE", authDSNFile)
+	t.Setenv(config_env.POSTGRES_PASSWORD, "")
+	t.Setenv(config_env.POSTGRES_PASSWORD+"_FILE", "")
+
+	loaded, err := LoadMigration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.postgresUsersDB != "postgres://user:password@localhost:5432/users" || loaded.PostgresAuthDB != "postgres://user:password@localhost:5432/auth" {
+		t.Fatalf("unexpected file-backed database configuration: %#v", loaded)
+	}
+}
+
+func TestLoadMigrationRejectsMissingAndAmbiguousUsersDatabase(t *testing.T) {
+	for _, name := range []string{
+		config_env.POSTGRES_USERS_DB, config_env.POSTGRES_USERS_DB + "_FILE",
+		config_env.POSTGRES_AUTH_DB, config_env.POSTGRES_AUTH_DB + "_FILE",
+		config_env.POSTGRES_HOST, config_env.POSTGRES_PORT, config_env.POSTGRES_USER,
+		config_env.POSTGRES_PASSWORD, config_env.POSTGRES_PASSWORD + "_FILE", config_env.POSTGRES_DB,
+	} {
+		t.Setenv(name, "")
+	}
+	if _, err := LoadMigration(); err == nil {
+		t.Fatal("missing users database configuration was accepted")
+	}
+
+	usersDSNFile := writeSecretFixture(t, "postgres://user:password@localhost:5432/users\n")
+	t.Setenv(config_env.POSTGRES_USERS_DB, "postgres://user:password@localhost:5432/users")
+	t.Setenv(config_env.POSTGRES_USERS_DB+"_FILE", usersDSNFile)
+	if _, err := LoadMigration(); err == nil {
+		t.Fatal("ambiguous users database configuration was accepted")
+	}
+}
+
 func setRequiredConfigEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv(config_env.POSTGRES_USERS_DB, "postgres://user:password@localhost:5432/test")

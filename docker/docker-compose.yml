@@ -30,6 +30,23 @@ services:
       postgres:
         condition: service_healthy
 
+  omniwa-migrate:
+    image: ${OMNIWA_IMAGE:?Set OMNIWA_IMAGE to an immutable sha256 digest}
+    profiles: ["operations"]
+    command: ["migrate"]
+    environment:
+      LICENSE_GATE_ENABLED: ${LICENSE_GATE_ENABLED:-true}
+      POSTGRES_AUTH_DB_FILE: /run/secrets/omniwa_postgres_auth_dsn
+      POSTGRES_USERS_DB_FILE: /run/secrets/omniwa_postgres_users_dsn
+    secrets:
+      - omniwa_postgres_auth_dsn
+      - omniwa_postgres_users_dsn
+    networks:
+      - omniwa_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: ${POSTGRES_IMAGE:?Set POSTGRES_IMAGE to an immutable sha256 digest}
     container_name: omniwa-postgres
