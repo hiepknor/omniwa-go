@@ -936,7 +936,13 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {
-		go whatsmeowService.ConnectOnStartup(config.ClientName)
+		startBackground(backgroundWorkers, "whatsmeow.connect_on_startup", func(ctx context.Context) error {
+			if ctx.Err() != nil {
+				return nil
+			}
+			whatsmeowService.ConnectOnStartup(config.ClientName)
+			return nil
+		})
 	}
 
 	r.GET("/ws", func(c *gin.Context) {
@@ -1145,24 +1151,27 @@ func main() {
 		logger.LogInfo("RabbitMQ URL not configured, skipping RabbitMQ connection")
 	}
 
-	appCtx, appCancel := context.WithCancel(context.Background())
-	defer appCancel()
-	backgroundWorkers := bootstrap.NewSupervisor(appCtx, func(name string, _ error) {
+	activeRuntime, err := bootstrap.NewActiveRuntime(context.Background(), processState, func(name string, _ error) {
 		logger.LogError("component=bootstrap action=worker_exit worker=%s result=failed error_code=worker_failed", name)
 	})
+	if err != nil {
+		logger.LogFatal("component=active_runtime action=initialize result=failed error_code=invalid_configuration")
+	}
 	ownershipLost := make(chan error, 1)
-	startBackground(backgroundWorkers, "instance_ownership.monitor", func(ctx context.Context) error {
-		if err := ownershipGuard.Monitor(ctx, 5*time.Second); err != nil {
-			if transitionErr := processState.Transition(bootstrap.ProcessRoleDraining); transitionErr != nil {
-				logger.LogError("component=runtime_role action=transition trigger=ownership_lost to=draining result=failed error_code=invalid_transition")
+	r, err := activeRuntime.Start(func(appCtx context.Context, backgroundWorkers *bootstrap.Supervisor) (http.Handler, error) {
+		startBackground(backgroundWorkers, "instance_ownership.monitor", func(ctx context.Context) error {
+			if monitorErr := ownershipGuard.Monitor(ctx, 5*time.Second); monitorErr != nil {
+				if drainErr := activeRuntime.BeginDrain(); drainErr != nil {
+					logger.LogError("component=active_runtime action=drain trigger=ownership_lost result=failed error_code=invalid_transition")
+				}
+				ownershipLost <- monitorErr
 			}
-			ownershipLost <- err
-		}
-		return nil
+			return nil
+		})
+		return setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, backgroundWorkers, metricsRegistry, processState), nil
 	})
-	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, backgroundWorkers, metricsRegistry, processState)
-	if err := processState.Transition(bootstrap.ProcessRoleActive); err != nil {
-		logger.LogFatal("component=runtime_role action=transition to=active result=failed error_code=invalid_transition")
+	if err != nil {
+		logger.LogFatal("component=active_runtime action=start result=failed error_code=start_failed detail=%v", err)
 	}
 
 	// Graceful shutdown with heartbeat
@@ -1199,13 +1208,12 @@ func main() {
 	case ownershipErr := <-ownershipLost:
 		logger.LogError("[SHUTDOWN] Ownership lost, shutting down: %v", ownershipErr)
 	}
-	if err := processState.Transition(bootstrap.ProcessRoleDraining); err != nil {
-		logger.LogError("component=runtime_role action=transition to=draining result=failed error_code=invalid_transition")
+	if err := activeRuntime.BeginDrain(); err != nil {
+		logger.LogError("component=active_runtime action=drain result=failed error_code=invalid_transition")
 	}
 
 	// Stop heartbeat loop
 	heartbeatCancel()
-	appCancel()
 
 	if cfg.LicenseGateEnabled {
 		core.Shutdown(runtimeCtx)
@@ -1217,14 +1225,10 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.LogError("[SHUTDOWN] Server forced to shutdown: %v", err)
 	}
-	select {
-	case <-backgroundWorkers.Stopped():
+	if err := activeRuntime.Stop(shutdownCtx); err != nil {
+		logger.LogError("[SHUTDOWN] Background worker shutdown failed: %v", err)
+	} else {
 		logger.LogInfo("[SHUTDOWN] Background workers stopped")
-	case <-shutdownCtx.Done():
-		logger.LogError("[SHUTDOWN] Background worker shutdown timed out")
-	}
-	if err := processState.Transition(bootstrap.ProcessRoleTerminated); err != nil {
-		logger.LogError("component=runtime_role action=transition to=terminated result=failed error_code=invalid_transition")
 	}
 
 	logger.LogInfo("[SHUTDOWN] Server exited")
