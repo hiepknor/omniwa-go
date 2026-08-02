@@ -39,6 +39,10 @@ func TestConfirmedOutboundPhoneMetadataRequiresPNToLIDAcknowledgement(t *testing
 			name: "requested PN is not digits only", requested: types.NewJID("1555abc", types.DefaultUserServer),
 			acknowledged: types.NewJID("12349", types.HiddenUserServer),
 		},
+		{
+			name: "multiple leading plus signs are rejected", requested: types.NewJID("++15550006", types.DefaultUserServer),
+			acknowledged: types.NewJID("12351", types.HiddenUserServer),
+		},
 	}
 
 	for _, test := range tests {
@@ -51,5 +55,24 @@ func TestConfirmedOutboundPhoneMetadataRequiresPNToLIDAcknowledgement(t *testing
 				t.Fatal("confirmed recipient was not preserved")
 			}
 		})
+	}
+}
+
+func TestConfirmedOutboundPhoneMetadataNormalizesValidatedRequestTarget(t *testing.T) {
+	quotedMessageID := ""
+	requested, err := validateMessageFields("15550005@s.whatsapp.net", nil, &quotedMessageID, &quotedMessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requested.User != "+15550005" {
+		t.Fatalf("test precondition: formatter user=%q", requested.User)
+	}
+
+	metadata := confirmedOutboundPhoneMetadata(requested, nil, types.NewJID("12350", types.HiddenUserServer))
+	if len(metadata) != 1 {
+		t.Fatal("validated PN-to-LID acknowledgement did not produce metadata")
+	}
+	if metadata[0].Recipient.User != "15550005" || metadata[0].Recipient.Server != types.DefaultUserServer {
+		t.Fatal("confirmed recipient was not normalized to a digits-only PN JID")
 	}
 }
