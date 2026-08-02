@@ -203,7 +203,7 @@ func (i *instanceHandler) RotateToken(ctx *gin.Context) {
 
 // Create a new instance
 // @Summary Create a new instance
-// @Description Creates a new instance with the provided data including optional advanced settings
+// @Description Creates a new instance with optional advanced settings. Omit token to receive a server-generated 256-bit credential; custom tokens must contain 32 to 512 visible ASCII characters.
 // @Tags Instance
 // @Accept json
 // @Produce json
@@ -226,10 +226,16 @@ func (i *instanceHandler) Create(ctx *gin.Context) {
 		return
 	}
 
-	if data.Token == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "token is required"})
+	preparedToken, err := instance_credential.PrepareNewInstanceToken(data.Token)
+	if errors.Is(err, instance_credential.ErrInvalidNewInstanceToken) {
+		httpapi.WriteError(ctx, http.StatusBadRequest, "invalid_instance_token", err.Error())
 		return
 	}
+	if err != nil {
+		httpapi.WriteInternal(ctx, err)
+		return
+	}
+	data.Token = preparedToken
 
 	if data.Proxy != nil {
 		if data.Proxy.Port == "" {

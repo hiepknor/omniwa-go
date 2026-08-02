@@ -9855,8 +9855,9 @@ info:
   description: OmniWA GO - WhatsApp API (whatsmeow). All endpoints are authenticated
     with an `apikey` HTTP header. Admin routes under `/instance` (create/all/info/delete/proxy/forcereconnect/logs)
     require the global key from `GLOBAL_API_KEY`; every other route requires the target
-    instance's own token as the `apikey`. See docs/wiki-en for the WebUI integration
-    guide, including the realtime `/ws` event stream (not describable in Swagger 2.0).
+    instance's own token as the `apikey`. Repeated authentication failures may return
+    HTTP 429 with `Retry-After`. See docs/wiki-en for the WebUI integration guide,
+    including the realtime `/ws` event stream (not describable in Swagger 2.0).
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -12379,8 +12380,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a new instance with the provided data including optional
-        advanced settings
+      description: Creates a new instance with optional advanced settings. Omit token
+        to receive a server-generated 256-bit credential; custom tokens must contain
+        32 to 512 visible ASCII characters.
       parameters:
       - description: Instance data with optional advanced settings
         in: body

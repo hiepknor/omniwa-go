@@ -3819,7 +3819,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Creates a new instance with the provided data including optional advanced settings",
+                "description": "Creates a new instance with optional advanced settings. Omit token to receive a server-generated 256-bit credential; custom tokens must contain 32 to 512 visible ASCII characters.",
                 "consumes": [
                     "application/json"
                 ],
@@ -23009,7 +23009,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{"http", "https"},
 	Title:            "OmniWA GO",
-	Description:      "OmniWA GO - WhatsApp API (whatsmeow). All endpoints are authenticated with an `apikey` HTTP header. Admin routes under `/instance` (create/all/info/delete/proxy/forcereconnect/logs) require the global key from `GLOBAL_API_KEY`; every other route requires the target instance's own token as the `apikey`. See docs/wiki-en for the WebUI integration guide, including the realtime `/ws` event stream (not describable in Swagger 2.0).",
+	Description:      "OmniWA GO - WhatsApp API (whatsmeow). All endpoints are authenticated with an `apikey` HTTP header. Admin routes under `/instance` (create/all/info/delete/proxy/forcereconnect/logs) require the global key from `GLOBAL_API_KEY`; every other route requires the target instance's own token as the `apikey`. Repeated authentication failures may return HTTP 429 with `Retry-After`. See docs/wiki-en for the WebUI integration guide, including the realtime `/ws` event stream (not describable in Swagger 2.0).",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

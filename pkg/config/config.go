@@ -30,6 +30,7 @@ type Config struct {
 	DatabaseSaveMessages            bool
 	GlobalApiKey                    string
 	HTTPAllowedOrigins              []string
+	HTTPTrustedProxies              []string
 	InstanceTokenHMACKey            []byte
 	InstanceTokenHMACKeyVersion     int
 	InstanceTokenBackfillBatch      int
@@ -323,6 +324,7 @@ func Load() *Config {
 
 	globalApiKey := sensitiveValue(config_env.GLOBAL_API_KEY)
 	httpAllowedOrigins := splitNonEmptyCSV(os.Getenv(config_env.HTTP_ALLOWED_ORIGINS))
+	httpTrustedProxies := splitNonEmptyCSV(os.Getenv(config_env.HTTP_TRUSTED_PROXIES))
 	panicIfEmpty(config_env.GLOBAL_API_KEY, globalApiKey)
 
 	instanceTokenHMACKey, err := parseOptionalBase64Key(sensitiveValue(config_env.INSTANCE_TOKEN_HMAC_KEY), 32)
@@ -805,6 +807,7 @@ func Load() *Config {
 		DatabaseSaveMessages:            databaseSaveMessages == "true",
 		GlobalApiKey:                    globalApiKey,
 		HTTPAllowedOrigins:              httpAllowedOrigins,
+		HTTPTrustedProxies:              httpTrustedProxies,
 		InstanceTokenHMACKey:            instanceTokenHMACKey,
 		InstanceTokenHMACKeyVersion:     instanceTokenHMACKeyVersion,
 		InstanceTokenBackfillBatch:      instanceTokenBackfillBatch,

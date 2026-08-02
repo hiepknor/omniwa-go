@@ -2,9 +2,7 @@ package instance_credential
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"strings"
@@ -89,9 +87,5 @@ func (s *RotationService) Rotate(ctx context.Context, request RotationRequest) (
 }
 
 func secureInstanceToken() (string, error) {
-	value := make([]byte, 32)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(value), nil
+	return GenerateInstanceToken()
 }
