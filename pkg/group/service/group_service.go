@@ -60,7 +60,7 @@ type GroupService interface {
 }
 
 type groupService struct {
-	clients          instance_runtime.ClientProvider
+	clients          instance_runtime.CommandClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
@@ -345,7 +345,9 @@ func (g *groupService) GetGroupInviteLink(ctx context.Context, data *GetGroupInv
 	if data.Reset {
 		// Reset is a mutation, so it must never be single-flighted or consume the
 		// information-query budget.
-		resp, err = client.GetGroupInviteLink(ctx, recipient, true)
+		resp, err = instance_runtime.DoProviderCommandValue(ctx, g.clients, func(commandCtx context.Context) (string, error) {
+			return client.GetGroupInviteLink(commandCtx, recipient, true)
+		})
 		err = g.queryGuard.ObserveError(instance.Id, err)
 	}
 	if err != nil {
@@ -392,7 +394,9 @@ func (g *groupService) SetGroupPhoto(data *SetGroupPhotoStruct, instance *instan
 		return "", errors.New("image data should be a valid URL or start with \"data:image/jpeg;base64,\"")
 	}
 
-	pictureID, err := client.SetGroupPhoto(context.Background(), recipient, fileData)
+	pictureID, err := instance_runtime.DoProviderCommandValue(context.Background(), g.clients, func(commandCtx context.Context) (string, error) {
+		return client.SetGroupPhoto(commandCtx, recipient, fileData)
+	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error setting group photo: %v", instance.Id, err)
 		return "", err
@@ -415,7 +419,9 @@ func (g *groupService) SetGroupName(data *SetGroupNameStruct, instance *instance
 
 	g.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Attempting to set group name for %s", instance.Id, recipient.String())
 
-	err = client.SetGroupName(context.Background(), recipient, data.Name)
+	err = instance_runtime.DoProviderCommand(context.Background(), g.clients, func(commandCtx context.Context) error {
+		return client.SetGroupName(commandCtx, recipient, data.Name)
+	})
 	if err != nil {
 		// Log mais detalhado para erro 409
 		if strings.Contains(err.Error(), "409") || strings.Contains(err.Error(), "conflict") {
@@ -448,7 +454,9 @@ func (g *groupService) SetGroupDescription(data *SetGroupDescriptionStruct, inst
 
 	// Use SetGroupTopic instead of SetGroupDescription (proper WhatsApp method)
 	// Empty strings for previousID and newID will be auto-filled by the library
-	err = client.SetGroupTopic(context.Background(), recipient, "", "", data.Description)
+	err = instance_runtime.DoProviderCommand(context.Background(), g.clients, func(commandCtx context.Context) error {
+		return client.SetGroupTopic(commandCtx, recipient, "", "", data.Description)
+	})
 	if err != nil {
 		// Log mais detalhado para erro 409
 		if strings.Contains(err.Error(), "409") || strings.Contains(err.Error(), "conflict") {
@@ -481,9 +489,11 @@ func (g *groupService) CreateGroup(ctx context.Context, data *CreateGroupStruct,
 		}
 	}
 
-	resp, err := client.CreateGroup(ctx, whatsmeow.ReqCreateGroup{
-		Name:         data.GroupName,
-		Participants: participants,
+	resp, err := instance_runtime.DoProviderCommandValue(ctx, g.clients, func(commandCtx context.Context) (*types.GroupInfo, error) {
+		return client.CreateGroup(commandCtx, whatsmeow.ReqCreateGroup{
+			Name:         data.GroupName,
+			Participants: participants,
+		})
 	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create group: %v", instance.Id, err)
@@ -548,7 +558,9 @@ func (g *groupService) UpdateParticipant(data *AddParticipantStruct, instance *i
 		}
 	}
 
-	results, err := client.UpdateGroupParticipants(context.Background(), data.GroupJID, participants, data.Action)
+	results, err := instance_runtime.DoProviderCommandValue(context.Background(), g.clients, func(commandCtx context.Context) ([]types.GroupParticipant, error) {
+		return client.UpdateGroupParticipants(commandCtx, data.GroupJID, participants, data.Action)
+	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create group: %v", instance.Id, err)
 		return err
@@ -596,7 +608,9 @@ func (g *groupService) JoinGroupLink(data *JoinGroupStruct, instance *instance_m
 		return err
 	}
 
-	joinedGroup, err := client.JoinGroupWithLink(context.Background(), data.Code)
+	joinedGroup, err := instance_runtime.DoProviderCommandValue(context.Background(), g.clients, func(commandCtx context.Context) (types.JID, error) {
+		return client.JoinGroupWithLink(commandCtx, data.Code)
+	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create group: %v", instance.Id, err)
 		return err
@@ -623,7 +637,9 @@ func (g *groupService) LeaveGroup(data *LeaveGroupStruct, instance *instance_mod
 		return err
 	}
 
-	err = client.LeaveGroup(context.Background(), data.GroupJID)
+	err = instance_runtime.DoProviderCommand(context.Background(), g.clients, func(commandCtx context.Context) error {
+		return client.LeaveGroup(commandCtx, data.GroupJID)
+	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error leave group: %v", instance.Id, err)
 		return err
@@ -663,25 +679,29 @@ func (g *groupService) UpdateGroupSettings(data *UpdateGroupSettingsStruct, inst
 		return errors.New("invalid action. Valid actions: announcement, not_announcement, locked, unlocked, approval_on, approval_off, admin_add, all_member_add")
 	}
 
-	// Apply settings based on action
-	switch data.Action {
-	case "announcement":
-		err = client.SetGroupAnnounce(context.Background(), recipient, true)
-	case "not_announcement":
-		err = client.SetGroupAnnounce(context.Background(), recipient, false)
-	case "locked":
-		err = client.SetGroupLocked(context.Background(), recipient, true)
-	case "unlocked":
-		err = client.SetGroupLocked(context.Background(), recipient, false)
-	case "approval_on":
-		err = client.SetGroupJoinApprovalMode(context.Background(), recipient, true)
-	case "approval_off":
-		err = client.SetGroupJoinApprovalMode(context.Background(), recipient, false)
-	case "admin_add":
-		err = client.SetGroupMemberAddMode(context.Background(), recipient, "admin_add")
-	case "all_member_add":
-		err = client.SetGroupMemberAddMode(context.Background(), recipient, "all_member_add")
-	}
+	// Apply settings based on action through one fenced command admission.
+	err = instance_runtime.DoProviderCommand(context.Background(), g.clients, func(commandCtx context.Context) error {
+		switch data.Action {
+		case "announcement":
+			return client.SetGroupAnnounce(commandCtx, recipient, true)
+		case "not_announcement":
+			return client.SetGroupAnnounce(commandCtx, recipient, false)
+		case "locked":
+			return client.SetGroupLocked(commandCtx, recipient, true)
+		case "unlocked":
+			return client.SetGroupLocked(commandCtx, recipient, false)
+		case "approval_on":
+			return client.SetGroupJoinApprovalMode(commandCtx, recipient, true)
+		case "approval_off":
+			return client.SetGroupJoinApprovalMode(commandCtx, recipient, false)
+		case "admin_add":
+			return client.SetGroupMemberAddMode(commandCtx, recipient, "admin_add")
+		case "all_member_add":
+			return client.SetGroupMemberAddMode(commandCtx, recipient, "all_member_add")
+		default:
+			return ErrInvalidManagementFilter
+		}
+	})
 
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error updating group settings: %v", instance.Id, err)
@@ -769,7 +789,9 @@ func (g *groupService) SetManagementName(ctx context.Context, instanceID string,
 	if err != nil {
 		return err
 	}
-	if err := client.SetGroupName(ctx, groupJID, name); err != nil {
+	if err := instance_runtime.DoProviderCommand(ctx, g.clients, func(commandCtx context.Context) error {
+		return client.SetGroupName(commandCtx, groupJID, name)
+	}); err != nil {
 		return g.observeManagementError(instanceID, err)
 	}
 	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
@@ -783,7 +805,9 @@ func (g *groupService) SetManagementDescription(ctx context.Context, instanceID 
 	if err != nil {
 		return err
 	}
-	if err := client.SetGroupTopic(ctx, groupJID, "", "", description); err != nil {
+	if err := instance_runtime.DoProviderCommand(ctx, g.clients, func(commandCtx context.Context) error {
+		return client.SetGroupTopic(commandCtx, groupJID, "", "", description)
+	}); err != nil {
 		return g.observeManagementError(instanceID, err)
 	}
 	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
@@ -799,26 +823,36 @@ func (g *groupService) SetManagementSetting(ctx context.Context, instanceID stri
 	}
 	var projectionSetting string
 	var enabled bool
-	switch action {
-	case "announcement":
-		err, projectionSetting, enabled = client.SetGroupAnnounce(ctx, groupJID, true), "announce", true
-	case "not_announcement":
-		err, projectionSetting, enabled = client.SetGroupAnnounce(ctx, groupJID, false), "announce", false
-	case "locked":
-		err, projectionSetting, enabled = client.SetGroupLocked(ctx, groupJID, true), "locked", true
-	case "unlocked":
-		err, projectionSetting, enabled = client.SetGroupLocked(ctx, groupJID, false), "locked", false
-	case "approval_on":
-		err, projectionSetting, enabled = client.SetGroupJoinApprovalMode(ctx, groupJID, true), "join_approval", true
-	case "approval_off":
-		err, projectionSetting, enabled = client.SetGroupJoinApprovalMode(ctx, groupJID, false), "join_approval", false
-	case "admin_add":
-		err, projectionSetting, enabled = client.SetGroupMemberAddMode(ctx, groupJID, "admin_add"), "member_add", false
-	case "all_member_add":
-		err, projectionSetting, enabled = client.SetGroupMemberAddMode(ctx, groupJID, "all_member_add"), "member_add", true
-	default:
-		return ErrInvalidManagementFilter
-	}
+	err = instance_runtime.DoProviderCommand(ctx, g.clients, func(commandCtx context.Context) error {
+		switch action {
+		case "announcement":
+			projectionSetting, enabled = "announce", true
+			return client.SetGroupAnnounce(commandCtx, groupJID, true)
+		case "not_announcement":
+			projectionSetting, enabled = "announce", false
+			return client.SetGroupAnnounce(commandCtx, groupJID, false)
+		case "locked":
+			projectionSetting, enabled = "locked", true
+			return client.SetGroupLocked(commandCtx, groupJID, true)
+		case "unlocked":
+			projectionSetting, enabled = "locked", false
+			return client.SetGroupLocked(commandCtx, groupJID, false)
+		case "approval_on":
+			projectionSetting, enabled = "join_approval", true
+			return client.SetGroupJoinApprovalMode(commandCtx, groupJID, true)
+		case "approval_off":
+			projectionSetting, enabled = "join_approval", false
+			return client.SetGroupJoinApprovalMode(commandCtx, groupJID, false)
+		case "admin_add":
+			projectionSetting, enabled = "member_add", false
+			return client.SetGroupMemberAddMode(commandCtx, groupJID, "admin_add")
+		case "all_member_add":
+			projectionSetting, enabled = "member_add", true
+			return client.SetGroupMemberAddMode(commandCtx, groupJID, "all_member_add")
+		default:
+			return ErrInvalidManagementFilter
+		}
+	})
 	if err != nil {
 		return err
 	}
@@ -833,7 +867,9 @@ func (g *groupService) LeaveManagementGroup(ctx context.Context, instanceID stri
 	if err != nil {
 		return err
 	}
-	if err := client.LeaveGroup(ctx, groupJID); err != nil {
+	if err := instance_runtime.DoProviderCommand(ctx, g.clients, func(commandCtx context.Context) error {
+		return client.LeaveGroup(commandCtx, groupJID)
+	}); err != nil {
 		return g.observeManagementError(instanceID, err)
 	}
 	g.writeGroupProjection(instanceID, func(writeCtx context.Context) error {
@@ -847,7 +883,9 @@ func (g *groupService) ResetManagementInviteLink(ctx context.Context, instanceID
 	if err != nil {
 		return g.observeManagementError(instanceID, err)
 	}
-	inviteLink, err := client.GetGroupInviteLink(ctx, groupJID, true)
+	inviteLink, err := instance_runtime.DoProviderCommandValue(ctx, g.clients, func(commandCtx context.Context) (string, error) {
+		return client.GetGroupInviteLink(commandCtx, groupJID, true)
+	})
 	if err != nil {
 		return err
 	}
@@ -861,7 +899,9 @@ func (g *groupService) SetManagementPhoto(ctx context.Context, instanceID string
 	if err != nil {
 		return "", err
 	}
-	pictureID, err := client.SetGroupPhoto(ctx, groupJID, photo)
+	pictureID, err := instance_runtime.DoProviderCommandValue(ctx, g.clients, func(commandCtx context.Context) (string, error) {
+		return client.SetGroupPhoto(commandCtx, groupJID, photo)
+	})
 	if err != nil {
 		return "", g.observeManagementError(instanceID, err)
 	}
@@ -873,7 +913,9 @@ func (g *groupService) UpdateManagementParticipants(ctx context.Context, instanc
 	if err != nil {
 		return nil, g.observeManagementError(instanceID, err)
 	}
-	results, err := client.UpdateGroupParticipants(ctx, groupJID, participants, whatsmeow.ParticipantChange(action))
+	results, err := instance_runtime.DoProviderCommandValue(ctx, g.clients, func(commandCtx context.Context) ([]types.GroupParticipant, error) {
+		return client.UpdateGroupParticipants(commandCtx, groupJID, participants, whatsmeow.ParticipantChange(action))
+	})
 	if err != nil {
 		return nil, g.observeManagementError(instanceID, err)
 	}
@@ -888,7 +930,9 @@ func (g *groupService) CreateManagementGroup(ctx context.Context, instanceID, na
 	if err != nil {
 		return nil, err
 	}
-	group, err := client.CreateGroup(ctx, whatsmeow.ReqCreateGroup{Name: name, Participants: participants})
+	group, err := instance_runtime.DoProviderCommandValue(ctx, g.clients, func(commandCtx context.Context) (*types.GroupInfo, error) {
+		return client.CreateGroup(commandCtx, whatsmeow.ReqCreateGroup{Name: name, Participants: participants})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -901,7 +945,9 @@ func (g *groupService) JoinManagementGroup(ctx context.Context, instanceID, code
 	if err != nil {
 		return managementJoinProviderResult{}, g.observeManagementError(instanceID, err)
 	}
-	joinedGroup, err := client.JoinGroupWithLink(ctx, code)
+	joinedGroup, err := instance_runtime.DoProviderCommandValue(ctx, g.clients, func(commandCtx context.Context) (types.JID, error) {
+		return client.JoinGroupWithLink(commandCtx, code)
+	})
 	if errors.Is(err, whatsmeow.ErrInviteLinkInvalid) {
 		return managementJoinProviderResult{Status: "rejected", Reason: "invalid_invite_link"}, nil
 	}
@@ -1038,7 +1084,9 @@ func (g *groupService) UpdateGroupRequestParticipants(data *UpdateGroupRequestPa
 		participants = append(participants, participantJID)
 	}
 
-	results, err := client.UpdateGroupRequestParticipants(context.Background(), recipient, participants, action)
+	results, err := instance_runtime.DoProviderCommandValue(context.Background(), g.clients, func(commandCtx context.Context) ([]types.GroupParticipant, error) {
+		return client.UpdateGroupRequestParticipants(commandCtx, recipient, participants, action)
+	})
 	if err != nil {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error updating group request participants: %v", instance.Id, err)
 		return nil, err
@@ -1054,7 +1102,7 @@ func (g *groupService) UpdateGroupRequestParticipants(data *UpdateGroupRequestPa
 }
 
 func NewGroupService(
-	clients instance_runtime.ClientProvider,
+	clients instance_runtime.CommandClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
 	outboundGuard outbound.Guard,

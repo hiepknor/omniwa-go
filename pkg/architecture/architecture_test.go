@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"io/fs"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 const modulePrefix = "github.com/evolution-foundation/evolution-go/"
@@ -122,6 +125,172 @@ func TestOutboundHTTPUsesNetguard(t *testing.T) {
 			return true
 		})
 	}
+}
+
+func TestWhatsAppProviderMutationsUseFencedCommandFacade(t *testing.T) {
+	_, current, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve architecture test path")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(current), "..", ".."))
+	configuration := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+		Dir:  root,
+	}
+	loaded, err := packages.Load(configuration, "./cmd/...", "./pkg/...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := packages.PrintErrors(loaded); count != 0 {
+		t.Fatalf("type-check repository for provider command architecture: %d errors", count)
+	}
+	mutations := map[string]bool{
+		"ConnectContext": true, "Logout": true, "PairPhone": true,
+		"SendMessage": true, "Upload": true, "UploadNewsletter": true,
+		"SendPresence": true, "SendChatPresence": true, "MarkRead": true, "SendAppState": true,
+		"RejectCall": true, "SendPasskeyResponse": true, "SendPasskeyConfirmation": true,
+		"CreateGroup": true, "LinkGroup": true, "UnlinkGroup": true,
+		"SetGroupPhoto": true, "SetGroupName": true, "SetGroupTopic": true,
+		"UpdateGroupParticipants": true, "UpdateGroupRequestParticipants": true,
+		"JoinGroupWithLink": true, "LeaveGroup": true,
+		"GetGroupInviteLink": true,
+		"SetGroupAnnounce":   true, "SetGroupLocked": true,
+		"SetGroupJoinApprovalMode": true, "SetGroupMemberAddMode": true,
+		"SetPrivacySetting": true, "UpdateBlocklist": true, "SetStatusMessage": true,
+		"CreateNewsletter": true, "NewsletterSubscribeLiveUpdates": true,
+		"SetPassive": true, "SetDefaultDisappearingTimer": true,
+		"SetForceActiveDeliveryReceipts": true, "SendUnavailableMessageRequest": true,
+	}
+	readOrLocalMethods := map[string]bool{
+		"AddEventHandler": true, "RemoveEventHandler": true,
+		"IsConnected": true, "IsLoggedIn": true, "Disconnect": true,
+		"SetProxy": true, "SetProxyAddress": true,
+		"BuildEdit": true, "BuildHistorySyncRequest": true, "BuildPollCreation": true, "BuildRevoke": true,
+		"GenerateMessageID": true,
+		"Download":          true, "DownloadToFile": true, "DownloadMediaWithPathToFile": true, "DecryptPollVote": true,
+		"FetchAppState": true,
+		"GetBlocklist":  true, "GetGroupInfo": true, "GetGroupRequestParticipants": true,
+		"GetJoinedGroups": true, "GetNewsletterInfo": true, "GetNewsletterInfoWithInvite": true,
+		"GetNewsletterMessages": true, "GetProfilePictureInfo": true, "GetSubscribedNewsletters": true,
+		"GetUserInfo": true, "IsOnWhatsApp": true, "TryFetchPrivacySettings": true,
+	}
+	commandsChecked := 0
+	for _, loadedPackage := range loaded {
+		for fileIndex, file := range loadedPackage.Syntax {
+			fileName := loadedPackage.CompiledGoFiles[fileIndex]
+			var stack []ast.Node
+			ast.Inspect(file, func(node ast.Node) bool {
+				if node == nil {
+					stack = stack[:len(stack)-1]
+					return false
+				}
+				stack = append(stack, node)
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || !isWhatsmeowClientMethod(loadedPackage, selector) {
+					return true
+				}
+				isMutation := mutations[selector.Sel.Name]
+				if selector.Sel.Name == "GetGroupInviteLink" {
+					isMutation = callHasTrueReset(call)
+					if !isMutation {
+						return true
+					}
+				}
+				if !isMutation && readOrLocalMethods[selector.Sel.Name] {
+					return true
+				}
+				position := loadedPackage.Fset.Position(call.Pos())
+				if !isMutation {
+					t.Errorf("%s:%d: whatsmeow.Client.%s is not classified as a fenced mutation or an allowed read/local operation", fileName, position.Line, selector.Sel.Name)
+					return true
+				}
+				commandsChecked++
+				if !insideProviderCommandFacade(stack) {
+					t.Errorf("%s:%d: whatsmeow.Client.%s bypasses the fenced provider command facade", fileName, position.Line, selector.Sel.Name)
+					return true
+				}
+				if !callUsesCommandContext(call) {
+					t.Errorf("%s:%d: whatsmeow.Client.%s does not use the bounded command context", fileName, position.Line, selector.Sel.Name)
+				}
+				return true
+			})
+		}
+	}
+	if commandsChecked < 50 {
+		t.Fatalf("provider command architecture matched only %d mutation calls; type inventory is unexpectedly incomplete", commandsChecked)
+	}
+}
+
+func isWhatsmeowClientMethod(pkg *packages.Package, selector *ast.SelectorExpr) bool {
+	selection := pkg.TypesInfo.Selections[selector]
+	if selection == nil {
+		return false
+	}
+	receiver := types.Unalias(selection.Recv())
+	pointer, ok := receiver.(*types.Pointer)
+	if !ok {
+		return false
+	}
+	named, ok := types.Unalias(pointer.Elem()).(*types.Named)
+	return ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "go.mau.fi/whatsmeow" && named.Obj().Name() == "Client"
+}
+
+func insideProviderCommandFacade(stack []ast.Node) bool {
+	for index := len(stack) - 2; index > 0; index-- {
+		literal, ok := stack[index].(*ast.FuncLit)
+		if !ok {
+			continue
+		}
+		call, ok := stack[index-1].(*ast.CallExpr)
+		if !ok || !callContainsNode(call.Args, literal) {
+			continue
+		}
+		name := calledFunctionName(call.Fun)
+		return name == "DoProviderCommand" || name == "DoProviderCommandValue"
+	}
+	return false
+}
+
+func callContainsNode(arguments []ast.Expr, target ast.Expr) bool {
+	for _, argument := range arguments {
+		if argument == target {
+			return true
+		}
+	}
+	return false
+}
+
+func calledFunctionName(expression ast.Expr) string {
+	switch value := expression.(type) {
+	case *ast.SelectorExpr:
+		return value.Sel.Name
+	case *ast.IndexExpr:
+		return calledFunctionName(value.X)
+	case *ast.IndexListExpr:
+		return calledFunctionName(value.X)
+	default:
+		return ""
+	}
+}
+
+func callUsesCommandContext(call *ast.CallExpr) bool {
+	if len(call.Args) == 0 {
+		return false
+	}
+	identifier, ok := call.Args[0].(*ast.Ident)
+	return ok && identifier.Name == "commandCtx"
+}
+
+func callHasTrueReset(call *ast.CallExpr) bool {
+	if len(call.Args) < 3 {
+		return false
+	}
+	identifier, ok := call.Args[2].(*ast.Ident)
+	return ok && identifier.Name == "true"
 }
 
 func TestSensitivePersistenceFieldsAreNotSerializable(t *testing.T) {

@@ -59,7 +59,7 @@ type SendService interface {
 }
 
 type sendService struct {
-	clients          instance_runtime.ClientProvider
+	clients          instance_runtime.CommandClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	config           *config.Config
 	loggerWrapper    *logger_wrapper.LoggerManager
@@ -955,7 +955,9 @@ func (s *sendService) SendImageOnce(ctx context.Context, data *MediaStruct, file
 	if mimeType != "image/jpeg" && mimeType != "image/png" {
 		return nil, errors.New("campaign image must be normalized JPEG or PNG")
 	}
-	uploaded, err := client.Upload(ctx, fileData, whatsmeow.MediaImage)
+	uploaded, err := instance_runtime.DoProviderCommandValue(ctx, s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+		return client.Upload(commandCtx, fileData, whatsmeow.MediaImage)
+	})
 	if err != nil {
 		return nil, &ProviderMediaUploadError{Cause: err}
 	}
@@ -1044,11 +1046,15 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 		var uploaded whatsmeow.UploadResponse
 		if isNewsletter {
 			// Newsletter: upload SEM criptografia
-			uploaded, err = client.UploadNewsletter(context.Background(), fileData, uploadType)
+			uploaded, err = instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+				return client.UploadNewsletter(commandCtx, fileData, uploadType)
+			})
 			s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Newsletter upload - Handle: %s", instance.Id, uploaded.Handle)
 		} else {
 			// Normal: upload COM criptografia
-			uploaded, err = client.Upload(context.Background(), fileData, uploadType)
+			uploaded, err = instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+				return client.Upload(commandCtx, fileData, uploadType)
+			})
 		}
 
 		if err != nil {
@@ -1340,11 +1346,15 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 		var uploaded whatsmeow.UploadResponse
 		if isNewsletter {
 			// Newsletter: upload sem criptografia
-			uploaded, err = client.UploadNewsletter(context.Background(), fileData, uploadType)
+			uploaded, err = instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+				return client.UploadNewsletter(commandCtx, fileData, uploadType)
+			})
 			s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Newsletter upload - Handle: %s", instance.Id, uploaded.Handle)
 		} else {
 			// Upload normal com criptografia
-			uploaded, err = client.Upload(context.Background(), fileData, uploadType)
+			uploaded, err = instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+				return client.Upload(commandCtx, fileData, uploadType)
+			})
 		}
 
 		if err != nil {
@@ -1635,7 +1645,9 @@ func (s *sendService) SendSticker(data *StickerStruct, instance *instance_model.
 
 		filedata = webpData
 
-		uploaded, err = client.Upload(context.Background(), filedata, whatsmeow.MediaImage)
+		uploaded, err = instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+			return client.Upload(commandCtx, filedata, whatsmeow.MediaImage)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to upload sticker: %v", err)
 		}
@@ -1895,7 +1907,9 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 		// Optional media header (image or video URL).
 		if data.ImageUrl != "" {
 			if fileData, fetchErr := s.mediaFetcher.Fetch(context.Background(), data.ImageUrl); fetchErr == nil {
-				if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaImage); upErr == nil {
+				if uploaded, upErr := instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+					return client.Upload(commandCtx, fileData, whatsmeow.MediaImage)
+				}); upErr == nil {
 					buttonsMsg.HeaderType = waE2E.ButtonsMessage_IMAGE.Enum()
 					buttonsMsg.Header = &waE2E.ButtonsMessage_ImageMessage{
 						ImageMessage: &waE2E.ImageMessage{
@@ -1912,7 +1926,9 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 			}
 		} else if data.VideoUrl != "" {
 			if fileData, fetchErr := s.mediaFetcher.Fetch(context.Background(), data.VideoUrl); fetchErr == nil {
-				if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo); upErr == nil {
+				if uploaded, upErr := instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+					return client.Upload(commandCtx, fileData, whatsmeow.MediaVideo)
+				}); upErr == nil {
 					buttonsMsg.HeaderType = waE2E.ButtonsMessage_VIDEO.Enum()
 					buttonsMsg.Header = &waE2E.ButtonsMessage_VideoMessage{
 						VideoMessage: &waE2E.VideoMessage{
@@ -2405,14 +2421,18 @@ func (s *sendService) sendMessageContext(ctx context.Context, instance *instance
 			media = "audio"
 		}
 
-		err := client.SendChatPresence(context.Background(), recipient, types.ChatPresence("composing"), types.ChatPresenceMedia(media))
+		err := instance_runtime.DoProviderCommand(context.Background(), s.clients, func(commandCtx context.Context) error {
+			return client.SendChatPresence(commandCtx, recipient, types.ChatPresence("composing"), types.ChatPresenceMedia(media))
+		})
 		if err != nil {
 			return nil, err
 		}
 
 		time.Sleep(time.Duration(data.Delay) * time.Millisecond)
 
-		err = client.SendChatPresence(context.Background(), recipient, types.ChatPresence("paused"), types.ChatPresenceMedia(media))
+		err = instance_runtime.DoProviderCommand(context.Background(), s.clients, func(commandCtx context.Context) error {
+			return client.SendChatPresence(commandCtx, recipient, types.ChatPresence("paused"), types.ChatPresenceMedia(media))
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -2809,7 +2829,9 @@ func (s *sendService) sendMessageContext(ctx context.Context, instance *instance
 	if err := s.whatsmeowService.WaitOutbound(ctx, instance.Id, 1); err != nil {
 		return nil, err
 	}
-	response, err := client.SendMessage(ctx, recipient, msg, sendExtra)
+	response, err := instance_runtime.DoProviderCommandValue(ctx, s.clients, func(commandCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(commandCtx, recipient, msg, sendExtra)
+	})
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("component=outbound action=send instance_id=%s correlation=%s result=unacknowledged error_code=send_failed type=%s", instance.Id, correlation, messageType)
 		if classifyOutcome {
@@ -3016,7 +3038,9 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 				// Download image
 				fileData, err := s.mediaFetcher.Fetch(context.Background(), card.Header.ImageUrl)
 				if err == nil {
-					uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaImage)
+					uploaded, err := instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+						return client.Upload(commandCtx, fileData, whatsmeow.MediaImage)
+					})
 					if err == nil {
 						// Generate JPEG thumbnail for iOS compatibility
 						jpegThumb := makeJPEGThumbnail(fileData, 72)
@@ -3040,7 +3064,9 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 				// Download and upload video
 				fileData, err := s.mediaFetcher.Fetch(context.Background(), card.Header.VideoUrl)
 				if err == nil {
-					uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo)
+					uploaded, err := instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+						return client.Upload(commandCtx, fileData, whatsmeow.MediaVideo)
+					})
 					if err == nil {
 						header.HasMediaAttachment = proto.Bool(true)
 						header.Media = &waE2E.InteractiveMessage_Header_VideoMessage{
@@ -3207,7 +3233,9 @@ func (s *sendService) SendStatusText(data *StatusTextStruct, instance *instance_
 	if err := s.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
 		return nil, err
 	}
-	response, err := client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: messageID})
+	response, err := instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(commandCtx, recipient, msg, whatsmeow.SendRequestExtra{ID: messageID})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -3306,7 +3334,9 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 		return nil, errors.New("invalid media type")
 	}
 
-	uploaded, err := client.Upload(context.Background(), fileData, uploadType)
+	uploaded, err := instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.UploadResponse, error) {
+		return client.Upload(commandCtx, fileData, uploadType)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -3358,7 +3388,9 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 	if err := s.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
 		return nil, err
 	}
-	response, err := client.SendMessage(context.Background(), recipient, media, whatsmeow.SendRequestExtra{ID: messageID})
+	response, err := instance_runtime.DoProviderCommandValue(context.Background(), s.clients, func(commandCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(commandCtx, recipient, media, whatsmeow.SendRequestExtra{ID: messageID})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -3447,7 +3479,7 @@ func (s *sendService) sendStatusWebhook(messageSent *MessageSendStruct, instance
 }
 
 func NewSendService(
-	clients instance_runtime.ClientProvider,
+	clients instance_runtime.CommandClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	config *config.Config,
 	queryGuard waquery.Guard,

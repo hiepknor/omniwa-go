@@ -48,6 +48,7 @@ import (
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
 	instance_ownership "github.com/evolution-foundation/evolution-go/pkg/instance/ownership"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
+	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
 	label_handler "github.com/evolution-foundation/evolution-go/pkg/label/handler"
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
@@ -157,8 +158,8 @@ func runStandbyServer(ctx context.Context, address string) error {
 	return errors.Join(serveErr, shutdownErr, stopErr)
 }
 
-func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *bootstrap.Supervisor, metricsRegistry *observability.Registry, processState *bootstrap.ProcessState) *gin.Engine {
-	runtimeRegistry := bootstrap.NewInstanceRuntime(appCtx)
+func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *bootstrap.Supervisor, metricsRegistry *observability.Registry, processState *bootstrap.ProcessState, providerCommands instance_runtime.ProviderCommandExecutor) *gin.Engine {
+	runtimeRegistry := bootstrap.NewInstanceRuntime(appCtx, providerCommands)
 
 	loggerWrapper := logger_wrapper.NewLoggerManager(config)
 	queryGuard, err := waquery.New(waquery.Settings{
@@ -1254,6 +1255,10 @@ func main() {
 		log.Fatal("Failed to activate durable ownership epoch: ", err)
 	}
 	logger.LogInfo("component=ownership action=activate_epoch result=success epoch=%d", ownershipEpoch)
+	providerCommands, err := instance_ownership.NewSideEffectFencer(usersDB, ownershipEpoch)
+	if err != nil {
+		log.Fatal("Failed to initialize fenced provider commands: ", err)
+	}
 
 	// Initialize core DB + license runtime only when the gate is enabled.
 	// With LICENSE_GATE_ENABLED=false the runtime context stays nil and the
@@ -1311,7 +1316,7 @@ func main() {
 			}
 			return nil
 		})
-		return setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, backgroundWorkers, metricsRegistry, processState), nil
+		return setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, backgroundWorkers, metricsRegistry, processState, providerCommands), nil
 	})
 	if err != nil {
 		logger.LogFatal("component=active_runtime action=start result=failed error_code=start_failed detail=%v", err)

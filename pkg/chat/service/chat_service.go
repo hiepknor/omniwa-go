@@ -27,7 +27,7 @@ type Service interface {
 }
 
 type chatService struct {
-	clients          instance_runtime.ClientProvider
+	clients          instance_runtime.CommandClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 }
@@ -80,7 +80,9 @@ func (c *chatService) SetArchived(ctx context.Context, instanceID, target string
 	if err != nil {
 		return err
 	}
-	if err := client.SendAppState(ctx, appstate.BuildArchive(recipient, archived, time.Time{}, nil)); err != nil {
+	if err := instance_runtime.DoProviderCommand(ctx, c.clients, func(commandCtx context.Context) error {
+		return client.SendAppState(commandCtx, appstate.BuildArchive(recipient, archived, time.Time{}, nil))
+	}); err != nil {
 		c.loggerWrapper.GetLogger(instanceID).LogError("[%s] error update archive state: %v", instanceID, err)
 		return err
 	}
@@ -92,7 +94,9 @@ func (c *chatService) SetPinned(ctx context.Context, instanceID, target string, 
 	if err != nil {
 		return err
 	}
-	if err := client.SendAppState(ctx, appstate.BuildPin(recipient, pinned)); err != nil {
+	if err := instance_runtime.DoProviderCommand(ctx, c.clients, func(commandCtx context.Context) error {
+		return client.SendAppState(commandCtx, appstate.BuildPin(recipient, pinned))
+	}); err != nil {
 		c.loggerWrapper.GetLogger(instanceID).LogError("[%s] error update pin state: %v", instanceID, err)
 		return err
 	}
@@ -107,7 +111,9 @@ func (c *chatService) SetMuted(ctx context.Context, instanceID, target string, d
 	if err != nil {
 		return err
 	}
-	if err := client.SendAppState(ctx, appstate.BuildMute(recipient, duration > 0, duration)); err != nil {
+	if err := instance_runtime.DoProviderCommand(ctx, c.clients, func(commandCtx context.Context) error {
+		return client.SendAppState(commandCtx, appstate.BuildMute(recipient, duration > 0, duration))
+	}); err != nil {
 		c.loggerWrapper.GetLogger(instanceID).LogError("[%s] error update mute state: %v", instanceID, err)
 		return err
 	}
@@ -139,7 +145,9 @@ func (c *chatService) RequestHistorySync(ctx context.Context, instanceID string,
 	if err := c.whatsmeowService.WaitOutbound(ctx, instanceID, 1); err != nil {
 		return nil, err
 	}
-	res, err := client.SendMessage(ctx, messageInfo.Chat, histRequest, whatsmeow.SendRequestExtra{Peer: true})
+	res, err := instance_runtime.DoProviderCommandValue(ctx, c.clients, func(commandCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(commandCtx, messageInfo.Chat, histRequest, whatsmeow.SendRequestExtra{Peer: true})
+	})
 	if err != nil {
 		c.loggerWrapper.GetLogger(instanceID).LogError("[%s] error history sync request: %v", instanceID, err)
 		return nil, err
@@ -148,7 +156,7 @@ func (c *chatService) RequestHistorySync(ctx context.Context, instanceID string,
 }
 
 func NewChatService(
-	clients instance_runtime.ClientProvider,
+	clients instance_runtime.CommandClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) Service {

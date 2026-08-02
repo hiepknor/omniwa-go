@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -9,6 +10,101 @@ import (
 
 	"go.mau.fi/whatsmeow"
 )
+
+type commandExecutorFunc func(context.Context, func(context.Context) error) error
+
+func (execute commandExecutorFunc) Do(ctx context.Context, operation func(context.Context) error) error {
+	return execute(ctx, operation)
+}
+
+func TestProviderCommandsFailClosedWithoutExactlyOneExecutor(t *testing.T) {
+	operationCalled := false
+	operation := func(context.Context) error { operationCalled = true; return nil }
+	executor := commandExecutorFunc(func(ctx context.Context, operation func(context.Context) error) error {
+		return operation(ctx)
+	})
+	for _, registry := range []*Registry[struct{}]{
+		NewRegistry[struct{}](context.Background()),
+		NewRegistry[struct{}](context.Background(), executor, executor),
+	} {
+		if err := registry.Do(context.Background(), operation); err == nil {
+			t.Fatal("provider command was admitted without exactly one executor")
+		}
+		registry.Close()
+	}
+	if operationCalled {
+		t.Fatal("fail-closed provider command path invoked its operation")
+	}
+}
+
+func TestProviderCommandsDelegateToExecutor(t *testing.T) {
+	wantErr := errors.New("provider rejected command")
+	executorCalls := 0
+	operationCalls := 0
+	registry := NewRegistry[struct{}](context.Background(), commandExecutorFunc(func(ctx context.Context, operation func(context.Context) error) error {
+		executorCalls++
+		return operation(ctx)
+	}))
+	defer registry.Close()
+	err := registry.Do(context.Background(), func(context.Context) error {
+		operationCalls++
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) || executorCalls != 1 || operationCalls != 1 {
+		t.Fatalf("Do() error=%v executor_calls=%d operation_calls=%d", err, executorCalls, operationCalls)
+	}
+}
+
+func TestProviderCommandsApplyMaximumDeadline(t *testing.T) {
+	registry := NewRegistry[struct{}](context.Background(), commandExecutorFunc(func(ctx context.Context, operation func(context.Context) error) error {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return errors.New("command context has no deadline")
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 || remaining > ProviderCommandTimeout {
+			return errors.New("command deadline is outside the bounded window")
+		}
+		return operation(ctx)
+	}))
+	defer registry.Close()
+	if err := registry.Do(context.Background(), func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProviderCommandFacadesFailClosedForInvalidInputs(t *testing.T) {
+	executorCalls := 0
+	executor := commandExecutorFunc(func(ctx context.Context, operation func(context.Context) error) error {
+		executorCalls++
+		return operation(ctx)
+	})
+	operation := func(context.Context) error { return nil }
+	for _, test := range []struct {
+		name      string
+		ctx       context.Context
+		executor  ProviderCommandExecutor
+		operation func(context.Context) error
+	}{
+		{name: "nil context", executor: executor, operation: operation},
+		{name: "nil executor", ctx: context.Background(), operation: operation},
+		{name: "nil operation", ctx: context.Background(), executor: executor},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := DoProviderCommand(test.ctx, test.executor, test.operation); err == nil {
+				t.Fatal("invalid provider command input was admitted")
+			}
+		})
+	}
+	if _, err := DoProviderCommandValue[struct{}](nil, executor, func(context.Context) (struct{}, error) {
+		return struct{}{}, nil
+	}); err == nil {
+		t.Fatal("value provider command admitted a nil context")
+	}
+	if executorCalls != 0 {
+		t.Fatalf("invalid provider command reached executor %d times", executorCalls)
+	}
+}
 
 func TestStaleGenerationCannotRemoveReplacement(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

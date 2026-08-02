@@ -22,7 +22,7 @@ type CommunityService interface {
 }
 
 type communityService struct {
-	clients          instance_runtime.ClientProvider
+	clients          instance_runtime.CommandClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 }
@@ -81,11 +81,13 @@ func (c *communityService) CreateCommunity(data *CreateCommunityStruct, instance
 		return nil, err
 	}
 
-	resp, err := client.CreateGroup(context.Background(), whatsmeow.ReqCreateGroup{
-		Name: data.CommunityName,
-		GroupParent: types.GroupParent{
-			IsParent: true,
-		},
+	resp, err := instance_runtime.DoProviderCommandValue(context.Background(), c.clients, func(commandCtx context.Context) (*types.GroupInfo, error) {
+		return client.CreateGroup(commandCtx, whatsmeow.ReqCreateGroup{
+			Name: data.CommunityName,
+			GroupParent: types.GroupParent{
+				IsParent: true,
+			},
+		})
 	})
 	if err != nil {
 		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create community: %v", instance.Id, err)
@@ -112,7 +114,9 @@ func (c *communityService) CommunityAdd(data *AddParticipantStruct, instance *in
 
 	for _, participant := range data.GroupJID {
 		groupJID, _ := utils.ParseJID(participant)
-		err := client.LinkGroup(context.Background(), communityJID, groupJID)
+		err := instance_runtime.DoProviderCommand(context.Background(), c.clients, func(commandCtx context.Context) error {
+			return client.LinkGroup(commandCtx, communityJID, groupJID)
+		})
 		if err != nil {
 			c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error link group: %v", instance.Id, err)
 			failedList = append(failedList, groupJID.String())
@@ -143,7 +147,9 @@ func (c *communityService) CommunityRemove(data *AddParticipantStruct, instance 
 
 	for _, participant := range data.GroupJID {
 		groupJID, _ := utils.ParseJID(participant)
-		err := client.UnlinkGroup(context.Background(), communityJID, groupJID)
+		err := instance_runtime.DoProviderCommand(context.Background(), c.clients, func(commandCtx context.Context) error {
+			return client.UnlinkGroup(commandCtx, communityJID, groupJID)
+		})
 		if err != nil {
 			c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error link group: %v", instance.Id, err)
 			failedList = append(failedList, groupJID.String())
@@ -158,7 +164,7 @@ func (c *communityService) CommunityRemove(data *AddParticipantStruct, instance 
 }
 
 func NewCommunityService(
-	clients instance_runtime.ClientProvider,
+	clients instance_runtime.CommandClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) CommunityService {

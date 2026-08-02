@@ -146,6 +146,11 @@ an unknown image, edit outbox rows, or reopen Caddy.
    traffic only after the process is ready and the expected instances have
    recovered.
 
+   Application-issued WhatsApp mutations are admitted through the shared epoch
+   fence. Treat any stale-epoch, missing-executor, command deadline, or unknown
+   side-effect outcome as a failed promotion check; do not retry the affected
+   mutation automatically.
+
 ## Abort and rollback
 
 Before migration succeeds, abort by keeping traffic disabled, restoring the
