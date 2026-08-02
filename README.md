@@ -92,6 +92,9 @@ DATABASE_SAVE_MESSAGES=false
 | `INSTANCE_TOKEN_HMAC_KEY_VERSION` | Positive version shared with the HMAC key across replicas | `1` when enabled |
 | `INSTANCE_TOKEN_BACKFILL_BATCH` | Legacy-token rows processed per backfill transaction | `100` |
 | `INSTANCE_TOKEN_BACKFILL_MAX_BATCHES` | Maximum backfill transactions per process start | `10` |
+| `WEBHOOK_SIGNATURE_ENABLED` | Sign operator-owned Webhook requests with HMAC-SHA-256 | `false` |
+| `WEBHOOK_SIGNATURE_SECRET` | Standard-base64 signing secret that decodes to exactly 32 bytes; supports `_FILE` | disabled |
+| `WEBHOOK_SIGNATURE_KEY_ID` | Non-secret key rotation identifier sent with signed Webhooks | required when enabled |
 | `DATABASE_SAVE_MESSAGES` | Enable message storage | `false` |
 | `LICENSE_GATE_ENABLED` | Enable the license activation gate | `true` |
 

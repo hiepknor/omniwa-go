@@ -200,6 +200,16 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		}
 	}
 	webhookProducer := webhook_producer.NewWebhookProducer(webhookRequester)
+	if config.Webhook.SignatureEnabled {
+		webhookProducer, err = webhook_producer.NewSignedWebhookProducer(
+			webhookRequester,
+			config.Webhook.SignatureSecret,
+			config.Webhook.SignatureKeyID,
+		)
+		if err != nil {
+			logger.LogFatal("component=webhook action=initialize result=failed error=invalid_signature_config")
+		}
+	}
 	outboxRepository := event_outbox.NewRepository(db)
 	targetResolver, resolveErr := event_outbox.NewDatabaseTargetResolver(db, config.WebhookUrl, config.AmqpGlobalEnabled)
 	if resolveErr != nil {

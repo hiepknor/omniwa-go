@@ -159,7 +159,7 @@ func TestSensitiveConfigurationUsesFileBackedBoundary(t *testing.T) {
 	sensitiveNames := map[string]struct{}{
 		"POSTGRES_AUTH_DB": {}, "POSTGRES_USERS_DB": {}, "POSTGRES_PASSWORD": {},
 		"GLOBAL_API_KEY": {}, "INSTANCE_TOKEN_HMAC_KEY": {}, "AMQP_URL": {},
-		"WEBHOOK_URL": {}, "API_AUDIO_CONVERTER_KEY": {}, "PROXY_PASSWORD": {},
+		"WEBHOOK_URL": {}, "WEBHOOK_SIGNATURE_SECRET": {}, "API_AUDIO_CONVERTER_KEY": {}, "PROXY_PASSWORD": {},
 		"NATS_URL": {}, "MEDIA_DESCRIPTOR_KEY": {}, "MINIO_ACCESS_KEY": {},
 		"MINIO_SECRET_KEY": {},
 	}
