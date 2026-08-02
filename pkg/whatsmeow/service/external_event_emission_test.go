@@ -11,6 +11,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/config"
 	event_emission "github.com/evolution-foundation/evolution-go/pkg/events/emission"
 	event_outbox "github.com/evolution-foundation/evolution-go/pkg/events/outbox"
+	event_payload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
@@ -146,10 +147,11 @@ func TestEmitExternalEventEnrichesOutboundPhoneMetadataBeforeOutboxRecord(t *tes
 	}
 	instance := &instance_model.Instance{Id: uuid.NewString()}
 	info := types.MessageInfo{MessageSource: types.MessageSource{
-		Sender: mustPhoneTestJID(t, "15550006@s.whatsapp.net"),
-		Chat:   mustPhoneTestJID(t, "15550007@s.whatsapp.net"), IsFromMe: true,
+		Sender: mustPhoneTestJID(t, "12345@lid"),
+		Chat:   mustPhoneTestJID(t, "67890@lid"), IsFromMe: true,
 	}}
-	if !service.EmitExternalEvent(instance, "SendMessage", info, instance.Id+".sendmessage", []byte(`{"event":"SendMessage","data":{"legacy":"kept"}}`)) {
+	metadata := event_payload.ConfirmedPhoneMetadata{Recipient: mustPhoneTestJID(t, "15550007@s.whatsapp.net")}
+	if !service.EmitExternalEvent(instance, "SendMessage", info, instance.Id+".sendmessage", []byte(`{"event":"SendMessage","data":{"legacy":"kept"}}`), metadata) {
 		t.Fatal("emission was rejected")
 	}
 	routes := recorder.routes()
@@ -161,7 +163,10 @@ func TestEmitExternalEventEnrichesOutboundPhoneMetadataBeforeOutboxRecord(t *tes
 		t.Fatal(err)
 	}
 	data := root["data"].(map[string]any)
-	if data["senderPhoneNumber"] != "15550006" || data["recipientPhoneNumber"] != "15550007" || data["legacy"] != "kept" {
+	if data["recipientPhoneNumber"] != "15550007" || data["legacy"] != "kept" {
 		t.Fatalf("data=%#v", data)
+	}
+	if _, exists := data["senderPhoneNumber"]; exists {
+		t.Fatalf("unverified sender phone was added: %#v", data)
 	}
 }

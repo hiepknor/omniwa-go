@@ -21,6 +21,7 @@ import (
 
 	"github.com/chai2010/webp"
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
+	event_payload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_runtime "github.com/evolution-foundation/evolution-go/pkg/instance/runtime"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
@@ -2381,6 +2382,7 @@ func (s *sendService) sendMessageContext(ctx context.Context, instance *instance
 		return nil, err
 	}
 
+	requestedRecipient, requestedRecipientErr := validateMessageFields(data.Number, data.FormatJid, &data.Quoted.MessageID, &data.Quoted.MessageID)
 	recipient, err := s.validateAndCheckUserExists(data.Number, data.FormatJid, &data.Quoted.MessageID, &data.Quoted.MessageID, instance)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Outbound recipient validation failed error_code=recipient_validation_failed", instance.Id)
@@ -2935,10 +2937,34 @@ func (s *sendService) sendMessageContext(ctx context.Context, instance *instance
 		return nil, err
 	}
 
-	s.whatsmeowService.EmitExternalEvent(instance, "SendMessage", messageSent.Info, queueName, values)
+	phoneMetadata := confirmedOutboundPhoneMetadata(requestedRecipient, requestedRecipientErr, recipient)
+	s.whatsmeowService.EmitExternalEvent(instance, "SendMessage", messageSent.Info, queueName, values, phoneMetadata...)
 
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Outbound message processing completed", instance.Id)
 	return messageSent, nil
+}
+
+func confirmedOutboundPhoneMetadata(requested types.JID, validationErr error, acknowledgedRecipient types.JID) []event_payload.ConfirmedPhoneMetadata {
+	if validationErr != nil {
+		return nil
+	}
+	acknowledgedRecipient = acknowledgedRecipient.ToNonAD()
+	if acknowledgedRecipient.Server != types.HiddenUserServer && acknowledgedRecipient.Server != types.HostedLIDServer {
+		return nil
+	}
+	requested = requested.ToNonAD()
+	if requested.Server != types.DefaultUserServer && requested.Server != types.LegacyUserServer {
+		return nil
+	}
+	if requested.User == "" {
+		return nil
+	}
+	for _, char := range requested.User {
+		if char < '0' || char > '9' {
+			return nil
+		}
+	}
+	return []event_payload.ConfirmedPhoneMetadata{{Recipient: requested}}
 }
 
 func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_model.Instance) (*MessageSendStruct, error) {

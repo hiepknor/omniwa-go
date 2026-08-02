@@ -48,10 +48,13 @@ failed resolution omits the optional field without failing the HTTP request.
 Phone-bearing HTTP responses set `Cache-Control: private, no-store`.
 
 External Message, SendMessage, and Receipt payloads may be enriched only from
-explicit PN or paired alternate metadata on the current provider event. The
-outbound SendMessage acknowledgement is treated as current-event evidence; no
-database lookup is performed in the instance event handler. A shared payload
-policy applies the kill switch again at delivery time for durable
+explicit PN or paired alternate metadata on the current provider event. For an
+outbound SendMessage whose acknowledgement contains only a LID, the original PN
+target may be carried as internal emission context only when the same provider
+operation resolved that PN to the acknowledged LID before sending. This context
+is not added to the raw durable event or serialized JID fields. No database
+lookup is performed in the instance event handler. A shared payload policy
+applies the kill switch again at delivery time for durable
 webhook/RabbitMQ deliveries and at each NATS/WebSocket boundary. This redacts
 queued phone fields after a restart with exposure disabled. Malformed payloads
 fail closed and are not delivered.
