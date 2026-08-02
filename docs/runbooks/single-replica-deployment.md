@@ -27,6 +27,8 @@ it is not a substitute for a distributed per-instance lease.
 ## Deployment settings
 
 - Docker Compose: run one `omniwa-go` service container. Do not use `--scale`.
+  A secretless `omniwa-standby` control plane is permitted because it has no
+  database, ownership, WhatsApp, worker, secret, or business-route capability.
 - Docker Swarm: set `deploy.replicas: 1` and `update_config.order: stop-first`.
 - Kubernetes: set `replicas: 1`, use the `Recreate` strategy, and do not attach
   a HorizontalPodAutoscaler.
@@ -51,6 +53,12 @@ lock, which can create a restart loop and a misleading failed rollout.
 Rollback uses the same stop-first sequence: stop the current application, deploy
 the previous immutable image digest, and verify ownership acquisition and health.
 Never bypass the lock to restore a multi-replica topology.
+
+For the optional secretless standby and the mandatory stop/migrate/recreate
+promotion sequence, follow the
+[cold-standby promotion runbook](./cold-standby-promotion.md). A standby that
+has been given application secrets or routed by `/server/ok` violates this
+deployment invariant.
 
 ## Canonical conversation rollout
 

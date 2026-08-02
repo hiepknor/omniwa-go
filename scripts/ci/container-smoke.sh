@@ -11,6 +11,7 @@ smoke_postgres_auth_dsn="postgresql://postgres:postgres@postgres:5432/omniwa_aut
 smoke_postgres_users_dsn="postgresql://postgres:postgres@postgres:5432/omniwa_users?sslmode=disable"
 project_suffix="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${PPID}"
 project_name="omniwa-smoke-${project_suffix//[^a-zA-Z0-9_-]/-}"
+smoke_image="omniwa-smoke:${project_suffix//[^a-zA-Z0-9_.-]/-}"
 expected_migrations="40:40"
 
 if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
@@ -23,15 +24,58 @@ export SMOKE_VERSION="$smoke_version"
 export SMOKE_API_KEY="$smoke_api_key"
 export SMOKE_POSTGRES_AUTH_DSN="$smoke_postgres_auth_dsn"
 export SMOKE_POSTGRES_USERS_DSN="$smoke_postgres_users_dsn"
+export SMOKE_IMAGE="$smoke_image"
 
 compose=(docker compose --project-name "$project_name" --file "$compose_file")
+standby_container="${project_name}-standby"
 
 cleanup() {
+  docker rm --force "$standby_container" >/dev/null 2>&1 || true
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 "${compose[@]}" build omniwa-go
+docker run --detach --name "$standby_container" \
+  --env RUNTIME_MODE=standby \
+  --env SERVER_PORT=4000 \
+  --publish "127.0.0.1::4000" \
+  "$smoke_image" >/dev/null
+standby_address="$(docker port "$standby_container" 4000/tcp | tail -n 1)"
+standby_url="http://${standby_address}"
+for attempt in $(seq 1 30); do
+  if curl --fail --silent "$standby_url/server/live" 2>/dev/null | jq -e '.status == "ok"' >/dev/null; then
+    break
+  fi
+  if [[ "$attempt" == "30" ]]; then
+    docker logs "$standby_container" >&2
+    echo "standby control plane did not become live" >&2
+    exit 1
+  fi
+  sleep 1
+done
+standby_ready_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$standby_url/server/ready")"
+standby_ready_body="$(curl --silent --show-error "$standby_url/server/ready")"
+if [[ "$standby_ready_status" != "503" ]] ||
+  ! jq -e '.status == "not_ready"' <<<"$standby_ready_body" >/dev/null; then
+  echo "standby unexpectedly became ready: HTTP $standby_ready_status $standby_ready_body" >&2
+  exit 1
+fi
+if [[ "$(curl --silent --output /dev/null --write-out '%{http_code}' "$standby_url/server/capabilities")" != "404" ]]; then
+  echo "standby exposed an application route" >&2
+  exit 1
+fi
+if [[ "$(docker inspect --format '{{len .Mounts}}' "$standby_container")" != "0" ]]; then
+  echo "standby container unexpectedly received a mount" >&2
+  exit 1
+fi
+if docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$standby_container" |
+  grep -Eq '^(GLOBAL_API_KEY|POSTGRES_|AMQP_|NATS_|MINIO_|WEBHOOK_|LICENSE_|INSTANCE_TOKEN_|API_AUDIO|PROXY_)'; then
+  echo "standby container unexpectedly received application credentials" >&2
+  exit 1
+fi
+docker rm --force "$standby_container" >/dev/null
+
 "${compose[@]}" up --detach --wait postgres
 "${compose[@]}" run --rm --no-deps omniwa-go migrate
 "${compose[@]}" run --rm --no-deps omniwa-go migrate

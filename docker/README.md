@@ -123,6 +123,27 @@ the command repeatedly is supported. A failed command must not be bypassed by
 starting the new application image; restore the previous image digest or fix
 the database failure and rerun the same command.
 
+### Secretless cold standby
+
+The optional standby profile runs the same immutable image with only
+`RUNTIME_MODE=standby` and `SERVER_PORT`. It mounts no env file, secret, or
+volume; binds its control plane to `127.0.0.1:4001`; stays live; and always
+fails readiness. It does not connect to PostgreSQL or WhatsApp and cannot serve
+application routes.
+
+```bash
+docker compose --profile standby up -d omniwa-standby
+curl --fail http://127.0.0.1:4001/server/live
+test "$(curl -s -o /dev/null -w '%{http_code}' \
+  http://127.0.0.1:4001/server/ready)" = 503
+```
+
+Do not put `/server/ok` behind business routing: that compatibility endpoint is
+200 on both active and standby processes. Caddy or the orchestrator must select
+traffic owners with `/server/ready`. Promotion is a controlled stop, migrate,
+and recreate operation; there is no in-process or automatic promotion. Follow
+the [cold-standby promotion runbook](../docs/runbooks/cold-standby-promotion.md).
+
 The production stack does not accept built-in credentials. Before rendering it,
 materialize the global API key, PostgreSQL password, and both application DSNs
 at the paths configured by `OMNIWA_*_FILE`. Files under `docker/secrets/` are
