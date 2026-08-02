@@ -28,7 +28,36 @@ services:
       - smoke_postgres_auth_dsn
       - smoke_postgres_users_dsn
     ports:
+      - "127.0.0.1:${SMOKE_ACTIVE_PORT:?Set SMOKE_ACTIVE_PORT}:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  omniwa-standby:
+    image: ${SMOKE_IMAGE:?Set SMOKE_IMAGE}
+    profiles: ["standby"]
+    environment:
+      RUNTIME_MODE: standby
+      SERVER_PORT: "4000"
+    ports:
       - "127.0.0.1::4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:4000/server/live >/dev/null"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  omniwa-migrate:
+    image: ${SMOKE_IMAGE:?Set SMOKE_IMAGE}
+    profiles: ["operations"]
+    command: ["migrate"]
+    environment:
+      LICENSE_GATE_ENABLED: "false"
+      POSTGRES_AUTH_DB_FILE: /run/secrets/smoke_postgres_auth_dsn
+      POSTGRES_USERS_DB_FILE: /run/secrets/smoke_postgres_users_dsn
+    secrets:
+      - smoke_postgres_auth_dsn
+      - smoke_postgres_users_dsn
     depends_on:
       postgres:
         condition: service_healthy

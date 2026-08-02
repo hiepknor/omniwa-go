@@ -12,6 +12,7 @@ smoke_postgres_users_dsn="postgresql://postgres:postgres@postgres:5432/omniwa_us
 project_suffix="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${PPID}"
 project_name="omniwa-smoke-${project_suffix//[^a-zA-Z0-9_-]/-}"
 smoke_image="omniwa-smoke:${project_suffix//[^a-zA-Z0-9_.-]/-}"
+smoke_active_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 expected_migrations="40:40"
 
 if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
@@ -25,13 +26,18 @@ export SMOKE_API_KEY="$smoke_api_key"
 export SMOKE_POSTGRES_AUTH_DSN="$smoke_postgres_auth_dsn"
 export SMOKE_POSTGRES_USERS_DSN="$smoke_postgres_users_dsn"
 export SMOKE_IMAGE="$smoke_image"
+export SMOKE_ACTIVE_PORT="$smoke_active_port"
 
 compose=(docker compose --project-name "$project_name" --file "$compose_file")
 standby_container="${project_name}-standby"
+drill_temporary=""
 
 cleanup() {
   docker rm --force "$standby_container" >/dev/null 2>&1 || true
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+  if [[ -n "$drill_temporary" && -d "$drill_temporary" ]]; then
+    rm -rf -- "$drill_temporary"
+  fi
 }
 trap cleanup EXIT
 
@@ -159,6 +165,36 @@ assert_auth_migrations() {
   fi
 }
 
+wait_for_liveness
+assert_runtime_health_contract
+assert_artifact_identity
+assert_migrations
+assert_auth_migrations
+
+drill_temporary="$(mktemp -d)"
+printf '%s\n' "$smoke_api_key" >"$drill_temporary/api-key"
+"${compose[@]}" --profile standby up --detach --wait omniwa-standby
+standby_published_address="$("${compose[@]}" port omniwa-standby 4000 | tail -n 1)"
+COMPOSE_PROJECT_NAME="$project_name" \
+OMNIWA_DRILL_APPROVAL=STOP_ACTIVE_AND_RUN_CONTROLLED_FAILOVER \
+OMNIWA_DRILL_COMPOSE_FILE="$compose_file" \
+OMNIWA_DRILL_PROJECT_DIRECTORY="$repository_root/docker" \
+OMNIWA_DRILL_ACTIVE_URL="$base_url" \
+OMNIWA_DRILL_STANDBY_URL="http://$standby_published_address" \
+OMNIWA_DRILL_EVIDENCE_FILE="$drill_temporary/evidence.json" \
+OMNIWA_DRILL_API_KEY_FILE="$drill_temporary/api-key" \
+OMNIWA_DRILL_EXPECTED_REVISION="$source_sha" \
+OMNIWA_DRILL_TRAFFIC_DRAIN_PROBE=/usr/bin/true \
+OMNIWA_DRILL_POST_PROMOTION_PROBE=/usr/bin/true \
+OMNIWA_DRILL_POLL_SECONDS=1 \
+OMNIWA_DRILL_OUTBOX_DRAIN_SECONDS=10 \
+bash "$repository_root/scripts/ops/cold-standby-drill.sh" --execute
+jq -e --arg revision "$source_sha" \
+  '.status == "passed" and .recoveryRequired == false and .revision.after == $revision and .rto.observedSeconds <= .rto.limitSeconds' \
+  "$drill_temporary/evidence.json" >/dev/null
+rm -rf "$drill_temporary"
+drill_temporary=""
+refresh_runtime_coordinates
 wait_for_liveness
 assert_runtime_health_contract
 assert_artifact_identity

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+state_directory="${FAKE_DRILL_STATE:?}"
+revision="${FAKE_DRILL_REVISION:?}"
+url="${!#}"
+arguments=" $* "
+
+case "$url" in
+  http://127.0.0.1:4001/server/live)
+    [[ -f "$state_directory/standby-running" ]] || exit 7
+    printf '%s' '{"status":"ok"}'
+    ;;
+  http://127.0.0.1:4001/server/ready)
+    [[ -f "$state_directory/standby-running" ]] || exit 7
+    if [[ "$arguments" == *" --write-out "* ]]; then
+      printf '%s' '503'
+    else
+      printf '%s' '{"status":"not_ready"}'
+    fi
+    ;;
+  http://127.0.0.1:4000/server/ready)
+    [[ -f "$state_directory/active-running" ]] || exit 7
+    if [[ -f "$state_directory/promoted" && "${FAKE_DRILL_SCENARIO:-success}" == "never_ready" ]]; then
+      if [[ "$arguments" == *" --write-out "* ]]; then
+        printf '%s' '503'
+      else
+        printf '%s' '{"status":"not_ready"}'
+      fi
+      exit 0
+    fi
+    if [[ "$arguments" == *" --write-out "* ]]; then
+      printf '%s' '200'
+    else
+      printf '%s' '{"status":"ready"}'
+    fi
+    ;;
+  http://127.0.0.1:4000/server/capabilities)
+    [[ -f "$state_directory/active-running" ]] || exit 7
+    printf '{"data":{"revision":"%s"}}' "$revision"
+    ;;
+  http://127.0.0.1:4000/metrics)
+    [[ -f "$state_directory/active-running" ]] || exit 7
+    if [[ -f "$state_directory/promoted" ]]; then
+      pending=0
+    else
+      pending=1
+    fi
+    printf '%s\n' \
+      "omniwa_external_event_outbox_rows{status=\"pending\"} $pending" \
+      'omniwa_external_event_outbox_rows{status="processing"} 0' \
+      'omniwa_external_event_outbox_rows{status="dead_letter"} 0' \
+      'omniwa_external_event_outbox_oldest_pending_age_seconds 0'
+    ;;
+  *)
+    echo "unexpected fake curl URL" >&2
+    exit 64
+    ;;
+esac

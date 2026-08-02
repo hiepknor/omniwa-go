@@ -50,6 +50,50 @@ credentials. Verify the OCI revision against the approved candidate commit.
 Do not register loopback port 4001 as a business backend. It is an operator
 control-plane endpoint only.
 
+## Evidence-producing drill runner
+
+Use the repository runner only in an announced maintenance window. It performs
+the controlled promotion below; it is not a read-only verifier. Install Docker
+Compose, curl, jq, and awk. Store the admin API key in a private file and keep
+the evidence path outside the repository.
+The runner accepts only loopback HTTP control-plane URLs with explicit ports;
+run it on the Compose host rather than through the public Caddy endpoint.
+
+Two operator-owned, absolute executable paths are mandatory:
+
+- the traffic-drain probe must verify that Caddy has stopped admitting new
+  business traffic and that bounded in-flight draining completed;
+- the post-promotion probe must verify the expected WhatsApp reconnect cohort
+  and a signed, deduplicated Webhook/RabbitMQ canary for that environment.
+
+Version and review both probe files. The evidence records their SHA-256 hashes,
+not their output. Run from the repository root with the approved candidate
+revision:
+
+```bash
+export OMNIWA_DRILL_APPROVAL=STOP_ACTIVE_AND_RUN_CONTROLLED_FAILOVER
+export OMNIWA_DRILL_EVIDENCE_FILE=/var/lib/omniwa-drills/2026-08-03.json
+export OMNIWA_DRILL_API_KEY_FILE=/run/secrets/omniwa_global_api_key
+export OMNIWA_DRILL_EXPECTED_REVISION=<40-character-candidate-commit>
+export OMNIWA_DRILL_TRAFFIC_DRAIN_PROBE=/usr/local/libexec/omniwa-traffic-drained
+export OMNIWA_DRILL_POST_PROMOTION_PROBE=/usr/local/libexec/omniwa-promotion-canary
+export OMNIWA_DRILL_RTO_SECONDS=300
+export OMNIWA_DRILL_OUTBOX_DRAIN_SECONDS=120
+export OMNIWA_DRILL_OUTBOX_MAX_AGE_SECONDS=300
+scripts/ops/cold-standby-drill.sh --execute
+```
+
+The evidence file is created atomically with mode 0600 and follows
+[`failover-drill-evidence-v1.schema.json`](../schemas/failover-drill-evidence-v1.schema.json).
+A passing record proves only the named checkpoints. It does not prove exactly-once
+delivery or fencing of stale external effects. Archive it in the operator audit
+store; never commit it or the probes if they contain environment details.
+
+If the command exits nonzero, inspect `failureCode` and `recoveryRequired`.
+When recovery is required, keep external traffic closed and follow the rollback
+section below. The runner deliberately does not choose a prior digest, restart
+an unknown image, edit outbox rows, or reopen Caddy.
+
 ## Controlled promotion
 
 1. Stop new external traffic and wait for in-flight requests to drain within
