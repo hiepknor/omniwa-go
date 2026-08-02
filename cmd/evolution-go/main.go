@@ -35,12 +35,6 @@ import (
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
 	"github.com/evolution-foundation/evolution-go/pkg/core"
 	event_emission "github.com/evolution-foundation/evolution-go/pkg/events/emission"
-	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
-	nats_producer "github.com/evolution-foundation/evolution-go/pkg/events/nats"
-	event_outbox "github.com/evolution-foundation/evolution-go/pkg/events/outbox"
-	event_payload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
-	rabbitmq_producer "github.com/evolution-foundation/evolution-go/pkg/events/rabbitmq"
-	webhook_producer "github.com/evolution-foundation/evolution-go/pkg/events/webhook"
 	websocket_producer "github.com/evolution-foundation/evolution-go/pkg/events/websocket"
 	group_handler "github.com/evolution-foundation/evolution-go/pkg/group/handler"
 	group_repository "github.com/evolution-foundation/evolution-go/pkg/group/repository"
@@ -149,91 +143,18 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if conn != nil {
 		logger.LogInfo("RabbitMQ enabled")
 	}
-	// Keep the URL even if initial connection failed so the durable worker can reconnect.
-	rabbitmqProducer := rabbitmq_producer.NewRabbitMQProducer(
-		conn,
-		config.AmqpGlobalEnabled,
-		config.AmqpGlobalEvents,
-		config.AmqpSpecificEvents,
-		config.AmqpUrl,
-		loggerWrapper,
-	)
-
-	var natsProducer producer_interfaces.Producer
 	if config.NatsUrl != "" {
 		logger.LogInfo("NATS enabled")
-		natsProducer = nats_producer.NewNatsProducer(
-			config.NatsUrl,
-			config.NatsGlobalEnabled,
-			config.NatsGlobalEvents,
-			loggerWrapper,
-		)
-	} else {
-		natsProducer = nats_producer.NewNatsProducer(
-			"",
-			false,
-			nil,
-			loggerWrapper,
-		)
 	}
-
-	webhookHosts := append([]string(nil), config.Webhook.AllowedHosts...)
-	webhookPorts := append([]string(nil), config.Webhook.AllowedPorts...)
-	if config.WebhookUrl != "" {
-		globalWebhookURL, parseErr := url.Parse(config.WebhookUrl)
-		if parseErr != nil || globalWebhookURL.Hostname() == "" {
-			logger.LogFatal("component=webhook action=initialize result=failed error=invalid_url")
-		}
-		webhookHosts = append(webhookHosts, globalWebhookURL.Hostname())
-		if globalWebhookURL.Port() != "" {
-			webhookPorts = append(webhookPorts, globalWebhookURL.Port())
-		}
+	externalEvents, err := bootstrap.NewExternalEvents(bootstrap.ExternalEventsDependencies{
+		DB: db, Config: config, AMQPConnection: conn, Logger: loggerWrapper, Observer: metricsRegistry,
+	})
+	if err != nil {
+		logger.LogFatal("component=external_events action=initialize result=failed error_code=%s", bootstrap.ExternalEventsErrorCode(err))
 	}
-	var webhookRequester netguard.Requester
-	if len(webhookHosts) > 0 {
-		webhookRequester, err = netguard.NewRequester(netguard.RequestSettings{
-			AllowedHosts: webhookHosts, AllowedPorts: webhookPorts, AllowPrivate: config.Webhook.AllowPrivate, Timeout: config.Webhook.Timeout,
-			MaxRequestBytes: config.Webhook.MaxRequestBytes, MaxResponseBytes: config.Webhook.MaxResponseBytes,
-		})
-		if err != nil {
-			logger.LogFatal("component=webhook action=initialize result=failed error=%v", err)
-		}
-	}
-	webhookProducer := webhook_producer.NewWebhookProducer(webhookRequester)
-	if config.Webhook.SignatureEnabled {
-		webhookProducer, err = webhook_producer.NewSignedWebhookProducer(
-			webhookRequester,
-			config.Webhook.SignatureSecret,
-			config.Webhook.SignatureKeyID,
-		)
-		if err != nil {
-			logger.LogFatal("component=webhook action=initialize result=failed error=invalid_signature_config")
-		}
-	}
-	outboxRepository := event_outbox.NewRepository(db)
-	targetResolver, resolveErr := event_outbox.NewDatabaseTargetResolver(db, config.WebhookUrl, config.AmqpGlobalEnabled)
-	if resolveErr != nil {
-		logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=target_resolver_unavailable")
-	}
-	phonePayloadPolicy := event_payload.NewPhonePayloadPolicy(config.PhoneNumberExposureEnabled, metricsRegistry)
-	dispatcher, dispatchErr := event_outbox.NewTransportDispatcher(webhookProducer, rabbitmqProducer, targetResolver, phonePayloadPolicy)
-	if dispatchErr != nil {
-		logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=dispatcher_unavailable")
-	}
-	outboxWorker, workerErr := event_outbox.NewWorker(
-		outboxRepository, dispatcher,
-		event_outbox.Settings{
-			BatchSize: config.ExternalEventOutbox.BatchSize, LeaseDuration: config.ExternalEventOutbox.LeaseDuration,
-			PollInterval: config.ExternalEventOutbox.PollInterval, AttemptTimeout: config.ExternalEventOutbox.AttemptTimeout,
-			StateTimeout: config.ExternalEventOutbox.StateTimeout, RetryBase: config.ExternalEventOutbox.RetryBase,
-			RetryMax: config.ExternalEventOutbox.RetryMax,
-		},
-		metricsRegistry.ExternalEventOutbox(),
-	)
-	if workerErr != nil {
-		logger.LogFatal("component=external_event_outbox action=initialize result=failed error_code=invalid_worker_configuration")
-	}
-	startBackground(backgroundWorkers, "external_event_outbox.deliveries", outboxWorker.Run)
+	natsProducer := externalEvents.NATSProducer()
+	outboxRepository := externalEvents.OutboxRepository()
+	startBackground(backgroundWorkers, "external_event_outbox.deliveries", externalEvents.OutboxWork())
 	logger.LogInfo("component=external_event_outbox action=initialize result=success mode=durable transports=webhook,rabbitmq")
 	originPolicy, err := httpapi.NewOriginPolicy(config.HTTPAllowedOrigins)
 	if err != nil {
@@ -249,7 +170,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	// Cria filas globais se o RabbitMQ global estiver habilitado
 	if config.AmqpGlobalEnabled && conn != nil {
 		logger.LogInfo("Creating global RabbitMQ queues...")
-		if err := rabbitmqProducer.CreateGlobalQueues(); err != nil {
+		if err := externalEvents.CreateGlobalRabbitMQQueues(); err != nil {
 			logger.LogError("Failed to create global RabbitMQ queues: %v", err)
 		} else {
 			logger.LogInfo("Global RabbitMQ queues created successfully")
