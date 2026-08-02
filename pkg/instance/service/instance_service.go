@@ -346,7 +346,9 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 	}
 
 	if client.IsLoggedIn() && client.IsConnected() {
-		err := client.Logout(context.Background())
+		err := instance_runtime.DoProviderCommand(context.Background(), i.runtime, func(commandCtx context.Context) error {
+			return client.Logout(commandCtx)
+		})
 		if err != nil {
 			return instance, err
 		}
@@ -550,7 +552,9 @@ func (i instances) Pair(data *PairStruct, instance *instance_model.Instance) (*P
 		return nil, fmt.Errorf("instance is already authenticated")
 	}
 
-	code, err := client.PairPhone(context.Background(), data.Phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+	code, err := instance_runtime.DoProviderCommandValue(context.Background(), i.runtime, func(commandCtx context.Context) (string, error) {
+		return client.PairPhone(commandCtx, data.Phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+	})
 	if err != nil {
 		logger.LogError("[%s] PairPhone failed: %v", instance.Id, err)
 		return nil, fmt.Errorf("pairing failed: %w", err)
@@ -604,7 +608,9 @@ func (i instances) Delete(id string) error {
 
 	if client := i.runtime.Get(instance.Id); client != nil && client.IsConnected() {
 		if client.IsLoggedIn() {
-			client.Logout(context.Background())
+			_ = instance_runtime.DoProviderCommand(context.Background(), i.runtime, func(commandCtx context.Context) error {
+				return client.Logout(commandCtx)
+			})
 		}
 	}
 

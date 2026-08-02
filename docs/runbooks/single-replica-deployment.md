@@ -24,7 +24,9 @@ ownership epoch on the lock session. The session verifies that epoch every five
 seconds; a query failure or mismatch initiates graceful shutdown. Migration
 jobs do not activate epochs. This is stronger stale-owner detection and the
 foundation for the shared side-effect fence in ADR 0062, but it is not yet a
-distributed per-instance lease or complete provider fencing.
+distributed per-instance lease. ADR 0063 routes application-issued WhatsApp
+provider mutations through that fence; automatic promotion still requires the
+split-brain evidence and authorization described there.
 
 ## Deployment settings
 
@@ -51,6 +53,9 @@ lock, which can create a restart loop and a misleading failed rollout.
 5. Confirm the ownership `activate_epoch` log reports `result=success` and that
    the database epoch increased exactly once.
 6. Confirm instance reconnects and `/server/ok` succeeds after the replacement.
+7. Exercise one bounded provider command and confirm normal latency without a
+   stale-epoch or command-admission error. Check users-database pool headroom
+   while the command is in flight.
 
 ## Rollback
 

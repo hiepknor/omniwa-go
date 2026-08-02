@@ -35,7 +35,7 @@ type MessageService interface {
 }
 
 type messageService struct {
-	clients           instance_runtime.ClientProvider
+	clients           instance_runtime.CommandClientProvider
 	messageRepository message_repository.MessageRepository
 	whatsmeowService  whatsmeow_service.WhatsmeowService
 	loggerWrapper     *logger_wrapper.LoggerManager
@@ -230,7 +230,9 @@ func (m *messageService) React(data *ReactStruct, instance *instance_model.Insta
 	if err := m.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
 		return nil, err
 	}
-	response, err := client.SendMessage(context.Background(), recipient, msg)
+	response, err := instance_runtime.DoProviderCommandValue(context.Background(), m.clients, func(commandCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(commandCtx, recipient, msg)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -290,14 +292,18 @@ func (m *messageService) ChatPresence(data *ChatPresenceStruct, instance *instan
 	// presence handling (events.AppStateSyncComplete) may have set us to
 	// Unavailable, in which case the server silently drops the typing
 	// indicator. Mark ourselves available first to guarantee delivery.
-	if presErr := client.SendPresence(context.Background(), types.PresenceAvailable); presErr != nil {
+	if presErr := instance_runtime.DoProviderCommand(context.Background(), m.clients, func(commandCtx context.Context) error {
+		return client.SendPresence(commandCtx, types.PresenceAvailable)
+	}); presErr != nil {
 		m.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] SendPresence(available) before chatstate failed (non-fatal): %v", instance.Id, presErr)
 	}
 
 	state := types.ChatPresence(data.State)
 	mediaType := types.ChatPresenceMedia(media)
 
-	err = client.SendChatPresence(context.Background(), recipient, state, mediaType)
+	err = instance_runtime.DoProviderCommand(context.Background(), m.clients, func(commandCtx context.Context) error {
+		return client.SendChatPresence(commandCtx, recipient, state, mediaType)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -325,13 +331,17 @@ func (m *messageService) ChatPresence(data *ChatPresenceStruct, instance *instan
 
 			if remaining > 0 {
 				// Refresh the indicator so it doesn't expire mid-delay.
-				if refreshErr := client.SendChatPresence(context.Background(), recipient, state, mediaType); refreshErr != nil {
+				if refreshErr := instance_runtime.DoProviderCommand(context.Background(), m.clients, func(commandCtx context.Context) error {
+					return client.SendChatPresence(commandCtx, recipient, state, mediaType)
+				}); refreshErr != nil {
 					m.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Refresh chatstate failed (non-fatal): %v", instance.Id, refreshErr)
 				}
 			}
 		}
 
-		if pausedErr := client.SendChatPresence(context.Background(), recipient, types.ChatPresencePaused, mediaType); pausedErr != nil {
+		if pausedErr := instance_runtime.DoProviderCommand(context.Background(), m.clients, func(commandCtx context.Context) error {
+			return client.SendChatPresence(commandCtx, recipient, types.ChatPresencePaused, mediaType)
+		}); pausedErr != nil {
 			m.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] SendChatPresence(paused) failed (non-fatal): %v", instance.Id, pausedErr)
 		}
 	}
@@ -359,7 +369,9 @@ func (m *messageService) MarkRead(data *MarkReadStruct, instance *instance_model
 	// reaches the recipient. Same root cause as the typing fix above.
 	jid = utils.CanonicalJID(jid)
 
-	err = client.MarkRead(context.Background(), data.Id, ts, jid, jid)
+	err = instance_runtime.DoProviderCommand(context.Background(), m.clients, func(commandCtx context.Context) error {
+		return client.MarkRead(commandCtx, data.Id, ts, jid, jid)
+	})
 	if err != nil {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error marking message as read: %v", instance.Id, err)
 		return "", errors.New("error marking message as read")
@@ -398,7 +410,9 @@ func (m *messageService) MarkPlayed(data *MarkPlayedStruct, instance *instance_m
 	// reaches the recipient. Same root cause as the MarkRead fix.
 	jid = utils.CanonicalJID(jid)
 
-	err = client.MarkRead(context.Background(), data.Id, time.Now(), jid, jid, types.ReceiptTypePlayed)
+	err = instance_runtime.DoProviderCommand(context.Background(), m.clients, func(commandCtx context.Context) error {
+		return client.MarkRead(commandCtx, data.Id, time.Now(), jid, jid, types.ReceiptTypePlayed)
+	})
 	if err != nil {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error marking message as played: %v", instance.Id, err)
 		return "", errors.New("error marking message as played")
@@ -490,10 +504,9 @@ func (m *messageService) DeleteMessageEveryone(data *MessageStruct, instance *in
 	if err := m.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
 		return "", "", err
 	}
-	resp, err := client.SendMessage(
-		context.Background(),
-		recipient,
-		client.BuildRevoke(recipient, types.EmptyJID, data.MessageID))
+	resp, err := instance_runtime.DoProviderCommandValue(context.Background(), m.clients, func(commandCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(commandCtx, recipient, client.BuildRevoke(recipient, types.EmptyJID, data.MessageID))
+	})
 	if err != nil {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error revoking message: %v", instance.Id, err)
 		return "", "", err
@@ -519,10 +532,8 @@ func (m *messageService) EditMessage(data *EditMessageStruct, instance *instance
 	if err := m.whatsmeowService.WaitOutbound(context.Background(), instance.Id, 1); err != nil {
 		return "", "", err
 	}
-	resp, err := client.SendMessage(
-		context.Background(),
-		recipient,
-		client.BuildEdit(
+	resp, err := instance_runtime.DoProviderCommandValue(context.Background(), m.clients, func(commandCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(commandCtx, recipient, client.BuildEdit(
 			recipient,
 			data.MessageID,
 			&waE2E.Message{
@@ -530,6 +541,7 @@ func (m *messageService) EditMessage(data *EditMessageStruct, instance *instance
 					Text: &data.Message,
 				},
 			}))
+	})
 	if err != nil {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error revoking message: %v", instance.Id, err)
 		return "", "", err
@@ -539,7 +551,7 @@ func (m *messageService) EditMessage(data *EditMessageStruct, instance *instance
 }
 
 func NewMessageService(
-	clients instance_runtime.ClientProvider,
+	clients instance_runtime.CommandClientProvider,
 	messageRepository message_repository.MessageRepository,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	legacyMedia LegacyMediaSettings,

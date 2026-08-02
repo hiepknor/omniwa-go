@@ -38,7 +38,7 @@ type UserService interface {
 }
 
 type userService struct {
-	clients          instance_runtime.ClientProvider
+	clients          instance_runtime.CommandClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
@@ -664,7 +664,9 @@ func (u *userService) SetPrivacy(ctx context.Context, data *PrivacyStruct, insta
 
 	var privacy types.PrivacySettings
 	for _, setting := range privacySettings {
-		privacy, err = client.SetPrivacySetting(ctx, setting.name, setting.value)
+		privacy, err = instance_runtime.DoProviderCommandValue(ctx, u.clients, func(commandCtx context.Context) (types.PrivacySettings, error) {
+			return client.SetPrivacySetting(commandCtx, setting.name, setting.value)
+		})
 		if err != nil {
 			return nil, u.queryGuard.ObserveError(instance.Id, err)
 		}
@@ -683,7 +685,9 @@ func (u *userService) BlockContact(data *BlockStruct, instance *instance_model.I
 		return nil, errors.New("invalid phone number")
 	}
 
-	resp, err := client.UpdateBlocklist(context.Background(), jid, events.BlocklistChangeActionBlock)
+	resp, err := instance_runtime.DoProviderCommandValue(context.Background(), u.clients, func(commandCtx context.Context) (*types.Blocklist, error) {
+		return client.UpdateBlocklist(commandCtx, jid, events.BlocklistChangeActionBlock)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -702,7 +706,9 @@ func (u *userService) UnlockContact(data *BlockStruct, instance *instance_model.
 		return nil, errors.New("invalid phone number")
 	}
 
-	resp, err := client.UpdateBlocklist(context.Background(), jid, events.BlocklistChangeActionUnblock)
+	resp, err := instance_runtime.DoProviderCommandValue(context.Background(), u.clients, func(commandCtx context.Context) (*types.Blocklist, error) {
+		return client.UpdateBlocklist(commandCtx, jid, events.BlocklistChangeActionUnblock)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -737,7 +743,10 @@ func (u *userService) SetProfilePicture(data *SetProfilePictureStruct, instance 
 		return false, fmt.Errorf("failed to fetch image from URL: %v", err)
 	}
 
-	_, err = client.SetGroupPhoto(context.Background(), types.EmptyJID, filedata)
+	err = instance_runtime.DoProviderCommand(context.Background(), u.clients, func(commandCtx context.Context) error {
+		_, commandErr := client.SetGroupPhoto(commandCtx, types.EmptyJID, filedata)
+		return commandErr
+	})
 	if err != nil {
 		return false, err
 	}
@@ -751,7 +760,9 @@ func (u *userService) SetProfileName(data *SetProfileNameStruct, instance *insta
 		return false, err
 	}
 
-	err = client.SetGroupName(context.Background(), types.EmptyJID, data.Name)
+	err = instance_runtime.DoProviderCommand(context.Background(), u.clients, func(commandCtx context.Context) error {
+		return client.SetGroupName(commandCtx, types.EmptyJID, data.Name)
+	})
 	if err != nil {
 		return false, err
 	}
@@ -765,7 +776,9 @@ func (u *userService) SetProfileStatus(data *SetProfileStatusStruct, instance *i
 		return false, err
 	}
 
-	err = client.SetStatusMessage(context.Background(), data.Status)
+	err = instance_runtime.DoProviderCommand(context.Background(), u.clients, func(commandCtx context.Context) error {
+		return client.SetStatusMessage(commandCtx, data.Status)
+	})
 	if err != nil {
 		return false, err
 	}
@@ -774,7 +787,7 @@ func (u *userService) SetProfileStatus(data *SetProfileStatusStruct, instance *i
 }
 
 func NewUserService(
-	clients instance_runtime.ClientProvider,
+	clients instance_runtime.CommandClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
 	identityResolver waquery.IdentityResolver,

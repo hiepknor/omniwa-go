@@ -77,6 +77,6 @@ func (s *Supervisor) Stopped() <-chan struct{} {
 	return s.done
 }
 
-func NewInstanceRuntime(ctx context.Context) *instance_runtime.Registry[*whatsmeow_service.MyClient] {
-	return instance_runtime.NewRegistry[*whatsmeow_service.MyClient](ctx)
+func NewInstanceRuntime(ctx context.Context, commands instance_runtime.ProviderCommandExecutor) *instance_runtime.Registry[*whatsmeow_service.MyClient] {
+	return instance_runtime.NewRegistry[*whatsmeow_service.MyClient](ctx, commands)
 }

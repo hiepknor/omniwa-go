@@ -130,6 +130,7 @@ func (w *whatsmeowService) WaitOutbound(ctx context.Context, instanceID string, 
 
 type MyClient struct {
 	service             WhatsmeowService
+	commands            instance_runtime.ProviderCommandExecutor
 	WAClient            *whatsmeow.Client
 	eventHandlerID      uint32
 	userID              string
@@ -896,6 +897,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 
 	mycli := &MyClient{
 		service:            &w,
+		commands:           w.runtimeRegistry,
 		Instance:           cd.Instance,
 		WAClient:           client,
 		eventHandlerID:     1,
@@ -941,6 +943,8 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 			client.RemoveEventHandler(mycli.eventHandlerID)
 		}
 		if client.IsConnected() {
+			// Teardown is intentionally not fenced: a stale or database-isolated
+			// process must always be able to close its local provider socket.
 			client.Disconnect()
 		}
 	}
@@ -961,12 +965,12 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 
 	if client.Store.ID != nil {
 		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Already logged in with JID: %s", cd.Instance.Id, client.Store.ID.String())
-		err = client.Connect()
+		err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
 		if err != nil {
 			if strings.Contains(err.Error(), "EOF") {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Erro de conexão WebSocket (EOF). Tentando reconectar em 5 segundos...", cd.Instance.Id)
 				time.Sleep(5 * time.Second)
-				err = client.Connect()
+				err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Falha na segunda tentativa de conexão: %v", cd.Instance.Id, err)
 					return
@@ -978,7 +982,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 				client.SetProxy(nil)
 
 				// Tenta conectar sem proxy
-				err = client.Connect()
+				err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect even without proxy: %v", cd.Instance.Id, err)
 					return
@@ -996,12 +1000,12 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		// QR codes run out, both of which break passkey pairing (DOC2 §4.3/§4.4).
 		// Instead we Connect() directly and consume *events.QR in myEventHandler
 		// (see handleQRCodes), which pair.go dispatches to every handler anyway.
-		err = client.Connect()
+		err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
 		if err != nil {
 			if strings.Contains(err.Error(), "EOF") {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Erro de conexão WebSocket (EOF). Tentando reconectar em 5 segundos...", cd.Instance.Id)
 				time.Sleep(5 * time.Second)
-				err = client.Connect()
+				err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Falha na segunda tentativa de conexão: %v", cd.Instance.Id, err)
 					return
@@ -1013,7 +1017,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 				client.SetProxy(nil)
 
 				// Tenta conectar sem proxy
-				err = client.Connect()
+				err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect even without proxy: %v", cd.Instance.Id, err)
 					return
@@ -1065,7 +1069,9 @@ func processPresenceUpdates(mycli *MyClient) {
 	nowSp := now.In(location)
 
 	if nowSp.Hour() >= 1 && nowSp.Hour() < 24 {
-		err := mycli.WAClient.SendPresence(context.Background(), types.PresenceUnavailable)
+		err := instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+			return mycli.WAClient.SendPresence(commandCtx, types.PresenceUnavailable)
+		})
 		if err != nil {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to set presence as unavailable %v", mycli.userID, err)
 		} else {
@@ -1074,7 +1080,9 @@ func processPresenceUpdates(mycli *MyClient) {
 
 		time.Sleep(time.Duration(1+rand.Intn(5)) * time.Second)
 
-		err = mycli.WAClient.SendPresence(context.Background(), types.PresenceAvailable)
+		err = instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+			return mycli.WAClient.SendPresence(commandCtx, types.PresenceAvailable)
+		})
 		if err != nil {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to set presence as available %v", mycli.userID, err)
 		} else {
@@ -1141,7 +1149,9 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 				mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Maximum QR code count reached (%d), forcing logout and QRTimeout", instanceID, mycli.config.QrcodeMaxCount)
 
 				if mycli.WAClient.IsConnected() {
-					if err := mycli.WAClient.Logout(context.Background()); err != nil {
+					if err := instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+						return mycli.WAClient.Logout(commandCtx)
+					}); err != nil {
 						mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Error during forced logout: %v", instanceID, err)
 					}
 				}
@@ -1288,7 +1298,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			mycli.startContactProjectionSync(true)
 		}
 		if len(mycli.WAClient.Store.PushName) > 0 && evt.Name == appstate.WAPatchCriticalBlock {
-			err := mycli.WAClient.SendPresence(context.Background(), types.PresenceUnavailable)
+			err := instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+				return mycli.WAClient.SendPresence(commandCtx, types.PresenceUnavailable)
+			})
 			if err != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to send unavailable presence %v", mycli.userID, err)
 			} else {
@@ -1352,14 +1364,18 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			if mycli.Instance.AlwaysOnline {
 				go schedulePresenceUpdates(mycli)
 
-				err = mycli.WAClient.SendPresence(context.Background(), types.PresenceAvailable)
+				err = instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+					return mycli.WAClient.SendPresence(commandCtx, types.PresenceAvailable)
+				})
 				if err != nil {
 					mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to send available presence %v", mycli.userID, err)
 				} else {
 					mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Marked self as available", mycli.userID)
 				}
 			} else {
-				err = mycli.WAClient.SendPresence(context.Background(), types.PresenceUnavailable)
+				err = instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+					return mycli.WAClient.SendPresence(commandCtx, types.PresenceUnavailable)
+				})
 				if err != nil {
 					mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to send unavailable presence %v", mycli.userID, err)
 				} else {
@@ -1579,7 +1595,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		// se readMessages for true ele marca como lida
 		if mycli.Instance.ReadMessages {
 			messageIDs := []string{evt.Info.ID}
-			err := mycli.WAClient.MarkRead(context.Background(), messageIDs, time.Now(), evt.Info.Sender, evt.Info.Sender)
+			err := instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+				return mycli.WAClient.MarkRead(commandCtx, messageIDs, time.Now(), evt.Info.Sender, evt.Info.Sender)
+			})
 			if err != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=auto_mark_read result=failed message_id=%s error_code=provider_failed", evt.Info.ID)
 			} else {
@@ -1651,7 +1669,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if mycli.Instance.ReadMessages && !evt.Info.IsFromMe {
 			go func() {
 				time.Sleep(1 * time.Second) // Pequeno delay para parecer mais natural
-				err := mycli.WAClient.MarkRead(context.Background(), []types.MessageID{evt.Info.ID}, evt.Info.Timestamp, evt.Info.Chat, evt.Info.Sender)
+				err := instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+					return mycli.WAClient.MarkRead(commandCtx, []types.MessageID{evt.Info.ID}, evt.Info.Timestamp, evt.Info.Chat, evt.Info.Sender)
+				})
 				if err != nil {
 					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=message_event action=auto_mark_read result=failed message_id=%s error_code=provider_failed", evt.Info.ID)
 				} else {
@@ -2324,7 +2344,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Auto-rejecting call from %s", mycli.userID, evt.CallCreator.String())
 
 			// Rejeita a chamada
-			mycli.WAClient.RejectCall(context.Background(), evt.CallCreator, evt.CallID)
+			_ = instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+				return mycli.WAClient.RejectCall(commandCtx, evt.CallCreator, evt.CallID)
+			})
 
 			// Envia mensagem de rejeição se configurada
 			if mycli.Instance.MsgRejectCall != "" {
@@ -2338,7 +2360,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Reject call message rate limited: %v", mycli.userID, err)
 					return
 				}
-				_, err := mycli.WAClient.SendMessage(context.Background(), evt.CallCreator, msg)
+				_, err := instance_runtime.DoProviderCommandValue(context.Background(), mycli.commands, func(commandCtx context.Context) (whatsmeow.SendResponse, error) {
+					return mycli.WAClient.SendMessage(commandCtx, evt.CallCreator, msg)
+				})
 				if err != nil {
 					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to send reject call message: %v", mycli.userID, err)
 				} else {
@@ -2464,8 +2488,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			postMap["data"] = evt
 		} else if strings.HasPrefix(evt.Info.ID, "66") || strings.HasPrefix(evt.Info.ID, "67") {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] ID 66 or 67 found, reconnecting client", mycli.userID)
+			// Always reduce stale-owner capability before attempting the fenced
+			// re-establishment command.
 			mycli.WAClient.Disconnect()
-			err := mycli.WAClient.Connect()
+			err := instance_runtime.DoProviderCommand(context.Background(), mycli.commands, func(commandCtx context.Context) error {
+				return mycli.WAClient.ConnectContext(commandCtx)
+			})
 			if err != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error reconnecting client: %s", mycli.userID, err)
 			}
@@ -3122,7 +3150,9 @@ func (w *whatsmeowService) SubmitPasskeyResponse(instanceId string, resp *types.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	if err := client.SendPasskeyResponse(ctx, resp); err != nil {
+	if err := instance_runtime.DoProviderCommand(ctx, w.runtimeRegistry, func(commandCtx context.Context) error {
+		return client.SendPasskeyResponse(commandCtx, resp)
+	}); err != nil {
 		w.passkeyCeremony.SetError(instanceId, err.Error())
 		return err
 	}
@@ -3141,7 +3171,9 @@ func (w *whatsmeowService) ConfirmPasskey(instanceId string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	if err := client.SendPasskeyConfirmation(ctx); err != nil {
+	if err := instance_runtime.DoProviderCommand(ctx, w.runtimeRegistry, func(commandCtx context.Context) error {
+		return client.SendPasskeyConfirmation(commandCtx)
+	}); err != nil {
 		w.passkeyCeremony.SetError(instanceId, err.Error())
 		return err
 	}

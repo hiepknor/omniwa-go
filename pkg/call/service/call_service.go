@@ -19,7 +19,7 @@ type CallService interface {
 }
 
 type callService struct {
-	clients          instance_runtime.ClientProvider
+	clients          instance_runtime.CommandClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 }
@@ -74,7 +74,9 @@ func (c *callService) RejectCall(data *RejectCallStruct, instance *instance_mode
 		return err
 	}
 
-	err = client.RejectCall(context.Background(), data.CallCreator, data.CallID)
+	err = instance_runtime.DoProviderCommand(context.Background(), c.clients, func(commandCtx context.Context) error {
+		return client.RejectCall(commandCtx, data.CallCreator, data.CallID)
+	})
 	if err != nil {
 		logger.LogError("[%s] error reject call: %v", instance.Id, err)
 		return err
@@ -84,7 +86,7 @@ func (c *callService) RejectCall(data *RejectCallStruct, instance *instance_mode
 }
 
 func NewCallService(
-	clients instance_runtime.ClientProvider,
+	clients instance_runtime.CommandClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) CallService {

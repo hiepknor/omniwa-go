@@ -30,7 +30,7 @@ type LabelService interface {
 }
 
 type labelService struct {
-	clients          instance_runtime.ClientProvider
+	clients          instance_runtime.CommandClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	labelRepository  label_repository.LabelRepository
 	projectionReader *projection_service.LabelReader
@@ -109,11 +109,9 @@ func (l *labelService) ChatLabel(data *ChatLabelStruct, instance *instance_model
 		return errors.New("error parse community jid")
 	}
 
-	err = client.SendAppState(context.Background(), appstate.BuildLabelChat(
-		jid,
-		data.LabelID,
-		true,
-	))
+	err = instance_runtime.DoProviderCommand(context.Background(), l.clients, func(commandCtx context.Context) error {
+		return client.SendAppState(commandCtx, appstate.BuildLabelChat(jid, data.LabelID, true))
+	})
 	if err != nil {
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label chat: %v", instance.Id, err)
 		return err
@@ -137,12 +135,9 @@ func (l *labelService) MessageLabel(data *MessageLabelStruct, instance *instance
 		return errors.New("error parse community jid")
 	}
 
-	err = client.SendAppState(context.Background(), appstate.BuildLabelMessage(
-		jid,
-		data.LabelID,
-		data.MessageID,
-		true,
-	))
+	err = instance_runtime.DoProviderCommand(context.Background(), l.clients, func(commandCtx context.Context) error {
+		return client.SendAppState(commandCtx, appstate.BuildLabelMessage(jid, data.LabelID, data.MessageID, true))
+	})
 	if err != nil {
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label message: %v", instance.Id, err)
 		return err
@@ -160,12 +155,9 @@ func (l *labelService) EditLabel(data *EditLabelStruct, instance *instance_model
 		return err
 	}
 
-	err = client.SendAppState(context.Background(), appstate.BuildLabelEdit(
-		data.LabelID,
-		data.Name,
-		int32(data.Color),
-		data.Deleted,
-	))
+	err = instance_runtime.DoProviderCommand(context.Background(), l.clients, func(commandCtx context.Context) error {
+		return client.SendAppState(commandCtx, appstate.BuildLabelEdit(data.LabelID, data.Name, int32(data.Color), data.Deleted))
+	})
 	if err != nil {
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label message: %v", instance.Id, err)
 		return err
@@ -189,11 +181,9 @@ func (l *labelService) ChatUnlabel(data *ChatLabelStruct, instance *instance_mod
 		return errors.New("error parse community jid")
 	}
 
-	err = client.SendAppState(context.Background(), appstate.BuildLabelChat(
-		jid,
-		data.LabelID,
-		false,
-	))
+	err = instance_runtime.DoProviderCommand(context.Background(), l.clients, func(commandCtx context.Context) error {
+		return client.SendAppState(commandCtx, appstate.BuildLabelChat(jid, data.LabelID, false))
+	})
 	if err != nil {
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label chat: %v", instance.Id, err)
 		return err
@@ -217,12 +207,9 @@ func (l *labelService) MessageUnlabel(data *MessageLabelStruct, instance *instan
 		return errors.New("error parse community jid")
 	}
 
-	err = client.SendAppState(context.Background(), appstate.BuildLabelMessage(
-		jid,
-		data.LabelID,
-		data.MessageID,
-		false,
-	))
+	err = instance_runtime.DoProviderCommand(context.Background(), l.clients, func(commandCtx context.Context) error {
+		return client.SendAppState(commandCtx, appstate.BuildLabelMessage(jid, data.LabelID, data.MessageID, false))
+	})
 	if err != nil {
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error label message: %v", instance.Id, err)
 		return err
@@ -293,7 +280,7 @@ func legacyLabelFromProjection(instanceID string, label *projection_model.Label)
 }
 
 func NewLabelService(
-	clients instance_runtime.ClientProvider,
+	clients instance_runtime.CommandClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	labelRepository label_repository.LabelRepository,
 	projectionReader *projection_service.LabelReader,

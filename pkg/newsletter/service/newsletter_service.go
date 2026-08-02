@@ -25,7 +25,7 @@ type NewsletterService interface {
 }
 
 type newsletterService struct {
-	clients          instance_runtime.ClientProvider
+	clients          instance_runtime.CommandClientProvider
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	loggerWrapper    *logger_wrapper.LoggerManager
 	queryGuard       waquery.Guard
@@ -95,9 +95,11 @@ func (n *newsletterService) CreateNewsletter(data *CreateNewsletterStruct, insta
 		return nil, err
 	}
 
-	newsletter, err := client.CreateNewsletter(context.Background(), whatsmeow.CreateNewsletterParams{
-		Name:        data.Name,
-		Description: data.Description,
+	newsletter, err := instance_runtime.DoProviderCommandValue(context.Background(), n.clients, func(commandCtx context.Context) (*types.NewsletterMetadata, error) {
+		return client.CreateNewsletter(commandCtx, whatsmeow.CreateNewsletterParams{
+			Name:        data.Name,
+			Description: data.Description,
+		})
 	})
 	if err != nil {
 		n.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create newsletter: %v", instance.Id, err)
@@ -185,7 +187,10 @@ func (n *newsletterService) SubscribeNewsletter(data *GetNewsletterStruct, insta
 		return err
 	}
 
-	_, err = client.NewsletterSubscribeLiveUpdates(context.TODO(), data.JID)
+	err = instance_runtime.DoProviderCommand(context.Background(), n.clients, func(commandCtx context.Context) error {
+		_, subscribeErr := client.NewsletterSubscribeLiveUpdates(commandCtx, data.JID)
+		return subscribeErr
+	})
 	if err != nil {
 		n.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error list newsletter: %v", instance.Id, err)
 		return err
@@ -215,7 +220,7 @@ func (n *newsletterService) GetNewsletterMessages(ctx context.Context, data *Get
 }
 
 func NewNewsletterService(
-	clients instance_runtime.ClientProvider,
+	clients instance_runtime.CommandClientProvider,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	queryGuard waquery.Guard,
 	loggerWrapper *logger_wrapper.LoggerManager,

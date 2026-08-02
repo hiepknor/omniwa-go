@@ -7,10 +7,13 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"go.mau.fi/whatsmeow"
 	"golang.org/x/sync/singleflight"
 )
+
+const ProviderCommandTimeout = 2 * time.Minute
 
 // ClientProvider is the narrow dependency used by domain services. Callers can
 // read a client, but cannot mutate runtime ownership.
@@ -18,11 +21,24 @@ type ClientProvider interface {
 	Get(instanceID string) *whatsmeow.Client
 }
 
+// ProviderCommandExecutor is the only admission boundary for WhatsApp
+// operations that can change provider or connection state.
+type ProviderCommandExecutor interface {
+	Do(context.Context, func(context.Context) error) error
+}
+
+// CommandClientProvider combines read-only client lookup with fenced command
+// admission. Mutation-bearing domain services must depend on this interface.
+type CommandClientProvider interface {
+	ClientProvider
+	ProviderCommandExecutor
+}
+
 // Controller is the lifecycle surface exposed outside the owning WhatsApp
 // adapter. It intentionally cannot install runtimes or bypass generation
 // fencing.
 type Controller interface {
-	ClientProvider
+	CommandClientProvider
 	RemoveCurrent(instanceID string) bool
 }
 
@@ -59,6 +75,7 @@ func (entry *entry[T]) stop() {
 // monotonically for the process and are never reused.
 type Registry[T any] struct {
 	parent     context.Context
+	commands   ProviderCommandExecutor
 	mu         sync.RWMutex
 	next       uint64
 	entries    map[string]*entry[T]
@@ -88,16 +105,55 @@ func (registry *Registry[T]) Start(instanceID string, start func()) error {
 	return err
 }
 
-func NewRegistry[T any](parent context.Context) *Registry[T] {
+func NewRegistry[T any](parent context.Context, commands ...ProviderCommandExecutor) *Registry[T] {
 	if parent == nil {
 		parent = context.Background()
 	}
-	registry := &Registry[T]{parent: parent, entries: make(map[string]*entry[T])}
+	var commandExecutor ProviderCommandExecutor
+	if len(commands) == 1 {
+		commandExecutor = commands[0]
+	}
+	registry := &Registry[T]{parent: parent, commands: commandExecutor, entries: make(map[string]*entry[T])}
 	go func() {
 		<-parent.Done()
 		registry.Close()
 	}()
 	return registry
+}
+
+// Do admits one bounded provider mutation through the process ownership fence.
+// Registries without exactly one executor fail closed; this keeps migration and
+// isolated read-only test runtimes from accidentally issuing provider commands.
+func (registry *Registry[T]) Do(ctx context.Context, operation func(context.Context) error) error {
+	if registry == nil || registry.commands == nil || ctx == nil || operation == nil {
+		return errors.New("fenced provider command executor, context, and operation are required")
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, ProviderCommandTimeout)
+	defer cancel()
+	return registry.commands.Do(commandCtx, operation)
+}
+
+// DoProviderCommand is the facade used for provider mutations that return only
+// an error. Keeping command admission here makes bypasses mechanically auditable.
+func DoProviderCommand(ctx context.Context, commands ProviderCommandExecutor, operation func(context.Context) error) error {
+	if ctx == nil || commands == nil || operation == nil {
+		return errors.New("fenced provider command executor, context, and operation are required")
+	}
+	return commands.Do(ctx, operation)
+}
+
+// DoProviderCommandValue is the value-returning form of DoProviderCommand.
+func DoProviderCommandValue[T any](ctx context.Context, commands ProviderCommandExecutor, operation func(context.Context) (T, error)) (T, error) {
+	var result T
+	if ctx == nil || commands == nil || operation == nil {
+		return result, errors.New("fenced provider command executor, context, and operation are required")
+	}
+	err := commands.Do(ctx, func(commandCtx context.Context) error {
+		var operationErr error
+		result, operationErr = operation(commandCtx)
+		return operationErr
+	})
+	return result, err
 }
 
 // Install atomically publishes a runtime and retires the previous generation
