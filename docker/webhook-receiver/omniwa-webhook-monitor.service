@@ -1,0 +1,27 @@
+[Unit]
+Description=Verify OmniWA webhook security boundary
+After=network-online.target omniwa-webhook-receiver.service
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+StateDirectory=omniwa-webhook-monitor
+ExecStart=/usr/bin/python3 /opt/omniwa-webhook/monitor.py
+Environment=OMNIWA_MONITOR_RECEIVER_URL=http://127.0.0.1:9000
+Environment=OMNIWA_MONITOR_REQUIRE_SIGNATURE=true
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

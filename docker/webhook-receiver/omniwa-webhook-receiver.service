@@ -1,0 +1,33 @@
+[Unit]
+Description=OmniWA operator webhook receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=omniwa-webhook
+WorkingDirectory=/opt/omniwa-webhook
+ExecStart=/usr/bin/python3 /opt/omniwa-webhook/receiver.py
+Environment=OMNIWA_WEBHOOK_SIGNATURE_MODE=require
+Restart=on-failure
+RestartSec=2s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

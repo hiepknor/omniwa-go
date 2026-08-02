@@ -1,0 +1,42 @@
+groups:
+  - name: omniwa-webhook-delivery
+    rules:
+      - alert: OmniWAExternalDeliveryDeadLettered
+        expr: sum(increase(omniwa_external_event_outbox_attempts_total{outcome="dead_letter"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: An external event delivery was dead-lettered
+
+      - alert: OmniWAExternalDeliveryBacklog
+        expr: omniwa_external_event_outbox_oldest_pending_age_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: The oldest external event delivery has been pending for more than five minutes
+
+      - alert: OmniWAExternalDeliveryInfrastructureFailure
+        expr: sum(increase(omniwa_external_event_outbox_infrastructure_failures_total[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: The external event worker reported an infrastructure failure
+
+      - alert: OmniWAWebhookSignatureRejected
+        expr: sum(increase(omniwa_webhook_receiver_signature_total{outcome=~"missing|invalid|stale"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: The operator webhook receiver rejected a signature
+
+      - alert: OmniWAWebhookReceiverNotEnforcing
+        expr: omniwa_webhook_receiver_mode{mode="require"} != 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: The operator webhook receiver is not enforcing signatures
