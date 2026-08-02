@@ -4750,6 +4750,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Instance credential cannot target another instance",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Instance not found",
                         "schema": {
@@ -4808,6 +4820,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Instance credential cannot target another instance",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
                         }

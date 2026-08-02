@@ -47,6 +47,11 @@ type instanceMetadataReader interface {
 	Info(instanceID string) (*instance_model.Instance, error)
 }
 
+type advancedSettingsService interface {
+	GetAdvancedSettings(instanceID string) (*instance_model.AdvancedSettings, error)
+	UpdateAdvancedSettings(instanceID string, settings *instance_model.AdvancedSettings) error
+}
+
 // AllMetadata returns credential-free instance metadata for administrative UIs.
 // @Summary List credential-free instance metadata
 // @Description Lists instances without returning bearer tokens, proxy credentials, or QR ceremony material.
@@ -113,6 +118,7 @@ type instanceHandler struct {
 	config           *config.Config
 	instanceService  instance_service.InstanceService
 	metadataReader   instanceMetadataReader
+	advancedSettings advancedSettingsService
 	tokenRotation    *instance_credential.RotationService
 	credentialHealth *instance_credential.HealthService
 }
@@ -769,19 +775,19 @@ func (h *instanceHandler) GetLogs(c *gin.Context) {
 // @Param instanceId path string true "Instance ID"
 // @Success 200 {object} instance_model.AdvancedSettings "Advanced settings retrieved successfully"
 // @Failure 400 {object} apidocs.ErrorResponse "Invalid instance ID"
+// @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
+// @Failure 403 {object} apidocs.ErrorResponse "Instance credential cannot target another instance"
 // @Failure 404 {object} apidocs.ErrorResponse "Instance not found"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /instance/{instanceId}/advanced-settings [get]
 func (h *instanceHandler) GetAdvancedSettings(c *gin.Context) {
-	instanceId := c.Param("instanceId")
-
-	if instanceId == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+	instanceID, ok := authenticatedAdvancedSettingsInstance(c)
+	if !ok {
 		return
 	}
 
-	settings, err := h.instanceService.GetAdvancedSettings(instanceId)
+	settings, err := h.advancedSettings.GetAdvancedSettings(instanceID)
 	if err != nil {
 		httpapi.WriteInternal(c, err)
 		return
@@ -800,15 +806,15 @@ func (h *instanceHandler) GetAdvancedSettings(c *gin.Context) {
 // @Param settings body instance_model.AdvancedSettings true "Advanced settings data"
 // @Success 200 {object} apidocs.SuccessResponse "Advanced settings updated successfully"
 // @Failure 400 {object} apidocs.ErrorResponse "Invalid request data"
+// @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
+// @Failure 403 {object} apidocs.ErrorResponse "Instance credential cannot target another instance"
 // @Failure 404 {object} apidocs.ErrorResponse "Instance not found"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
 // @Router /instance/{instanceId}/advanced-settings [put]
 func (h *instanceHandler) UpdateAdvancedSettings(c *gin.Context) {
-	instanceId := c.Param("instanceId")
-
-	if instanceId == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+	instanceID, ok := authenticatedAdvancedSettingsInstance(c)
+	if !ok {
 		return
 	}
 
@@ -818,7 +824,7 @@ func (h *instanceHandler) UpdateAdvancedSettings(c *gin.Context) {
 		return
 	}
 
-	err := h.instanceService.UpdateAdvancedSettings(instanceId, &settings)
+	err := h.advancedSettings.UpdateAdvancedSettings(instanceID, &settings)
 	if err != nil {
 		httpapi.WriteInternal(c, err)
 		return
@@ -828,6 +834,26 @@ func (h *instanceHandler) UpdateAdvancedSettings(c *gin.Context) {
 		"message":  "Advanced settings updated successfully",
 		"settings": settings,
 	})
+}
+
+func authenticatedAdvancedSettingsInstance(c *gin.Context) (string, bool) {
+	instanceID := c.Param("instanceId")
+	if instanceID == "" {
+		httpapi.WriteError(c, http.StatusBadRequest, "invalid_instance_id", "instanceId is required")
+		return "", false
+	}
+
+	principal, ok := httpapi.AuthPrincipalFrom(c)
+	if !ok || principal.Scope != httpapi.CredentialScopeInstance {
+		httpapi.WriteError(c, http.StatusUnauthorized, "not_authorized", "not authorized")
+		return "", false
+	}
+	if principal.InstanceID != instanceID {
+		httpapi.WriteError(c, http.StatusForbidden, "instance_scope_mismatch", "instance credential cannot target another instance")
+		return "", false
+	}
+
+	return principal.InstanceID, true
 }
 
 type Option func(*instanceHandler)
@@ -841,7 +867,12 @@ func WithCredentialHealth(service *instance_credential.HealthService) Option {
 }
 
 func NewInstanceHandler(instanceService instance_service.InstanceService, config *config.Config, options ...Option) InstanceHandler {
-	handler := &instanceHandler{instanceService: instanceService, metadataReader: instanceService, config: config}
+	handler := &instanceHandler{
+		instanceService:  instanceService,
+		metadataReader:   instanceService,
+		advancedSettings: instanceService,
+		config:           config,
+	}
 	for _, option := range options {
 		if option != nil {
 			option(handler)
