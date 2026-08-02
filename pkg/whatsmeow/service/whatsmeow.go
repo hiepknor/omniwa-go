@@ -64,7 +64,7 @@ type WhatsmeowService interface {
 	StartInstance(instanceId string) error
 	ReconnectClient(instanceId string) error
 	ClearInstanceCache(instanceId string, token string) error
-	EmitExternalEvent(instance *instance_model.Instance, eventType string, raw any, queueName string, payload []byte) bool
+	EmitExternalEvent(instance *instance_model.Instance, eventType string, raw any, queueName string, payload []byte, metadata ...event_payload.ConfirmedPhoneMetadata) bool
 	WaitOutbound(ctx context.Context, instanceID string, cost int) error
 	ForceUpdateJid(instanceId string, number string) error
 	UpdateInstanceSettings(instanceId string) error
@@ -2528,14 +2528,14 @@ func (w *whatsmeowService) sendToRealtimeTransports(instance *instance_model.Ins
 	}
 }
 
-func (w *whatsmeowService) EmitExternalEvent(instance *instance_model.Instance, eventType string, raw any, queueName string, payload []byte) bool {
+func (w *whatsmeowService) EmitExternalEvent(instance *instance_model.Instance, eventType string, raw any, queueName string, payload []byte, metadata ...event_payload.ConfirmedPhoneMetadata) bool {
 	if w == nil || w.externalEvents == nil || instance == nil || instance.Id == "" || eventType == "" || queueName == "" || len(payload) == 0 {
 		if w != nil && w.loggerWrapper != nil {
 			w.loggerWrapper.GetLogger("").LogError("component=external_event_emitter action=record result=failed error_code=missing_dependency")
 		}
 		return false
 	}
-	payload = enrichCurrentPhoneMetadata(payload, raw, w.config.PhoneNumberExposureEnabled)
+	payload = enrichCurrentPhoneMetadata(payload, raw, w.config.PhoneNumberExposureEnabled, metadata...)
 	parent := w.appCtx
 	if parent == nil {
 		parent = context.Background()
@@ -2555,12 +2555,13 @@ func (w *whatsmeowService) EmitExternalEvent(instance *instance_model.Instance, 
 	return true
 }
 
-func enrichCurrentPhoneMetadata(payload []byte, raw any, enabled bool) []byte {
+func enrichCurrentPhoneMetadata(payload []byte, raw any, enabled bool, metadata ...event_payload.ConfirmedPhoneMetadata) []byte {
 	if !enabled {
 		return payload
 	}
 	var source *types.MessageSource
 	receipt := false
+	outboundAcknowledgement := false
 	switch event := raw.(type) {
 	case *events.Message:
 		if event != nil {
@@ -2576,9 +2577,11 @@ func enrichCurrentPhoneMetadata(payload []byte, raw any, enabled bool) []byte {
 		// value. Its MessageSource carries the same explicit PN/Alt evidence as
 		// live Message events and must not require an instance-scoped DB lookup.
 		source = &event.MessageSource
+		outboundAcknowledgement = true
 	case *types.MessageInfo:
 		if event != nil {
 			source = &event.MessageSource
+			outboundAcknowledgement = true
 		}
 	}
 	if source == nil {
@@ -2610,7 +2613,14 @@ func enrichCurrentPhoneMetadata(payload []byte, raw any, enabled bool) []byte {
 			data["senderPhoneNumber"] = phone
 		}
 		if source.IsFromMe {
-			if phone := explicitPhoneDigits(source.Chat, source.RecipientAlt); phone != "" {
+			phone := ""
+			if outboundAcknowledgement {
+				phone = confirmedRecipientPhoneDigits(metadata)
+			}
+			if phone == "" {
+				phone = explicitPhoneDigits(source.Chat, source.RecipientAlt)
+			}
+			if phone != "" {
 				data["recipientPhoneNumber"] = phone
 			}
 		} else if phone := explicitPhoneDigits(source.RecipientAlt); phone != "" {
@@ -2622,6 +2632,15 @@ func enrichCurrentPhoneMetadata(payload []byte, raw any, enabled bool) []byte {
 		return payload
 	}
 	return result
+}
+
+func confirmedRecipientPhoneDigits(metadata []event_payload.ConfirmedPhoneMetadata) string {
+	for _, item := range metadata {
+		if phone := explicitPhoneDigits(item.Recipient); phone != "" {
+			return phone
+		}
+	}
+	return ""
 }
 
 func explicitPhoneDigits(jids ...types.JID) string {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/evolution-foundation/evolution-go/pkg/config"
+	event_payload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -52,7 +53,8 @@ func TestEnrichCurrentPhoneMetadataUsesExplicitCurrentMessageRoles(t *testing.T)
 func TestEnrichCurrentPhoneMetadataDisabledIsByteCompatible(t *testing.T) {
 	payload := []byte(`{"event":"Message","data":{"legacy":"kept"}}`)
 	event := &events.Message{Info: types.MessageInfo{MessageSource: types.MessageSource{Sender: mustPhoneTestJID(t, "15550001@s.whatsapp.net")}}}
-	if result := enrichCurrentPhoneMetadata(payload, event, false); string(result) != string(payload) {
+	metadata := event_payload.ConfirmedPhoneMetadata{Recipient: mustPhoneTestJID(t, "15550002@s.whatsapp.net")}
+	if result := enrichCurrentPhoneMetadata(payload, event, false, metadata); string(result) != string(payload) {
 		t.Fatalf("result=%s", result)
 	}
 }
@@ -81,6 +83,40 @@ func TestEnrichCurrentPhoneMetadataSupportsOutboundProviderAcknowledgement(t *te
 	data := root["data"].(map[string]any)
 	if data["senderPhoneNumber"] != "15550004" || data["recipientPhoneNumber"] != "15550005" || data["legacy"] != "kept" {
 		t.Fatalf("data=%#v", data)
+	}
+}
+
+func TestEnrichCurrentPhoneMetadataUsesConfirmedOutboundTargetForLIDAcknowledgement(t *testing.T) {
+	info := types.MessageInfo{MessageSource: types.MessageSource{
+		Sender: mustPhoneTestJID(t, "12345@lid"), Chat: mustPhoneTestJID(t, "67890@lid"), IsFromMe: true,
+	}}
+	metadata := event_payload.ConfirmedPhoneMetadata{Recipient: mustPhoneTestJID(t, "15550008:4@s.whatsapp.net")}
+	result := enrichCurrentPhoneMetadata([]byte(`{"event":"SendMessage","data":{"legacy":"kept"}}`), info, true, metadata)
+	var root map[string]any
+	if err := json.Unmarshal(result, &root); err != nil {
+		t.Fatal(err)
+	}
+	data := root["data"].(map[string]any)
+	if data["recipientPhoneNumber"] != "15550008" || data["legacy"] != "kept" {
+		t.Fatalf("data=%#v", data)
+	}
+	if _, exists := data["senderPhoneNumber"]; exists {
+		t.Fatalf("unverified sender phone was added: %#v", data)
+	}
+}
+
+func TestEnrichCurrentPhoneMetadataIgnoresOutboundContextForIncomingEvent(t *testing.T) {
+	event := &events.Message{Info: types.MessageInfo{MessageSource: types.MessageSource{
+		Sender: mustPhoneTestJID(t, "12345@lid"), Chat: mustPhoneTestJID(t, "67890@lid"),
+	}}}
+	metadata := event_payload.ConfirmedPhoneMetadata{Recipient: mustPhoneTestJID(t, "15550009@s.whatsapp.net")}
+	result := enrichCurrentPhoneMetadata([]byte(`{"event":"Message","data":{}}`), event, true, metadata)
+	var root map[string]any
+	if err := json.Unmarshal(result, &root); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := root["data"].(map[string]any)["recipientPhoneNumber"]; exists {
+		t.Fatalf("outbound context leaked into incoming event: %s", result)
 	}
 }
 
