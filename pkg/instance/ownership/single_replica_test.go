@@ -3,22 +3,27 @@ package ownership
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
 type fakeSession struct {
-	acquired    bool
-	lockErr     error
-	pingErr     error
-	released    bool
-	unlockErr   error
-	closeErr    error
-	lockCalls   atomic.Int32
-	pingCalls   atomic.Int32
-	unlockCalls atomic.Int32
-	closeCalls  atomic.Int32
+	acquired      bool
+	lockErr       error
+	activate      Epoch
+	activateErr   error
+	current       Epoch
+	currentErr    error
+	released      bool
+	unlockErr     error
+	closeErr      error
+	lockCalls     atomic.Int32
+	activateCalls atomic.Int32
+	currentCalls  atomic.Int32
+	unlockCalls   atomic.Int32
+	closeCalls    atomic.Int32
 }
 
 func (session *fakeSession) TryLock(context.Context) (bool, error) {
@@ -26,9 +31,14 @@ func (session *fakeSession) TryLock(context.Context) (bool, error) {
 	return session.acquired, session.lockErr
 }
 
-func (session *fakeSession) Ping(context.Context) error {
-	session.pingCalls.Add(1)
-	return session.pingErr
+func (session *fakeSession) ActivateEpoch(context.Context) (Epoch, error) {
+	session.activateCalls.Add(1)
+	return session.activate, session.activateErr
+}
+
+func (session *fakeSession) CurrentEpoch(context.Context) (Epoch, error) {
+	session.currentCalls.Add(1)
+	return session.current, session.currentErr
 }
 
 func (session *fakeSession) Unlock(context.Context) (bool, error) {
@@ -52,15 +62,108 @@ func TestAcquireRejectsSecondReplicaAndClosesSession(t *testing.T) {
 	}
 }
 
-func TestMonitorReportsOwnershipConnectionLoss(t *testing.T) {
-	session := &fakeSession{acquired: true, pingErr: errors.New("connection lost")}
+func TestActivateIssuesEpochExactlyOnce(t *testing.T) {
+	session := &fakeSession{acquired: true, activate: 7, current: 7}
 	guard, err := acquireSession(context.Background(), session)
 	if err != nil {
 		t.Fatal(err)
 	}
+	const callers = 16
+	var wait sync.WaitGroup
+	wait.Add(callers)
+	errorsSeen := make(chan error, callers)
+	for range callers {
+		go func() {
+			defer wait.Done()
+			epoch, activateErr := guard.Activate(context.Background())
+			if activateErr != nil {
+				errorsSeen <- activateErr
+				return
+			}
+			if epoch != 7 {
+				errorsSeen <- errors.New("unexpected epoch")
+			}
+		}()
+	}
+	wait.Wait()
+	close(errorsSeen)
+	for activateErr := range errorsSeen {
+		t.Fatal(activateErr)
+	}
+	if session.activateCalls.Load() != 1 {
+		t.Fatalf("activate calls=%d, want 1", session.activateCalls.Load())
+	}
+	if epoch, ok := guard.Epoch(); !ok || epoch != 7 {
+		t.Fatalf("Epoch()=(%d,%t), want (7,true)", epoch, ok)
+	}
+}
+
+func TestActivateFailureIsFailClosedAndNotRetried(t *testing.T) {
+	wantErr := errors.New("activation unavailable")
+	session := &fakeSession{acquired: true, activateErr: wantErr}
+	guard, err := acquireSession(context.Background(), session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := guard.Activate(context.Background()); !errors.Is(err, wantErr) {
+			t.Fatalf("Activate() error=%v, want %v", err, wantErr)
+		}
+	}
+	if session.activateCalls.Load() != 1 {
+		t.Fatalf("activate calls=%d, want 1", session.activateCalls.Load())
+	}
+	if _, ok := guard.Epoch(); ok {
+		t.Fatal("failed activation exposed an epoch")
+	}
+}
+
+func TestMonitorReportsOwnershipConnectionLoss(t *testing.T) {
+	session := &fakeSession{acquired: true, activate: 3, currentErr: errors.New("connection lost")}
+	guard, err := acquireSession(context.Background(), session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := guard.Activate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	err = guard.Monitor(context.Background(), time.Millisecond)
-	if err == nil || session.pingCalls.Load() == 0 {
-		t.Fatalf("Monitor() error=%v ping_calls=%d", err, session.pingCalls.Load())
+	if err == nil || session.currentCalls.Load() == 0 {
+		t.Fatalf("Monitor() error=%v current_calls=%d", err, session.currentCalls.Load())
+	}
+}
+
+func TestMonitorRequiresActivatedEpoch(t *testing.T) {
+	guard, err := acquireSession(context.Background(), &fakeSession{acquired: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := guard.Monitor(context.Background(), time.Second); !errors.Is(err, ErrEpochNotActivated) {
+		t.Fatalf("Monitor() error=%v, want ErrEpochNotActivated", err)
+	}
+}
+
+func TestMonitorRejectsNilContext(t *testing.T) {
+	guard, err := acquireSession(context.Background(), &fakeSession{acquired: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := guard.Monitor(nil, time.Second); err == nil {
+		t.Fatal("Monitor() accepted a nil context")
+	}
+}
+
+func TestValidateRejectsStaleEpoch(t *testing.T) {
+	session := &fakeSession{acquired: true, activate: 3, current: 4}
+	guard, err := acquireSession(context.Background(), session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := guard.Activate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := guard.Validate(context.Background()); !errors.Is(err, ErrEpochStale) {
+		t.Fatalf("Validate() error=%v, want ErrEpochStale", err)
 	}
 }
 

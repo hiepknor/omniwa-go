@@ -1247,6 +1247,13 @@ func main() {
 	if err := runMigrations(context.Background(), db, cfg, exPath); err != nil {
 		log.Fatal(err)
 	}
+	epochCtx, epochCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ownershipEpoch, err := ownershipGuard.Activate(epochCtx)
+	epochCancel()
+	if err != nil {
+		log.Fatal("Failed to activate durable ownership epoch: ", err)
+	}
+	logger.LogInfo("component=ownership action=activate_epoch result=success epoch=%d", ownershipEpoch)
 
 	// Initialize core DB + license runtime only when the gate is enabled.
 	// With LICENSE_GATE_ENABLED=false the runtime context stays nil and the

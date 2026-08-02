@@ -127,6 +127,10 @@ an unknown image, edit outbox rows, or reopen Caddy.
    docker compose up -d omniwa-go
    ```
 
+   Confirm that the active process acquired the ownership lock and activated
+   exactly one newer durable ownership epoch before serving business traffic.
+   The one-shot migration job in step 5 must not change the epoch.
+
 7. Keep traffic disabled until all verification checks pass:
 
    ```bash
@@ -136,10 +140,11 @@ an unknown image, edit outbox rows, or reopen Caddy.
      --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
    ```
 
-8. Verify the authenticated capability response, ownership-acquisition log,
-   expected migration versions, instance reconnects, durable outbox backlog,
-   signed Webhook canary, and error metrics. Restore traffic only after the
-   process is ready and the expected instances have recovered.
+8. Verify the authenticated capability response, ownership-acquisition and
+   epoch-activation logs, expected migration versions, instance reconnects,
+   durable outbox backlog, signed Webhook canary, and error metrics. Restore
+   traffic only after the process is ready and the expected instances have
+   recovered.
 
 ## Abort and rollback
 

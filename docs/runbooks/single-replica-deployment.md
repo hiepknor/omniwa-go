@@ -19,10 +19,12 @@ WhatsApp connections start. The expected error contains:
 another OmniWA GO application replica already owns this users database
 ```
 
-The lock connection is checked every five seconds. If that session is lost, the
-application initiates graceful shutdown because PostgreSQL has already released
-the advisory lock. This is containment for an accidental duplicate deployment;
-it is not a substitute for a distributed per-instance lease.
+After migrations, the active process increments the durable application
+ownership epoch on the lock session. The session verifies that epoch every five
+seconds; a query failure or mismatch initiates graceful shutdown. Migration
+jobs do not activate epochs. This is stronger stale-owner detection and the
+foundation for the shared side-effect fence in ADR 0062, but it is not yet a
+distributed per-instance lease or complete provider fencing.
 
 ## Deployment settings
 
@@ -46,7 +48,9 @@ lock, which can create a restart loop and a misleading failed rollout.
    with the ownership error before binding the API port.
 3. Stop the first copy, then verify a new copy acquires ownership and starts.
 4. Confirm logs contain `component=ownership action=acquire result=success`.
-5. Confirm instance reconnects and `/server/ok` succeeds after the replacement.
+5. Confirm the ownership `activate_epoch` log reports `result=success` and that
+   the database epoch increased exactly once.
+6. Confirm instance reconnects and `/server/ok` succeeds after the replacement.
 
 ## Rollback
 
