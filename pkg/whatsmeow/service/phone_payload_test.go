@@ -68,6 +68,43 @@ func TestEnrichCurrentPhoneMetadataReceiptUsesRecipientRole(t *testing.T) {
 	}
 }
 
+func TestEnrichCurrentPhoneMetadataSupportsOutboundProviderAcknowledgement(t *testing.T) {
+	info := types.MessageInfo{MessageSource: types.MessageSource{
+		Sender: mustPhoneTestJID(t, "15550004@s.whatsapp.net"),
+		Chat:   mustPhoneTestJID(t, "15550005:7@s.whatsapp.net"), IsFromMe: true,
+	}}
+	result := enrichCurrentPhoneMetadata([]byte(`{"event":"SendMessage","data":{"legacy":"kept"}}`), info, true)
+	var root map[string]any
+	if err := json.Unmarshal(result, &root); err != nil {
+		t.Fatal(err)
+	}
+	data := root["data"].(map[string]any)
+	if data["senderPhoneNumber"] != "15550004" || data["recipientPhoneNumber"] != "15550005" || data["legacy"] != "kept" {
+		t.Fatalf("data=%#v", data)
+	}
+}
+
+func TestEnrichCurrentPhoneMetadataDropsUnverifiedPhoneFields(t *testing.T) {
+	event := &events.Message{Info: types.MessageInfo{MessageSource: types.MessageSource{
+		Sender: mustPhoneTestJID(t, "12345@lid"),
+	}}}
+	result := enrichCurrentPhoneMetadata([]byte(`{"event":"Message","data":{"senderPhoneNumber":"15559999","recipientPhoneNumber":"15558888","legacy":"kept"}}`), event, true)
+	var root map[string]any
+	if err := json.Unmarshal(result, &root); err != nil {
+		t.Fatal(err)
+	}
+	data := root["data"].(map[string]any)
+	if _, exists := data["senderPhoneNumber"]; exists {
+		t.Fatalf("unverified sender phone survived: %#v", data)
+	}
+	if _, exists := data["recipientPhoneNumber"]; exists {
+		t.Fatalf("unverified recipient phone survived: %#v", data)
+	}
+	if data["legacy"] != "kept" {
+		t.Fatalf("legacy payload changed: %#v", data)
+	}
+}
+
 func TestRealtimeAndGlobalNATSTransportsApplyPhoneKillSwitch(t *testing.T) {
 	nats, websocket := &phoneCaptureProducer{}, &phoneCaptureProducer{}
 	service := &whatsmeowService{config: &config.Config{PhoneNumberExposureEnabled: false, NatsGlobalEvents: []string{"MESSAGE"}}, natsProducer: nats, websocketProducer: websocket}

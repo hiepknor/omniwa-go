@@ -15,6 +15,7 @@ import (
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	"github.com/google/uuid"
+	"go.mau.fi/whatsmeow/types"
 )
 
 type emissionBuilder struct{}
@@ -124,5 +125,43 @@ func TestEmitExternalEventAtomicFailureSuppressesRealtimeFanout(t *testing.T) {
 	time.Sleep(25 * time.Millisecond)
 	if websocket.count() != 0 || nats.count() != 0 {
 		t.Fatalf("realtime fan-out occurred after failure: websocket=%d nats=%d", websocket.count(), nats.count())
+	}
+}
+
+func TestEmitExternalEventEnrichesOutboundPhoneMetadataBeforeOutboxRecord(t *testing.T) {
+	recorder := &emissionRecorder{}
+	emitter, err := event_emission.NewEmitter(emissionBuilder{}, recorder, event_emission.Settings{
+		GlobalRabbitEnabled: true, AMQPGlobalEvents: []string{"SEND_MESSAGE"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := &config.Config{
+		PhoneNumberExposureEnabled: true,
+		LogDirectory:               t.TempDir(), LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1,
+	}
+	service := &whatsmeowService{
+		config: settings, externalEvents: emitter, appCtx: context.Background(),
+		loggerWrapper: logger_wrapper.NewLoggerManager(settings),
+	}
+	instance := &instance_model.Instance{Id: uuid.NewString()}
+	info := types.MessageInfo{MessageSource: types.MessageSource{
+		Sender: mustPhoneTestJID(t, "15550006@s.whatsapp.net"),
+		Chat:   mustPhoneTestJID(t, "15550007@s.whatsapp.net"), IsFromMe: true,
+	}}
+	if !service.EmitExternalEvent(instance, "SendMessage", info, instance.Id+".sendmessage", []byte(`{"event":"SendMessage","data":{"legacy":"kept"}}`)) {
+		t.Fatal("emission was rejected")
+	}
+	routes := recorder.routes()
+	if len(routes) != 1 || routes[0].Transport != event_outbox.TransportRabbitMQ {
+		t.Fatalf("routes=%#v", routes)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(routes[0].Payload, &root); err != nil {
+		t.Fatal(err)
+	}
+	data := root["data"].(map[string]any)
+	if data["senderPhoneNumber"] != "15550006" || data["recipientPhoneNumber"] != "15550007" || data["legacy"] != "kept" {
+		t.Fatalf("data=%#v", data)
 	}
 }

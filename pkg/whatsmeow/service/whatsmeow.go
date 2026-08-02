@@ -2563,10 +2563,23 @@ func enrichCurrentPhoneMetadata(payload []byte, raw any, enabled bool) []byte {
 	receipt := false
 	switch event := raw.(type) {
 	case *events.Message:
-		source = &event.Info.MessageSource
+		if event != nil {
+			source = &event.Info.MessageSource
+		}
 	case *events.Receipt:
+		if event != nil {
+			source = &event.MessageSource
+			receipt = true
+		}
+	case types.MessageInfo:
+		// Outbound SendMessage emission passes the provider acknowledgement as a
+		// value. Its MessageSource carries the same explicit PN/Alt evidence as
+		// live Message events and must not require an instance-scoped DB lookup.
 		source = &event.MessageSource
-		receipt = true
+	case *types.MessageInfo:
+		if event != nil {
+			source = &event.MessageSource
+		}
 	}
 	if source == nil {
 		return payload
@@ -2578,6 +2591,11 @@ func enrichCurrentPhoneMetadata(payload []byte, raw any, enabled bool) []byte {
 	data, ok := root["data"].(map[string]any)
 	if !ok {
 		return payload
+	}
+	// Provider metadata is authoritative for this event. Never preserve a
+	// phone field that was not derived from the current explicit PN/Alt pair.
+	for _, field := range []string{"phoneNumber", "senderPhoneNumber", "recipientPhoneNumber", "participantPhoneNumber"} {
+		delete(data, field)
 	}
 	if receipt {
 		if phone := explicitPhoneDigits(source.Sender, source.SenderAlt); phone != "" {

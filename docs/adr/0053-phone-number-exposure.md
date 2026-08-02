@@ -47,13 +47,14 @@ conversation and message views use bounded batch resolution. A missing or
 failed resolution omits the optional field without failing the HTTP request.
 Phone-bearing HTTP responses set `Cache-Control: private, no-store`.
 
-External Message and Receipt payloads may be enriched only from explicit PN or
-paired alternate metadata on the current provider event. No database lookup is
-performed in the instance event handler. A shared payload policy applies the
-kill switch again at delivery time for durable webhook/RabbitMQ deliveries and
-at each NATS/WebSocket boundary. This redacts queued phone fields after a
-restart with exposure disabled. Malformed payloads fail closed and are not
-delivered.
+External Message, SendMessage, and Receipt payloads may be enriched only from
+explicit PN or paired alternate metadata on the current provider event. The
+outbound SendMessage acknowledgement is treated as current-event evidence; no
+database lookup is performed in the instance event handler. A shared payload
+policy applies the kill switch again at delivery time for durable
+webhook/RabbitMQ deliveries and at each NATS/WebSocket boundary. This redacts
+queued phone fields after a restart with exposure disabled. Malformed payloads
+fail closed and are not delivered.
 
 ## Alternatives considered
 
