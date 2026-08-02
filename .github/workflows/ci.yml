@@ -106,6 +106,8 @@ jobs:
         run: |
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           bash -n scripts/ci/*.sh
+          bash -n scripts/ops/*.sh
+          bash scripts/ci/cold-standby-drill_test.sh
           if bash scripts/ci/verify-image.sh example.invalid/image:latest 0000000000000000000000000000000000000000 0.0.0 >/dev/null 2>&1; then
             echo "verify-image accepted a mutable tag" >&2
             exit 1

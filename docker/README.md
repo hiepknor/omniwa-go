@@ -143,6 +143,9 @@ Do not put `/server/ok` behind business routing: that compatibility endpoint is
 traffic owners with `/server/ready`. Promotion is a controlled stop, migrate,
 and recreate operation; there is no in-process or automatic promotion. Follow
 the [cold-standby promotion runbook](../docs/runbooks/cold-standby-promotion.md).
+That runbook includes an explicitly approved drill runner which records bounded
+RTO, migration ownership, revision, outbox progress, and operator canary gates
+as private JSON evidence.
 
 The production stack does not accept built-in credentials. Before rendering it,
 materialize the global API key, PostgreSQL password, and both application DSNs

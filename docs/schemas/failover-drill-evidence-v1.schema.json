@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omniwa.local/schemas/failover-drill-evidence-v1.schema.json",
+  "title": "OmniWA GO controlled failover drill evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "failureCode", "recoveryRequired", "startedAt", "endedAt", "rto", "revision", "outbox", "probes", "checkpoints"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "status": {"enum": ["passed", "failed"]},
+    "failureCode": {"type": ["string", "null"], "pattern": "^[a-z0-9_]+$"},
+    "recoveryRequired": {"type": "boolean"},
+    "startedAt": {"type": "string", "format": "date-time"},
+    "endedAt": {"type": "string", "format": "date-time"},
+    "rto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["limitSeconds", "observedSeconds"],
+      "properties": {
+        "limitSeconds": {"type": "integer", "minimum": 1, "maximum": 1800},
+        "observedSeconds": {"type": "integer", "minimum": 0}
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected", "before", "after"],
+      "properties": {
+        "expected": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "before": {"type": "string", "pattern": "^$|^[0-9a-f]{40}$"},
+        "after": {"type": "string", "pattern": "^$|^[0-9a-f]{40}$"}
+      }
+    },
+    "outbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxPendingAgeSeconds", "drainLimitSeconds", "baseline", "after"],
+      "properties": {
+        "maxPendingAgeSeconds": {"type": "integer", "minimum": 1},
+        "drainLimitSeconds": {"type": "integer", "minimum": 1},
+        "baseline": {"$ref": "#/$defs/outboxSnapshot"},
+        "after": {"$ref": "#/$defs/outboxSnapshot"}
+      }
+    },
+    "probes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trafficDrainSHA256", "postPromotionSHA256"],
+      "properties": {
+        "trafficDrainSHA256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"},
+        "postPromotionSHA256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"}
+      }
+    },
+    "checkpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "at"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "status": {"enum": ["passed", "failed"]},
+          "at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "outboxSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pending", "processing", "deadLetter", "oldestPendingAgeSeconds"],
+      "properties": {
+        "pending": {"type": "number", "minimum": 0},
+        "processing": {"type": "number", "minimum": 0},
+        "deadLetter": {"type": "number", "minimum": 0},
+        "oldestPendingAgeSeconds": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}

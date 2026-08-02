@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+state_directory="${FAKE_DRILL_STATE:?}"
+arguments=" $* "
+
+if [[ "${1:-}" == "inspect" ]]; then
+  if [[ "$arguments" == *"{{len .Mounts}}"* ]]; then
+    echo 0
+  else
+    printf '%s\n' 'RUNTIME_MODE=standby' 'SERVER_PORT=4000' 'TZ=UTC'
+  fi
+  exit 0
+fi
+
+[[ "${1:-}" == "compose" ]] || exit 64
+case "$arguments" in
+  *" --profile standby up --detach --wait omniwa-standby "*)
+    : >"$state_directory/standby-running"
+    ;;
+  *" ps --quiet omniwa-standby "*)
+    [[ -f "$state_directory/standby-running" ]] && echo fake-standby-container
+    ;;
+  *" stop omniwa-go "*)
+    rm -f "$state_directory/active-running"
+    ;;
+  *" --profile standby stop omniwa-standby "*)
+    rm -f "$state_directory/standby-running"
+    ;;
+  *" --profile operations run --rm --no-deps omniwa-migrate "*)
+    [[ "${FAKE_DRILL_SCENARIO:-success}" != "migration_failure" ]]
+    ;;
+  *" up --detach omniwa-go "*)
+    : >"$state_directory/active-running"
+    : >"$state_directory/promoted"
+    ;;
+  *" ps --status running --quiet omniwa-go "*)
+    [[ -f "$state_directory/active-running" ]] && echo fake-active-container
+    ;;
+  *)
+    echo "unexpected fake docker invocation" >&2
+    exit 64
+    ;;
+esac
