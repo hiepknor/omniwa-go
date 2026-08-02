@@ -34,14 +34,30 @@ def fetch_text(url, timeout=5, headers=None):
 
 
 def ntp_synchronized():
-    result = subprocess.run(
-        ["timedatectl", "show", "--property=NTPSynchronized", "--value"],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    return result.stdout.strip() == "yes"
+    try:
+        result = subprocess.run(
+            ["timedatectl", "show", "--property=NTPSynchronized", "--value"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.stdout.strip() == "yes"
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        # DynamicUser services cannot access timedated over D-Bus on some Ubuntu
+        # releases. Chrony's leap status is the local authoritative fallback.
+        result = subprocess.run(
+            ["chronyc", "tracking"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return any(
+            line.partition(":")[0].strip() == "Leap status"
+            and line.partition(":")[2].strip() == "Normal"
+            for line in result.stdout.splitlines()
+        )
 
 
 def load_state(path):

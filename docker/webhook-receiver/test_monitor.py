@@ -7,6 +7,7 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+from unittest import mock
 
 MONITOR_PATH = os.path.join(os.path.dirname(__file__), "monitor.py")
 SPEC = importlib.util.spec_from_file_location("webhook_monitor", MONITOR_PATH)
@@ -54,6 +55,31 @@ class MonitorTests(unittest.TestCase):
             errors,
             ["egress_ip_changed", "ntp_unsynchronized", "receiver_invalid_increased"],
         )
+
+    @mock.patch.object(MONITOR.subprocess, "run")
+    def test_ntp_falls_back_to_chrony_for_dynamic_user(self, run):
+        run.side_effect = [
+            MONITOR.subprocess.CalledProcessError(1, ["timedatectl"]),
+            MONITOR.subprocess.CompletedProcess(
+                ["chronyc", "tracking"],
+                0,
+                stdout="Stratum : 3\nLeap status : Normal\n",
+            ),
+        ]
+        self.assertTrue(MONITOR.ntp_synchronized())
+        self.assertEqual(run.call_args_list[1].args[0], ["chronyc", "tracking"])
+
+    @mock.patch.object(MONITOR.subprocess, "run")
+    def test_chrony_fallback_fails_closed_when_unsynchronized(self, run):
+        run.side_effect = [
+            MONITOR.subprocess.CalledProcessError(1, ["timedatectl"]),
+            MONITOR.subprocess.CompletedProcess(
+                ["chronyc", "tracking"],
+                0,
+                stdout="Leap status : Not synchronised\n",
+            ),
+        ]
+        self.assertFalse(MONITOR.ntp_synchronized())
 
     def test_state_is_private_and_atomic(self):
         with tempfile.TemporaryDirectory() as directory:

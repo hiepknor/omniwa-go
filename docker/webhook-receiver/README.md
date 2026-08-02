@@ -79,6 +79,8 @@ delivery IDs, destinations, or credentials.
 
 The oneshot monitor checks receiver/API health, enforcement mode, signature
 failure counter deltas, NTP synchronization, and the expected public egress IP.
+It prefers `timedatectl` and falls back to Chrony's `Leap status: Normal` when a
+systemd dynamic user cannot access timedated over D-Bus.
 It can also authenticate to each application's loopback `/metrics` endpoint by
 systemd credential and alerts when the dead-letter gauge increases or the
 oldest pending delivery exceeds five minutes. The credential is bounded to
