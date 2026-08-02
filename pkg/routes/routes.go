@@ -79,7 +79,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		c.File("manager/dist/index.html")
 	})
 
-	eng.GET("/server/ok", r.serverHandler.ServerOk)
+	r.assignRuntimeHealthRoutes(eng)
 	r.assignMetricsRoute(eng)
 	eng.GET("/server/capabilities", r.authMiddleware.AuthAdminOrInstance, r.serverHandler.Capabilities)
 	eng.GET("/server/projection-health", r.authMiddleware.AuthAdminOrInstance, r.serverHandler.ProjectionHealth)
@@ -325,6 +325,15 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		}
 	}
 
+}
+
+func (r *Routes) assignRuntimeHealthRoutes(eng *gin.Engine) {
+	if r == nil || r.serverHandler == nil {
+		return
+	}
+	eng.GET("/server/ok", r.serverHandler.ServerOk)
+	eng.GET("/server/live", r.serverHandler.RuntimeLive)
+	eng.GET("/server/ready", r.serverHandler.RuntimeReady)
 }
 
 func (r *Routes) assignConversationRoutes(eng *gin.Engine) {

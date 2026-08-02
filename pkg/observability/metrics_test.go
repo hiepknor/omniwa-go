@@ -29,6 +29,9 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 	registry.ExternalEventEmitter().ObserveEmission("routed", "failed", 2)
 	registry.ExternalEventEmitter().ObserveRoute(outbox.TransportWebhook, outbox.DestinationInstance)
 	registry.ExternalEventEmitter().ObserveRoute(outbox.TransportRabbitMQ, outbox.DestinationGlobal)
+	registry.ObserveProcessState("starting", false, 1)
+	registry.ObserveProcessTransition("starting", "active")
+	registry.ObserveProcessState("active", true, 2)
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -58,6 +61,10 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 		`omniwa_external_event_emitter_route_count_sum{mode="routed",outcome="failed"} 2`,
 		`omniwa_external_event_emitter_routes_total{destination="instance",transport="webhook"} 1`,
 		`omniwa_external_event_emitter_routes_total{destination="global",transport="rabbitmq"} 1`,
+		`omniwa_runtime_role{role="active"} 1`,
+		`omniwa_runtime_role{role="starting"} 0`,
+		`omniwa_runtime_ready 1`,
+		`omniwa_runtime_role_transitions_total{from="starting",to="active"} 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q", expected)
@@ -87,6 +94,9 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	registry.ExternalEventEmitter().ObserveEmission("routed", "success", 99)
 	registry.ExternalEventEmitter().ObserveRoute(outbox.Transport("instance-123"), outbox.DestinationInstance)
 	registry.ExternalEventEmitter().ObserveRoute(outbox.TransportWebhook, outbox.Destination("provider_120363@g.us"))
+	registry.ObserveProcessState("instance-123", false, 1)
+	registry.ObserveProcessState("active", false, 2)
+	registry.ObserveProcessTransition("instance-123", "active")
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -95,9 +105,27 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total", "omniwa_external_event_outbox_attempts_total", "omniwa_external_event_outbox_infrastructure_failures_total", "omniwa_external_event_emitter_records_total", "omniwa_external_event_emitter_routes_total"} {
+	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total", "omniwa_external_event_outbox_attempts_total", "omniwa_external_event_outbox_infrastructure_failures_total", "omniwa_external_event_emitter_records_total", "omniwa_external_event_emitter_routes_total", "omniwa_runtime_role"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("invalid metric material was exposed: %q", forbidden)
+		}
+	}
+}
+
+func TestRegistryIgnoresStaleProcessStateObservation(t *testing.T) {
+	registry, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.ObserveProcessState("active", true, 3)
+	registry.ObserveProcessState("starting", false, 2)
+
+	request := httptest.NewRequest("GET", "/metrics", nil)
+	response := httptest.NewRecorder()
+	registry.Handler().ServeHTTP(response, request)
+	for _, expected := range []string{`omniwa_runtime_role{role="active"} 1`, `omniwa_runtime_role{role="starting"} 0`, `omniwa_runtime_ready 1`} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("metrics missing %q", expected)
 		}
 	}
 }

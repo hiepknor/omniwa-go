@@ -18,6 +18,8 @@ import (
 
 type ServerHandler interface {
 	ServerOk(ctx *gin.Context)
+	RuntimeLive(ctx *gin.Context)
+	RuntimeReady(ctx *gin.Context)
 	Capabilities(ctx *gin.Context)
 	ProjectionHealth(ctx *gin.Context)
 	EventHistory(ctx *gin.Context)
@@ -62,6 +64,16 @@ type serverHandler struct {
 	failures          *projection_service.FailureService
 	adminCapabilities []string
 	instances         capabilityInstanceReader
+	runtime           RuntimeHealth
+}
+
+type RuntimeHealth interface {
+	Live() bool
+	Ready() bool
+}
+
+type RuntimeStatusResponse struct {
+	Status string `json:"status"`
 }
 
 type capabilityInstanceReader interface {
@@ -192,6 +204,40 @@ func (s *serverHandler) ServerOk(ctx *gin.Context) {
 	})
 }
 
+// RuntimeLive reports only whether the process control plane is alive.
+// @Summary Get process liveness
+// @Description Returns no dependency or topology detail.
+// @Tags Server
+// @Produce json
+// @Success 200 {object} RuntimeStatusResponse
+// @Failure 503 {object} RuntimeStatusResponse
+// @Router /server/live [get]
+func (s *serverHandler) RuntimeLive(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
+	if s.runtime == nil || !s.runtime.Live() {
+		ctx.JSON(http.StatusServiceUnavailable, RuntimeStatusResponse{Status: "not_live"})
+		return
+	}
+	ctx.JSON(http.StatusOK, RuntimeStatusResponse{Status: "ok"})
+}
+
+// RuntimeReady reports whether this process may receive business traffic.
+// @Summary Get process readiness
+// @Description Returns ready only for the active process role.
+// @Tags Server
+// @Produce json
+// @Success 200 {object} RuntimeStatusResponse
+// @Failure 503 {object} RuntimeStatusResponse
+// @Router /server/ready [get]
+func (s *serverHandler) RuntimeReady(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
+	if s.runtime == nil || !s.runtime.Ready() {
+		ctx.JSON(http.StatusServiceUnavailable, RuntimeStatusResponse{Status: "not_ready"})
+		return
+	}
+	ctx.JSON(http.StatusOK, RuntimeStatusResponse{Status: "ready"})
+}
+
 // Capabilities returns non-sensitive server and instance capability metadata.
 // @Summary Get server capabilities
 // @Description Authenticates either the global admin key or an instance token and returns an explicit credentialScope. Admin credentials may target one instance with instanceId; instance credentials are always scoped to their own instance.
@@ -307,6 +353,10 @@ func WithAdminCapabilities(capabilities ...string) ServerOption {
 
 func WithCapabilityInstanceReader(instances capabilityInstanceReader) ServerOption {
 	return func(handler *serverHandler) { handler.instances = instances }
+}
+
+func WithRuntimeHealth(runtime RuntimeHealth) ServerOption {
+	return func(handler *serverHandler) { handler.runtime = runtime }
 }
 
 func NewServerHandler(version, revision string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overview *projection_service.OverviewService, options ...ServerOption) ServerHandler {

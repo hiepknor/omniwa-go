@@ -29,6 +29,58 @@ type projectionStateHandlerStub struct {
 	capabilitiesErr        error
 }
 
+type runtimeHealthStub struct {
+	live  bool
+	ready bool
+}
+
+func (s runtimeHealthStub) Live() bool  { return s.live }
+func (s runtimeHealthStub) Ready() bool { return s.ready }
+
+func TestRuntimeHealthEndpointsFailClosedAndDoNotCache(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, test := range []struct {
+		name       string
+		health     RuntimeHealth
+		invoke     func(ServerHandler, *gin.Context)
+		wantStatus int
+		wantBody   string
+	}{
+		{name: "live", health: runtimeHealthStub{live: true}, invoke: func(handler ServerHandler, ctx *gin.Context) { handler.RuntimeLive(ctx) }, wantStatus: http.StatusOK, wantBody: `{"status":"ok"}`},
+		{name: "terminated", health: runtimeHealthStub{}, invoke: func(handler ServerHandler, ctx *gin.Context) { handler.RuntimeLive(ctx) }, wantStatus: http.StatusServiceUnavailable, wantBody: `{"status":"not_live"}`},
+		{name: "active", health: runtimeHealthStub{live: true, ready: true}, invoke: func(handler ServerHandler, ctx *gin.Context) { handler.RuntimeReady(ctx) }, wantStatus: http.StatusOK, wantBody: `{"status":"ready"}`},
+		{name: "standby", health: runtimeHealthStub{live: true}, invoke: func(handler ServerHandler, ctx *gin.Context) { handler.RuntimeReady(ctx) }, wantStatus: http.StatusServiceUnavailable, wantBody: `{"status":"not_ready"}`},
+		{name: "missing live state", invoke: func(handler ServerHandler, ctx *gin.Context) { handler.RuntimeLive(ctx) }, wantStatus: http.StatusServiceUnavailable, wantBody: `{"status":"not_live"}`},
+		{name: "missing state", invoke: func(handler ServerHandler, ctx *gin.Context) { handler.RuntimeReady(ctx) }, wantStatus: http.StatusServiceUnavailable, wantBody: `{"status":"not_ready"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := NewServerHandler("test", "abc123", nil, nil, nil, WithRuntimeHealth(test.health))
+			response := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(response)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/server/health", nil)
+			test.invoke(handler, ctx)
+			if response.Code != test.wantStatus || strings.TrimSpace(response.Body.String()) != test.wantBody {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("Cache-Control=%q", response.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
+func TestServerOkContractIsUnchanged(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewServerHandler("test", "abc123", nil, nil, nil)
+	response := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(response)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/server/ok", nil)
+	handler.ServerOk(ctx)
+	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != `{"status":"ok"}` {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func (s *projectionStateHandlerStub) Get(string, string) (*projection_model.State, error) {
 	return nil, nil
 }
