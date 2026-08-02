@@ -110,11 +110,7 @@ func startBackground(supervisor *bootstrap.Supervisor, name string, work bootstr
 	}
 }
 
-func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *bootstrap.Supervisor) *gin.Engine {
-	metricsRegistry, err := observability.NewRegistry()
-	if err != nil {
-		logger.LogFatal("component=metrics action=initialize result=failed detail=%v", err)
-	}
+func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, appCtx context.Context, backgroundWorkers *bootstrap.Supervisor, metricsRegistry *observability.Registry, processState *bootstrap.ProcessState) *gin.Engine {
 	runtimeRegistry := bootstrap.NewInstanceRuntime(appCtx)
 
 	loggerWrapper := logger_wrapper.NewLoggerManager(config)
@@ -934,6 +930,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			server_handler.WithFailureService(projectionFailureService),
 			server_handler.WithAdminCapabilities(credentialCapabilities...),
 			server_handler.WithCapabilityInstanceReader(instanceRepository),
+			server_handler.WithRuntimeHealth(processState),
 		),
 		routes.WithConversationAPIObserver(metricsRegistry.ConversationAPI()),
 	).AssignRoutes(r)
@@ -1051,6 +1048,11 @@ func main() {
 	}
 
 	cfg := config.Load()
+	metricsRegistry, err := observability.NewRegistry()
+	if err != nil {
+		logger.LogFatal("component=metrics action=initialize result=failed detail=%v", err)
+	}
+	processState := bootstrap.NewProcessState(metricsRegistry)
 
 	logger.LogInfo("Starting OmniWA GO version %s revision %s", version, revision)
 
@@ -1151,11 +1153,17 @@ func main() {
 	ownershipLost := make(chan error, 1)
 	startBackground(backgroundWorkers, "instance_ownership.monitor", func(ctx context.Context) error {
 		if err := ownershipGuard.Monitor(ctx, 5*time.Second); err != nil {
+			if transitionErr := processState.Transition(bootstrap.ProcessRoleDraining); transitionErr != nil {
+				logger.LogError("component=runtime_role action=transition trigger=ownership_lost to=draining result=failed error_code=invalid_transition")
+			}
 			ownershipLost <- err
 		}
 		return nil
 	})
-	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, backgroundWorkers)
+	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, appCtx, backgroundWorkers, metricsRegistry, processState)
+	if err := processState.Transition(bootstrap.ProcessRoleActive); err != nil {
+		logger.LogFatal("component=runtime_role action=transition to=active result=failed error_code=invalid_transition")
+	}
 
 	// Graceful shutdown with heartbeat
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
@@ -1191,6 +1199,9 @@ func main() {
 	case ownershipErr := <-ownershipLost:
 		logger.LogError("[SHUTDOWN] Ownership lost, shutting down: %v", ownershipErr)
 	}
+	if err := processState.Transition(bootstrap.ProcessRoleDraining); err != nil {
+		logger.LogError("component=runtime_role action=transition to=draining result=failed error_code=invalid_transition")
+	}
 
 	// Stop heartbeat loop
 	heartbeatCancel()
@@ -1211,6 +1222,9 @@ func main() {
 		logger.LogInfo("[SHUTDOWN] Background workers stopped")
 	case <-shutdownCtx.Done():
 		logger.LogError("[SHUTDOWN] Background worker shutdown timed out")
+	}
+	if err := processState.Transition(bootstrap.ProcessRoleTerminated); err != nil {
+		logger.LogError("component=runtime_role action=transition to=terminated result=failed error_code=invalid_transition")
 	}
 
 	logger.LogInfo("[SHUTDOWN] Server exited")

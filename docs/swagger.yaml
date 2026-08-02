@@ -3319,6 +3319,11 @@ definitions:
     - reason
     - resource
     type: object
+  pkg_server_handler.RuntimeStatusResponse:
+    properties:
+      status:
+        type: string
+    type: object
   types.AddressingMode:
     enum:
     - pn
@@ -14567,6 +14572,23 @@ paths:
       summary: Get split server health
       tags:
       - Server
+  /server/live:
+    get:
+      description: Returns no dependency or topology detail.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg_server_handler.RuntimeStatusResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/pkg_server_handler.RuntimeStatusResponse'
+      summary: Get process liveness
+      tags:
+      - Server
   /server/overview:
     get:
       parameters:
@@ -14774,6 +14796,23 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get projection health metrics
+      tags:
+      - Server
+  /server/ready:
+    get:
+      description: Returns ready only for the active process role.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pkg_server_handler.RuntimeStatusResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/pkg_server_handler.RuntimeStatusResponse'
+      summary: Get process readiness
       tags:
       - Server
   /unlabel/chat:

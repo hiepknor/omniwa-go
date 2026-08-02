@@ -5,6 +5,7 @@ package observability
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/evolution-foundation/evolution-go/pkg/events/emission"
@@ -84,6 +85,11 @@ type Registry struct {
 	phoneIdentityEvidence        *prometheus.CounterVec
 	phoneNumberResolution        *prometheus.CounterVec
 	phonePayloadPolicy           *prometheus.CounterVec
+	processRole                  *prometheus.GaugeVec
+	processReady                 prometheus.Gauge
+	processTransitions           *prometheus.CounterVec
+	processStateMu               sync.Mutex
+	processStateRevision         uint64
 }
 
 // NewRegistry constructs an isolated registry. Registration failures are
@@ -165,6 +171,18 @@ func NewRegistry() (*Registry, error) {
 			Namespace: "omniwa", Subsystem: "phone_identity", Name: "payload_policy_total",
 			Help: "Phone payload policy applications by bounded outcome.",
 		}, []string{"outcome"}),
+		processRole: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "omniwa", Subsystem: "runtime", Name: "role",
+			Help: "Current process role as a one-hot gauge over bounded roles.",
+		}, []string{"role"}),
+		processReady: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "omniwa", Subsystem: "runtime", Name: "ready",
+			Help: "Whether the process is ready to receive business traffic.",
+		}),
+		processTransitions: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "omniwa", Subsystem: "runtime", Name: "role_transitions_total",
+			Help: "Successful process role transitions between bounded roles.",
+		}, []string{"from", "to"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -175,12 +193,57 @@ func NewRegistry() (*Registry, error) {
 		result.outboxQueue, result.outboxOldestPending, result.outboxInfrastructureFailures,
 		result.emitterRecords, result.emitterRouteCount, result.emitterRoutes,
 		result.phoneIdentityEvidence, result.phoneNumberResolution, result.phonePayloadPolicy,
+		result.processRole, result.processReady, result.processTransitions,
 	} {
 		if err := result.registry.Register(collector); err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
+}
+
+var processRoles = [...]string{"starting", "standby", "promotion_pending", "active", "draining", "terminated"}
+
+// ObserveProcessState records only the newest process-local state revision. The
+// revision prevents delayed concurrent callbacks from restoring stale gauges.
+func (r *Registry) ObserveProcessState(role string, ready bool, revision uint64) {
+	if r == nil || !validProcessRole(role) || revision == 0 || ready != (role == "active") {
+		return
+	}
+	r.processStateMu.Lock()
+	defer r.processStateMu.Unlock()
+	if revision <= r.processStateRevision {
+		return
+	}
+	for _, candidate := range processRoles {
+		value := 0.0
+		if candidate == role {
+			value = 1
+		}
+		r.processRole.WithLabelValues(candidate).Set(value)
+	}
+	if ready {
+		r.processReady.Set(1)
+	} else {
+		r.processReady.Set(0)
+	}
+	r.processStateRevision = revision
+}
+
+func (r *Registry) ObserveProcessTransition(from, to string) {
+	if r == nil || !validProcessRole(from) || !validProcessRole(to) || from == to {
+		return
+	}
+	r.processTransitions.WithLabelValues(from, to).Inc()
+}
+
+func validProcessRole(value string) bool {
+	for _, role := range processRoles {
+		if value == role {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Registry) ObservePhoneNumberResolution(outcome string) {

@@ -7407,6 +7407,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/server/live": {
+            "get": {
+                "description": "Returns no dependency or topology detail.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Get process liveness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_server_handler.RuntimeStatusResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_server_handler.RuntimeStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/server/overview": {
             "get": {
                 "security": [
@@ -7754,6 +7780,32 @@ const docTemplate = `{
                         "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/server/ready": {
+            "get": {
+                "description": "Returns ready only for the active process role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Get process readiness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_server_handler.RuntimeStatusResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_server_handler.RuntimeStatusResponse"
                         }
                     }
                 }
@@ -13546,6 +13598,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "resource": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_server_handler.RuntimeStatusResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
                     "type": "string"
                 }
             }

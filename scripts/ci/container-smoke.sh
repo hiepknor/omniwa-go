@@ -44,7 +44,7 @@ refresh_runtime_coordinates
 wait_for_liveness() {
   local attempt
   for attempt in $(seq 1 60); do
-    if curl --fail --silent "$base_url/server/ok" 2>/dev/null | jq -e '.status == "ok"' >/dev/null; then
+    if curl --fail --silent "$base_url/server/live" 2>/dev/null | jq -e '.status == "ok"' >/dev/null; then
       return 0
     fi
     sleep 2
@@ -52,6 +52,12 @@ wait_for_liveness() {
   "${compose[@]}" logs omniwa-go >&2
   echo "container did not become live within 120 seconds" >&2
   return 1
+}
+
+assert_runtime_health_contract() {
+  curl --fail --silent --show-error "$base_url/server/live" | jq -e '.status == "ok"' >/dev/null
+  curl --fail --silent --show-error "$base_url/server/ready" | jq -e '.status == "ready"' >/dev/null
+  curl --fail --silent --show-error "$base_url/server/ok" | jq -e '.status == "ok"' >/dev/null
 }
 
 assert_artifact_identity() {
@@ -82,12 +88,14 @@ assert_migrations() {
 }
 
 wait_for_liveness
+assert_runtime_health_contract
 assert_artifact_identity
 assert_migrations
 
 "${compose[@]}" restart omniwa-go
 refresh_runtime_coordinates
 wait_for_liveness
+assert_runtime_health_contract
 assert_artifact_identity
 assert_migrations
 
