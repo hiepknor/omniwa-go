@@ -149,6 +149,11 @@ Use stop-first/Recreate upgrades, not start-first or surge rollouts. See the
   handshakes; same-host requests and clients without an `Origin` header remain
   allowed. Wildcards, URL paths, credentials, queries, and fragments are
   rejected during startup.
+- Keep `HTTP_TRUSTED_PROXIES` empty when the API is directly exposed. When a
+  private reverse proxy such as Caddy is used, set it to only the proxy IPs or
+  CIDRs (for same-host native Caddy, normally `127.0.0.1,::1`) and prevent
+  direct public access to the backend port. Authentication failure throttling
+  uses this trusted client-IP boundary.
 - Sensitive application settings support `NAME_FILE` as an additive alternative
   to `NAME`. Configuring both with non-empty values fails startup.
 - Ports: API `4000`; development Prometheus `127.0.0.1:9090`; production full

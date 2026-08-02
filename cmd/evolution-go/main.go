@@ -941,6 +941,9 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 
 	r := gin.Default()
+	if err := r.SetTrustedProxies(config.HTTPTrustedProxies); err != nil {
+		logger.LogFatal("component=http action=configure_trusted_proxies result=failed detail=%v", err)
+	}
 	r.Use(httpapi.RequestIdentity())
 	r.Use(originPolicy.Middleware())
 	r.Use(auth_middleware.BodyLimit())
@@ -1097,7 +1100,7 @@ func initPostgresAuthDB(config *config.Config) (*sql.DB, error) {
 
 // @title OmniWA GO
 // @version 1.0
-// @description OmniWA GO - WhatsApp API (whatsmeow). All endpoints are authenticated with an `apikey` HTTP header. Admin routes under `/instance` (create/all/info/delete/proxy/forcereconnect/logs) require the global key from `GLOBAL_API_KEY`; every other route requires the target instance's own token as the `apikey`. See docs/wiki-en for the WebUI integration guide, including the realtime `/ws` event stream (not describable in Swagger 2.0).
+// @description OmniWA GO - WhatsApp API (whatsmeow). All endpoints are authenticated with an `apikey` HTTP header. Admin routes under `/instance` (create/all/info/delete/proxy/forcereconnect/logs) require the global key from `GLOBAL_API_KEY`; every other route requires the target instance's own token as the `apikey`. Repeated authentication failures may return HTTP 429 with `Retry-After`. See docs/wiki-en for the WebUI integration guide, including the realtime `/ws` event stream (not describable in Swagger 2.0).
 // @contact.name OmniWA GO
 // @license.name Apache-2.0
 // @license.url https://www.apache.org/licenses/LICENSE-2.0

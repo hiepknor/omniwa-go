@@ -1,6 +1,7 @@
 package auth_middleware
 
 import (
+	"crypto/subtle"
 	"errors"
 	"net/http"
 
@@ -24,15 +25,20 @@ type InstanceTokenResolver interface {
 type middleware struct {
 	config          *config.Config
 	instanceService InstanceTokenResolver
+	authFailures    *authFailureLimiter
 }
 
 func (m middleware) AuthAdminOrInstance(ctx *gin.Context) {
-	token := ctx.GetHeader("apikey")
-	if token == "" {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+	source, ok := m.admitAuthentication(ctx)
+	if !ok {
 		return
 	}
-	if token == m.config.GlobalApiKey {
+	token := ctx.GetHeader("apikey")
+	if token == "" {
+		m.rejectAuthentication(ctx, source)
+		return
+	}
+	if credentialsEqual(token, m.config.GlobalApiKey) {
 		ctx.Set("auth_scope", "admin")
 		httpapi.SetAuthPrincipal(ctx, httpapi.AuthPrincipal{Scope: httpapi.CredentialScopeAdmin})
 		ctx.Next()
@@ -40,7 +46,7 @@ func (m middleware) AuthAdminOrInstance(ctx *gin.Context) {
 	}
 	instance, err := m.instanceService.GetInstanceByToken(token)
 	if errors.Is(err, instance_service.ErrInvalidInstanceCredential) {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		m.rejectAuthentication(ctx, source)
 		return
 	}
 	if err != nil {
@@ -60,15 +66,29 @@ func (m middleware) AuthAdminOrInstance(ctx *gin.Context) {
 }
 
 func (m middleware) Auth(ctx *gin.Context) {
+	source, ok := m.admitAuthentication(ctx)
+	if !ok {
+		return
+	}
 	token := ctx.GetHeader("apikey")
 	if token == "" {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		m.rejectAuthentication(ctx, source)
 		return
 	}
 
 	instance, err := m.instanceService.GetInstanceByToken(token)
+	if errors.Is(err, instance_service.ErrInvalidInstanceCredential) {
+		m.rejectAuthentication(ctx, source)
+		return
+	}
 	if err != nil {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		httpapi.WriteInternal(ctx, err)
+		ctx.Abort()
+		return
+	}
+	if instance == nil || instance.Id == "" {
+		httpapi.WriteInternal(ctx, errors.New("instance credential resolver returned an invalid principal"))
+		ctx.Abort()
 		return
 	}
 
@@ -79,14 +99,18 @@ func (m middleware) Auth(ctx *gin.Context) {
 }
 
 func (m middleware) AuthAdmin(ctx *gin.Context) {
+	source, ok := m.admitAuthentication(ctx)
+	if !ok {
+		return
+	}
 	token := ctx.GetHeader("apikey")
 	if token == "" {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		m.rejectAuthentication(ctx, source)
 		return
 	}
 
-	if token != m.config.GlobalApiKey {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+	if !credentialsEqual(token, m.config.GlobalApiKey) {
+		m.rejectAuthentication(ctx, source)
 		return
 	}
 
@@ -95,5 +119,26 @@ func (m middleware) AuthAdmin(ctx *gin.Context) {
 }
 
 func NewMiddleware(config *config.Config, instanceService InstanceTokenResolver) *middleware {
-	return &middleware{config: config, instanceService: instanceService}
+	return &middleware{config: config, instanceService: instanceService, authFailures: defaultAuthFailureLimiter()}
+}
+
+func (m middleware) admitAuthentication(ctx *gin.Context) (string, bool) {
+	source := authSourceKey(ctx)
+	if retryAfter, limited := m.authFailures.retryAfter(source); limited {
+		writeAuthRateLimit(ctx, retryAfter)
+		return "", false
+	}
+	return source, true
+}
+
+func (m middleware) rejectAuthentication(ctx *gin.Context, source string) {
+	if retryAfter, limited := m.authFailures.recordFailure(source); limited {
+		writeAuthRateLimit(ctx, retryAfter)
+		return
+	}
+	ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+}
+
+func credentialsEqual(provided, expected string) bool {
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
 }
