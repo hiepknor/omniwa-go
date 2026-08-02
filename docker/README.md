@@ -100,6 +100,29 @@ verified `ghcr.io/hiepknor/omniwa-go@sha256:...` value recorded by the publish
 workflow, and `POSTGRES_IMAGE` must also identify an immutable digest. Keep the
 previous digests as rollback targets.
 
+### One-shot database migration
+
+The image exposes a `migrate` command that upgrades the users database, the
+WhatsApp auth store, and the licensed runtime table when the license gate is
+enabled. The command takes the same single-replica PostgreSQL ownership lock as
+the server and fails while an application process still owns the database.
+
+For a controlled production migration, stop the application, run the
+least-privilege operations service, and start the application again:
+
+```bash
+docker compose stop omniwa-go
+docker compose up -d --wait postgres
+docker compose --profile operations run --rm --no-deps omniwa-migrate
+docker compose up -d omniwa-go
+curl --fail http://localhost:4000/server/ready
+```
+
+The operations service receives only the users and auth database DSNs. Running
+the command repeatedly is supported. A failed command must not be bypassed by
+starting the new application image; restore the previous image digest or fix
+the database failure and rerun the same command.
+
 The production stack does not accept built-in credentials. Before rendering it,
 materialize the global API key, PostgreSQL password, and both application DSNs
 at the paths configured by `OMNIWA_*_FILE`. Files under `docker/secrets/` are

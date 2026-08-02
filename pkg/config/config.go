@@ -141,6 +141,39 @@ type Config struct {
 	ConversationBackfillMaxBatches       int
 }
 
+// LoadMigration returns the minimal configuration needed by the one-shot
+// database migration command. It intentionally does not require application,
+// transport, storage, or API credentials.
+func LoadMigration() (*Config, error) {
+	postgresAuthDB, err := readSensitiveValue(config_env.POSTGRES_AUTH_DB)
+	if err != nil {
+		return nil, fmt.Errorf("load auth database configuration: %w", err)
+	}
+	postgresUsersDB, err := readSensitiveValue(config_env.POSTGRES_USERS_DB)
+	if err != nil {
+		return nil, fmt.Errorf("load users database configuration: %w", err)
+	}
+	postgresPassword, err := readSensitiveValue(config_env.POSTGRES_PASSWORD)
+	if err != nil {
+		return nil, fmt.Errorf("load database password: %w", err)
+	}
+
+	configuration := &Config{
+		PostgresAuthDB:     postgresAuthDB,
+		postgresUsersDB:    postgresUsersDB,
+		PostgresHost:       os.Getenv(config_env.POSTGRES_HOST),
+		PostgresPort:       os.Getenv(config_env.POSTGRES_PORT),
+		PostgresUser:       os.Getenv(config_env.POSTGRES_USER),
+		PostgresPassword:   postgresPassword,
+		PostgresDB:         os.Getenv(config_env.POSTGRES_DB),
+		LicenseGateEnabled: os.Getenv(config_env.LICENSE_GATE_ENABLED) != "false",
+	}
+	if configuration.postgresUsersDB == "" && (configuration.PostgresHost == "" || configuration.PostgresPort == "" || configuration.PostgresUser == "" || configuration.PostgresPassword == "" || configuration.PostgresDB == "") {
+		return nil, errors.New("users database DSN or all PostgreSQL connection fields are required")
+	}
+	return configuration, nil
+}
+
 type RemoteMediaConfig struct {
 	Policy       string
 	AllowedHosts []string

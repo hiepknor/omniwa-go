@@ -45,12 +45,10 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_credential "github.com/evolution-foundation/evolution-go/pkg/instance/credential"
 	instance_handler "github.com/evolution-foundation/evolution-go/pkg/instance/handler"
-	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	instance_ownership "github.com/evolution-foundation/evolution-go/pkg/instance/ownership"
 	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
 	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
 	label_handler "github.com/evolution-foundation/evolution-go/pkg/label/handler"
-	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 	label_service "github.com/evolution-foundation/evolution-go/pkg/label/service"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
@@ -59,11 +57,9 @@ import (
 	media_repository "github.com/evolution-foundation/evolution-go/pkg/media/repository"
 	media_service "github.com/evolution-foundation/evolution-go/pkg/media/service"
 	message_handler "github.com/evolution-foundation/evolution-go/pkg/message/handler"
-	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
 	message_service "github.com/evolution-foundation/evolution-go/pkg/message/service"
 	auth_middleware "github.com/evolution-foundation/evolution-go/pkg/middleware"
-	"github.com/evolution-foundation/evolution-go/pkg/migrations"
 	"github.com/evolution-foundation/evolution-go/pkg/netguard"
 	newsletter_handler "github.com/evolution-foundation/evolution-go/pkg/newsletter/handler"
 	newsletter_service "github.com/evolution-foundation/evolution-go/pkg/newsletter/service"
@@ -964,15 +960,65 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	return r
 }
 
-func migrate(db *gorm.DB) {
-	err := db.AutoMigrate(&instance_model.Instance{}, &message_model.Message{}, &label_model.Label{})
+func runMigrations(ctx context.Context, db *gorm.DB, config *config.Config, exPath string) error {
+	authDialect := "postgres"
+	authAddress := config.PostgresAuthDB
+	if authAddress == "" {
+		authDialect = "sqlite"
+		authAddress = fmt.Sprintf("file:%s/dbdata/main.db?_pragma=foreign_keys(1)&_busy_timeout=5000&cache=shared&mode=rwc&_journal_mode=WAL", exPath)
+	}
+	var migrateCore bootstrap.CoreMigration
+	if config.LicenseGateEnabled {
+		migrateCore = func(usersDB *gorm.DB) error {
+			core.SetDB(usersDB)
+			return core.MigrateDB()
+		}
+	}
+	return bootstrap.RunMigrations(ctx, bootstrap.MigrationDependencies{
+		UsersDB: db, AuthDialect: authDialect, AuthAddress: authAddress, MigrateCore: migrateCore,
+	})
+}
 
+func runMigrationCommand(ctx context.Context, config *config.Config) (runErr error) {
+	db, err := config.CreateUsersDB()
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("connect users database: %w", err)
 	}
-	if err := migrations.Run(db); err != nil {
-		log.Fatal(err)
+	usersDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("access users database pool: %w", err)
 	}
+	defer func() { runErr = errors.Join(runErr, usersDB.Close()) }()
+
+	ownershipCtx, ownershipCancel := context.WithTimeout(ctx, 10*time.Second)
+	ownershipGuard, err := instance_ownership.Acquire(ownershipCtx, usersDB)
+	ownershipCancel()
+	if err != nil {
+		return fmt.Errorf("acquire migration ownership: %w", err)
+	}
+	defer func() {
+		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer releaseCancel()
+		runErr = errors.Join(runErr, ownershipGuard.Close(releaseCtx))
+	}()
+
+	if config.PostgresAuthDB != "" {
+		if err := config.EnsureDBExists(config.PostgresAuthDB); err != nil {
+			logger.LogWarn("Auto-setup auth DB failed (will try connecting anyway): %v", err)
+		}
+	}
+	sqliteDB, exPath, err := initAuthDB(config)
+	if err != nil {
+		return err
+	}
+	if sqliteDB != nil {
+		defer func() { runErr = errors.Join(runErr, sqliteDB.Close()) }()
+	}
+
+	if err := runMigrations(ctx, db, config, exPath); err != nil {
+		return err
+	}
+	return nil
 }
 
 func initAuthDB(config *config.Config) (*sql.DB, string, error) {
@@ -982,7 +1028,7 @@ func initAuthDB(config *config.Config) (*sql.DB, string, error) {
 
 	ex, err := os.Executable()
 	if err != nil {
-		panic(err)
+		return nil, "", fmt.Errorf("resolve executable path: %w", err)
 	}
 	exPath := filepath.Dir(ex)
 
@@ -991,8 +1037,10 @@ func initAuthDB(config *config.Config) (*sql.DB, string, error) {
 	if os.IsNotExist(err) {
 		errDir := os.MkdirAll(dbDirectory, 0751)
 		if errDir != nil {
-			panic("Could not create dbdata directory")
+			return nil, "", fmt.Errorf("create auth database directory: %w", errDir)
 		}
+	} else if err != nil {
+		return nil, "", fmt.Errorf("inspect auth database directory: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", exPath+"/dbdata/users.db?_pragma=foreign_keys(1)&_busy_timeout=3000")
@@ -1025,6 +1073,7 @@ func initPostgresAuthDB(config *config.Config) (*sql.DB, error) {
 
 	err = db.Ping()
 	if err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("erro ao pingar banco AUTH PostgreSQL: %v", err)
 	}
 
@@ -1051,6 +1100,24 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	}
+	command, err := bootstrap.ParseCommand(flag.Args())
+	if err != nil {
+		log.Fatal(err)
+	}
+	if command == bootstrap.CommandMigrate {
+		migrationConfig, err := config.LoadMigration()
+		if err != nil {
+			log.Fatal(err)
+		}
+		migrationCtx, stopMigration := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stopMigration()
+		logger.LogInfo("component=migrations action=run result=started")
+		if err := runMigrationCommand(migrationCtx, migrationConfig); err != nil {
+			logger.LogFatal("component=migrations action=run result=failed detail=%v", err)
+		}
+		logger.LogInfo("component=migrations action=run result=success")
+		return
 	}
 
 	cfg := config.Load()
@@ -1106,17 +1173,15 @@ func main() {
 		defer sqliteDB.Close()
 	}
 
-	migrate(db)
+	if err := runMigrations(context.Background(), db, cfg, exPath); err != nil {
+		log.Fatal(err)
+	}
 
 	// Initialize core DB + license runtime only when the gate is enabled.
 	// With LICENSE_GATE_ENABLED=false the runtime context stays nil and the
 	// server never contacts the licensing server.
 	var runtimeCtx *core.RuntimeContext
 	if cfg.LicenseGateEnabled {
-		core.SetDB(db)
-		if err := core.MigrateDB(); err != nil {
-			log.Fatal("Failed to migrate runtime_configs: ", err)
-		}
 		tier := "evolution-go"
 		runtimeCtx = core.InitializeRuntime(tier, version, cfg.GlobalApiKey)
 	} else {
