@@ -654,3 +654,27 @@ func TestPhoneIdentityEvidenceMigrationIsTenantScopedAndAdditive(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeOwnershipEpochMigrationIsSingletonAndAdditive(t *testing.T) {
+	migration := registeredMigration(t, 41)
+	if migration.Name != "create_runtime_ownership_epoch" {
+		t.Fatalf("runtime ownership epoch migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"CREATE TABLE runtime_ownership_epochs",
+		"scope VARCHAR(32) PRIMARY KEY",
+		"epoch BIGINT NOT NULL",
+		"activated_at TIMESTAMPTZ NOT NULL",
+		"CHECK (scope = 'application')",
+		"CHECK (epoch > 0)",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("runtime ownership epoch migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP TABLE", "DROP COLUMN", "TRUNCATE", "DELETE FROM"} {
+		if strings.Contains(migration.SQL, forbidden) {
+			t.Fatalf("runtime ownership epoch migration contains unsafe SQL %q", forbidden)
+		}
+	}
+}

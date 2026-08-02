@@ -1841,6 +1841,19 @@ WHERE lid_jid IS NOT NULL;
 CREATE INDEX projection_phone_identity_evidence_lookup_idx
 ON projection_phone_identity_evidence (instance_id, last_observed_at DESC);`,
 	},
+	{
+		Version: 41,
+		Name:    "create_runtime_ownership_epoch",
+		SQL: `CREATE TABLE runtime_ownership_epochs (
+    scope VARCHAR(32) PRIMARY KEY,
+    epoch BIGINT NOT NULL,
+    activated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT runtime_ownership_epochs_scope_check
+        CHECK (scope = 'application'),
+    CONSTRAINT runtime_ownership_epochs_epoch_check
+        CHECK (epoch > 0)
+);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

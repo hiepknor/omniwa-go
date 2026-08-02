@@ -13,7 +13,7 @@ project_suffix="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${PPID}"
 project_name="omniwa-smoke-${project_suffix//[^a-zA-Z0-9_-]/-}"
 smoke_image="omniwa-smoke:${project_suffix//[^a-zA-Z0-9_.-]/-}"
 smoke_active_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-expected_migrations="40:40"
+expected_migrations="41:41"
 
 if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
   echo "SOURCE_SHA must be a full 40-character lowercase Git commit" >&2
@@ -165,11 +165,19 @@ assert_auth_migrations() {
   fi
 }
 
+ownership_epoch() {
+  "${compose[@]}" exec --no-TTY postgres psql \
+    --username postgres --dbname omniwa_users --tuples-only --no-align \
+    --command "SELECT epoch FROM runtime_ownership_epochs WHERE scope = 'application'"
+}
+
 wait_for_liveness
 assert_runtime_health_contract
 assert_artifact_identity
 assert_migrations
 assert_auth_migrations
+initial_ownership_epoch="$(ownership_epoch)"
+[[ "$initial_ownership_epoch" =~ ^[1-9][0-9]*$ ]]
 
 drill_temporary="$(mktemp -d)"
 printf '%s\n' "$smoke_api_key" >"$drill_temporary/api-key"
@@ -200,6 +208,8 @@ assert_runtime_health_contract
 assert_artifact_identity
 assert_migrations
 assert_auth_migrations
+promoted_ownership_epoch="$(ownership_epoch)"
+[[ "$promoted_ownership_epoch" -eq $((initial_ownership_epoch + 1)) ]]
 
 if "${compose[@]}" run --rm --no-deps omniwa-go migrate; then
   echo "migration command acquired ownership while the application was active" >&2
@@ -213,5 +223,7 @@ assert_runtime_health_contract
 assert_artifact_identity
 assert_migrations
 assert_auth_migrations
+restarted_ownership_epoch="$(ownership_epoch)"
+[[ "$restarted_ownership_epoch" -eq $((promoted_ownership_epoch + 1)) ]]
 
-echo "container smoke test passed for revision $source_sha with migrations $expected_migrations"
+echo "container smoke test passed for revision $source_sha with migrations $expected_migrations and ownership epoch $restarted_ownership_epoch"
