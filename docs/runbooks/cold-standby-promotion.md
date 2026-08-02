@@ -26,6 +26,11 @@ ownership.
 - Announce a maintenance window. Cold promotion intentionally interrupts API
   and WhatsApp availability.
 
+Before scheduling a provider-connected rehearsal, run the isolated ownership
+fence validation in
+[`ownership-fence-validation.md`](./ownership-fence-validation.md). Its passing
+database evidence is necessary but not sufficient for automatic promotion.
+
 ## Start and verify the standby
 
 From `docker/`, set `OMNIWA_IMAGE` to the candidate digest and start only the

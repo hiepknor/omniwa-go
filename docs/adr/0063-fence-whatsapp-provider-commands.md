@@ -152,3 +152,10 @@ exercise connection loss, and verify that provider callbacks are not invoked
 after stale rejection. Record RTO, duplicate inbound events, ambiguous outcomes,
 database pool saturation, and drain completion. A later ADR must evaluate that
 evidence and explicitly authorize or reject automatic promotion.
+
+The isolated PostgreSQL evidence gate is specified in
+`docs/runbooks/ownership-fence-validation.md`. It repeats held-callback epoch
+transitions, terminates a fenced transaction connection to prove typed unknown
+outcomes, and saturates a bounded command pool. Passing that gate does not
+cover provider sockets, inbound duplication, traffic control, or end-to-end
+RTO, so it does not change the automatic-promotion decision.
