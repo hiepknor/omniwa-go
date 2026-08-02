@@ -36,6 +36,8 @@ OmniWA GO HTTP API (a WhatsApp API built on [whatsmeow](https://github.com/tulir
    isolation, and the staged campaign/chat migration.
 10. **[Conversation Projections](conversation-projections.md)** — canonical
     contacts, chat naming, exact totals, and cursor/readiness semantics.
+11. **[Webhook Outbound Security](webhook-outbound-security.md)** — exact-host
+    network policy, durable delivery, and the staged phone-number rollout.
 
 ## The API in one paragraph
 
