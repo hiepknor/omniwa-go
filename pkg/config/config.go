@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -154,6 +155,9 @@ type WebhookConfig struct {
 	Timeout          time.Duration
 	MaxRequestBytes  int64
 	MaxResponseBytes int64
+	SignatureEnabled bool
+	SignatureSecret  []byte
+	SignatureKeyID   string
 }
 
 type ExternalEventOutboxConfig struct {
@@ -421,6 +425,18 @@ func Load() *Config {
 	}
 	webhookMaxRequestBytes := parsePositiveInt64OrFatal(config_env.WEBHOOK_MAX_REQUEST_BYTES, "4194304")
 	webhookMaxResponseBytes := parsePositiveInt64OrFatal(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "65536")
+	webhookSignatureEnabled, err := parseOptionalStrictBool(os.Getenv(config_env.WEBHOOK_SIGNATURE_ENABLED))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: must be true or false", config_env.WEBHOOK_SIGNATURE_ENABLED)
+	}
+	webhookSignatureSecret, err := parseOptionalBase64Key(sensitiveValue(config_env.WEBHOOK_SIGNATURE_SECRET), 32)
+	if err != nil || len(webhookSignatureSecret) != 0 && len(webhookSignatureSecret) != 32 {
+		logger.LogFatal("[CONFIG] invalid %s: must be standard base64 for exactly 32 bytes", config_env.WEBHOOK_SIGNATURE_SECRET)
+	}
+	webhookSignatureKeyID := strings.TrimSpace(os.Getenv(config_env.WEBHOOK_SIGNATURE_KEY_ID))
+	if err := validateWebhookSignatureConfig(webhookSignatureEnabled, webhookSignatureSecret, webhookSignatureKeyID); err != nil {
+		logger.LogFatal("[CONFIG] invalid Webhook signature configuration: %v", err)
+	}
 	externalEventOutboxBatch, err := parsePositiveInt(defaultIfEmpty(os.Getenv(config_env.EXTERNAL_EVENT_OUTBOX_BATCH), "4"))
 	if err != nil || externalEventOutboxBatch > 32 {
 		logger.LogFatal("[CONFIG] invalid %s: must be between 1 and 32", config_env.EXTERNAL_EVENT_OUTBOX_BATCH)
@@ -827,6 +843,9 @@ func Load() *Config {
 			Timeout:          webhookTimeout,
 			MaxRequestBytes:  webhookMaxRequestBytes,
 			MaxResponseBytes: webhookMaxResponseBytes,
+			SignatureEnabled: webhookSignatureEnabled,
+			SignatureSecret:  webhookSignatureSecret,
+			SignatureKeyID:   webhookSignatureKeyID,
 		},
 		ExternalEventOutbox: ExternalEventOutboxConfig{
 			BatchSize:     externalEventOutboxBatch,
@@ -942,6 +961,30 @@ func validatePhoneIdentityFeatureFlags(evidenceEnabled, exposureEnabled bool) er
 		return fmt.Errorf("%s=true requires %s=true", config_env.WA_PHONE_NUMBER_EXPOSURE_ENABLED, config_env.WA_PHONE_IDENTITY_EVIDENCE_ENABLED)
 	}
 	return nil
+}
+
+func validateWebhookSignatureConfig(enabled bool, secret []byte, keyID string) error {
+	if !enabled {
+		return nil
+	}
+	if len(secret) != 32 {
+		return errors.New("enabled signatures require a 32-byte secret")
+	}
+	if !regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`).MatchString(keyID) {
+		return errors.New("enabled signatures require a 1-64 character key ID using letters, digits, dot, underscore, or hyphen")
+	}
+	return nil
+}
+
+func parseOptionalStrictBool(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	default:
+		return false, errors.New("must be true or false")
+	}
 }
 
 func defaultIfEmpty(value, fallback string) string {

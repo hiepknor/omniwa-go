@@ -2,10 +2,15 @@ package webhook_producer
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	eventpayload "github.com/evolution-foundation/evolution-go/pkg/events/payload"
 	"github.com/evolution-foundation/evolution-go/pkg/netguard"
@@ -28,10 +33,44 @@ func (e *ConfirmedDeliveryError) DeliveryRetryable() bool { return e.Retryable }
 // scheduling, concurrency limits, and shutdown recovery through the outbox.
 type Producer struct {
 	requester netguard.Requester
+	signer    *hmacSigner
+	now       func() time.Time
 }
 
 func NewWebhookProducer(requester netguard.Requester) *Producer {
-	return &Producer{requester: requester}
+	return &Producer{requester: requester, now: time.Now}
+}
+
+const (
+	SignatureHeader          = "X-Omniwa-Signature"
+	SignatureTimestampHeader = "X-Omniwa-Signature-Timestamp"
+	SignatureKeyIDHeader     = "X-Omniwa-Signature-Key-ID"
+	signatureVersion         = "v1"
+)
+
+type hmacSigner struct {
+	secret []byte
+	keyID  string
+}
+
+func NewSignedWebhookProducer(requester netguard.Requester, secret []byte, keyID string) (*Producer, error) {
+	if len(secret) != sha256.Size {
+		return nil, errors.New("webhook signature secret must contain exactly 32 bytes")
+	}
+	if len(keyID) < 1 || len(keyID) > 64 {
+		return nil, errors.New("webhook signature key ID must contain between 1 and 64 characters")
+	}
+	for _, character := range keyID {
+		if !((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || strings.ContainsRune("._-", character)) {
+			return nil, errors.New("webhook signature key ID contains unsupported characters")
+		}
+	}
+	return &Producer{
+		requester: requester,
+		signer:    &hmacSigner{secret: append([]byte(nil), secret...), keyID: keyID},
+		now:       time.Now,
+	}, nil
 }
 
 func (p *Producer) sendWebhook(ctx context.Context, url string, body []byte, deliveryID string) (error, int) {
@@ -41,6 +80,12 @@ func (p *Producer) sendWebhook(ctx context.Context, url string, body []byte, del
 	header := make(http.Header)
 	header.Set("Content-Type", "application/json")
 	header.Set("X-Omniwa-Delivery-ID", deliveryID)
+	if p.signer != nil {
+		timestamp := strconv.FormatInt(p.now().UTC().Unix(), 10)
+		header.Set(SignatureTimestampHeader, timestamp)
+		header.Set(SignatureKeyIDHeader, p.signer.keyID)
+		header.Set(SignatureHeader, p.signer.sign(timestamp, deliveryID, body))
+	}
 	resp, err := p.requester.Do(ctx, http.MethodPost, url, header, body)
 	if err != nil {
 		return err, 0
@@ -49,6 +94,16 @@ func (p *Producer) sendWebhook(ctx context.Context, url string, body []byte, del
 		return errors.New("received non-2xx webhook response"), resp.StatusCode
 	}
 	return nil, resp.StatusCode
+}
+
+func (s *hmacSigner) sign(timestamp, deliveryID string, body []byte) string {
+	mac := hmac.New(sha256.New, s.secret)
+	_, _ = mac.Write([]byte(timestamp))
+	_, _ = mac.Write([]byte("."))
+	_, _ = mac.Write([]byte(deliveryID))
+	_, _ = mac.Write([]byte("."))
+	_, _ = mac.Write(body)
+	return signatureVersion + "=" + hex.EncodeToString(mac.Sum(nil))
 }
 
 // DeliverConfirmed succeeds only after the configured target returns 2xx.

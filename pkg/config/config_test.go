@@ -67,6 +67,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_TIMEOUT, "")
 	t.Setenv(config_env.WEBHOOK_MAX_REQUEST_BYTES, "")
 	t.Setenv(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "")
+	t.Setenv(config_env.WEBHOOK_SIGNATURE_ENABLED, "")
+	t.Setenv(config_env.WEBHOOK_SIGNATURE_SECRET, "")
+	t.Setenv(config_env.WEBHOOK_SIGNATURE_KEY_ID, "")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_BATCH, "")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_LEASE, "")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_POLL_INTERVAL, "")
@@ -158,6 +161,9 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	if config.Webhook.Timeout != 10*time.Second || config.Webhook.MaxRequestBytes != 4*1024*1024 || config.Webhook.MaxResponseBytes != 64*1024 || config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 0 || len(config.Webhook.AllowedPorts) != 2 {
 		t.Fatalf("webhook defaults are invalid")
 	}
+	if config.Webhook.SignatureEnabled || len(config.Webhook.SignatureSecret) != 0 || config.Webhook.SignatureKeyID != "" {
+		t.Fatalf("webhook signature defaults are invalid")
+	}
 	if config.ExternalEventOutbox.BatchSize != 4 ||
 		config.ExternalEventOutbox.LeaseDuration != 45*time.Second || config.ExternalEventOutbox.PollInterval != time.Second ||
 		config.ExternalEventOutbox.AttemptTimeout != 15*time.Second || config.ExternalEventOutbox.StateTimeout != 5*time.Second ||
@@ -237,6 +243,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	t.Setenv(config_env.WEBHOOK_TIMEOUT, "4s")
 	t.Setenv(config_env.WEBHOOK_MAX_REQUEST_BYTES, "2048")
 	t.Setenv(config_env.WEBHOOK_MAX_RESPONSE_BYTES, "1024")
+	t.Setenv(config_env.WEBHOOK_SIGNATURE_ENABLED, "true")
+	t.Setenv(config_env.WEBHOOK_SIGNATURE_SECRET, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)))
+	t.Setenv(config_env.WEBHOOK_SIGNATURE_KEY_ID, "primary-2026-08")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_BATCH, "12")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_LEASE, "50s")
 	t.Setenv(config_env.EXTERNAL_EVENT_OUTBOX_POLL_INTERVAL, "2s")
@@ -272,6 +281,9 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if config.Webhook.Timeout != 4*time.Second || config.Webhook.MaxRequestBytes != 2048 || config.Webhook.MaxResponseBytes != 1024 || !config.Webhook.AllowPrivate || len(config.Webhook.AllowedHosts) != 2 || len(config.Webhook.AllowedPorts) != 2 {
 		t.Fatalf("webhook overrides are invalid")
+	}
+	if !config.Webhook.SignatureEnabled || len(config.Webhook.SignatureSecret) != 32 || config.Webhook.SignatureKeyID != "primary-2026-08" {
+		t.Fatalf("webhook signature overrides are invalid")
 	}
 	if config.ExternalEventOutbox.BatchSize != 12 ||
 		config.ExternalEventOutbox.LeaseDuration != 50*time.Second || config.ExternalEventOutbox.PollInterval != 2*time.Second ||
@@ -343,6 +355,50 @@ func TestLoadWAInfoGuardOverrides(t *testing.T) {
 	}
 	if !config.ConversationAppStateCommandsEnabled || !config.ConversationHistorySyncEnabled {
 		t.Fatal("expected canonical Conversation command overrides to be enabled")
+	}
+}
+
+func TestValidateWebhookSignatureConfig(t *testing.T) {
+	validSecret := bytes.Repeat([]byte{1}, 32)
+	for _, test := range []struct {
+		name    string
+		enabled bool
+		secret  []byte
+		keyID   string
+		wantErr bool
+	}{
+		{name: "disabled", enabled: false},
+		{name: "enabled", enabled: true, secret: validSecret, keyID: "primary-2026.08"},
+		{name: "missing secret", enabled: true, keyID: "primary", wantErr: true},
+		{name: "short secret", enabled: true, secret: bytes.Repeat([]byte{1}, 31), keyID: "primary", wantErr: true},
+		{name: "missing key id", enabled: true, secret: validSecret, wantErr: true},
+		{name: "unsafe key id", enabled: true, secret: validSecret, keyID: "primary header", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateWebhookSignatureConfig(test.enabled, test.secret, test.keyID)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("error = %v, wantErr = %t", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseOptionalStrictBool(t *testing.T) {
+	for _, test := range []struct {
+		value   string
+		want    bool
+		wantErr bool
+	}{
+		{value: ""},
+		{value: "false"},
+		{value: " TRUE ", want: true},
+		{value: "treu", wantErr: true},
+		{value: "1", wantErr: true},
+	} {
+		got, err := parseOptionalStrictBool(test.value)
+		if got != test.want || (err != nil) != test.wantErr {
+			t.Fatalf("parseOptionalStrictBool(%q) = %t, %v", test.value, got, err)
+		}
 	}
 }
 

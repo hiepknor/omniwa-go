@@ -48,7 +48,8 @@ image with serving and both durable emit transports enabled. See ADR 0048.
 
 Production Webhooks remain fail-closed until their exact hostname is present in
 `WEBHOOK_ALLOWED_HOSTS`. Use port `443`, keep `WEBHOOK_ALLOW_PRIVATE=false`, and
-follow the [Webhook outbound security and phone-number rollout runbook](../docs/wiki-en/webhook-outbound-security.md)
+enable HMAC signatures for an operator-owned receiver. Follow the
+[Webhook outbound security, signature, and phone-number rollout runbook](../docs/wiki-en/webhook-outbound-security.md)
 before enabling `SEND_MESSAGE` for an instance.
 
 ### Development metrics

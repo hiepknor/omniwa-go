@@ -37,7 +37,7 @@ The supported file-backed settings are:
 - global API key
 - instance-token HMAC key and media-descriptor key
 - AMQP and NATS URLs
-- webhook URL
+- webhook URL and HMAC signing secret
 - audio-converter API key
 - proxy password
 - MinIO access and secret keys
