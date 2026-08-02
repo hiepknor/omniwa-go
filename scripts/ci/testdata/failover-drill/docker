@@ -28,7 +28,7 @@ case "$arguments" in
   *" --profile standby stop omniwa-standby "*)
     rm -f "$state_directory/standby-running"
     ;;
-  *" --profile operations run --rm --no-deps omniwa-migrate "*)
+  *" --profile operations run --rm --no-deps --no-TTY omniwa-migrate "*)
     [[ "${FAKE_DRILL_SCENARIO:-success}" != "migration_failure" ]]
     ;;
   *" up --detach omniwa-go "*)

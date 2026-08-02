@@ -243,7 +243,7 @@ record "former_active_stopped" "passed"
 "${compose[@]}" --profile standby stop "$standby_service" >/dev/null || fail "standby_stop_failed"
 record "standby_stopped" "passed"
 
-"${compose[@]}" --profile operations run --rm --no-deps "$migration_service" >/dev/null || fail "migration_or_ownership_gate_failed"
+"${compose[@]}" --profile operations run --rm --no-deps --no-TTY "$migration_service" </dev/null >/dev/null || fail "migration_or_ownership_gate_failed"
 record "migration_ownership_gate" "passed"
 
 "${compose[@]}" up --detach "$active_service" >/dev/null || fail "promoted_active_start_failed"
