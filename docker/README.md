@@ -12,6 +12,7 @@ commands **from this `docker/` directory**.
 | `docker-compose.full.yml` | **Production override** adding RabbitMQ + MinIO. Layer on top of the base. |
 | `docker-compose.smoke.yml` | **CI only.** Builds and verifies the production Dockerfile against isolated Postgres. |
 | `swarm/docker-stack.yml` | **Docker Swarm** deployment reference (Traefik labels, external volumes/network). |
+| `webhook-receiver/` | Versioned operator-owned HMAC receiver, rotation, Caddy, and monitoring assets. |
 
 ## Development
 
@@ -51,6 +52,13 @@ Production Webhooks remain fail-closed until their exact hostname is present in
 enable HMAC signatures for an operator-owned receiver. Follow the
 [Webhook outbound security, signature, and phone-number rollout runbook](../docs/wiki-en/webhook-outbound-security.md)
 before enabling `SEND_MESSAGE` for an instance.
+
+Use separate signing credentials and key IDs for staging and production. The
+operator receiver supports a bounded keyring so a new key can be accepted
+before either sender changes. Follow the
+[receiver rotation runbook](webhook-receiver/README.md); do not share one
+secret across environments or remove an old receiver key before the staged
+outbox canary succeeds.
 
 ### Development metrics
 

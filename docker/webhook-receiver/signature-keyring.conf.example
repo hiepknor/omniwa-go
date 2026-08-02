@@ -1,0 +1,5 @@
+[Service]
+LoadCredential=webhook_legacy:/etc/omniwa-webhook/legacy-secret
+LoadCredential=webhook_staging:/etc/omniwa-webhook/staging-secret
+LoadCredential=webhook_production:/etc/omniwa-webhook/production-secret
+Environment="OMNIWA_WEBHOOK_SIGNATURE_KEYS=legacy-2026-08=webhook_legacy,staging-2026-08=webhook_staging,production-2026-08=webhook_production"

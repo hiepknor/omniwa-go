@@ -1,0 +1,6 @@
+[Service]
+Environment="OMNIWA_MONITOR_API_URLS=http://127.0.0.1:4180,http://127.0.0.1:4181"
+Environment=OMNIWA_MONITOR_EXPECTED_EGRESS_IP=203.0.113.10
+LoadCredential=staging_api_key:/etc/omniwa-webhook/staging-api-key
+LoadCredential=production_api_key:/etc/omniwa-webhook/production-api-key
+Environment="OMNIWA_MONITOR_METRICS_TARGETS=http://127.0.0.1:4180/metrics=staging_api_key,http://127.0.0.1:4181/metrics=production_api_key"
