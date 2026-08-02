@@ -46,6 +46,11 @@ direct realtime transports. Before rolling back to an image that still has
 direct adapters, drain pending and processing outbox rows, then configure that
 image with serving and both durable emit transports enabled. See ADR 0048.
 
+Production Webhooks remain fail-closed until their exact hostname is present in
+`WEBHOOK_ALLOWED_HOSTS`. Use port `443`, keep `WEBHOOK_ALLOW_PRIVATE=false`, and
+follow the [Webhook outbound security and phone-number rollout runbook](../docs/wiki-en/webhook-outbound-security.md)
+before enabling `SEND_MESSAGE` for an instance.
+
 ### Development metrics
 
 The development stack persists Prometheus data in the `prometheus_data` named
