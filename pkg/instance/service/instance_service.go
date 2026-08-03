@@ -41,7 +41,7 @@ type InstanceService interface {
 	Logout(instance *instance_model.Instance) (*instance_model.Instance, error)
 	Status(instance *instance_model.Instance) (*StatusStruct, error)
 	GetQr(instance *instance_model.Instance) (*QrcodeStruct, error)
-	Pair(data *PairStruct, instance *instance_model.Instance) (*PairReturnStruct, error)
+	Pair(context.Context, *PairStruct, *instance_model.Instance) (*PairReturnStruct, error)
 	GetAll() ([]*instance_model.Instance, error)
 	Info(instanceId string) (*instance_model.Instance, error)
 	Delete(id string) error
@@ -526,33 +526,45 @@ func buildPasskeyOpenURL(token string) string {
 	return "https://web.whatsapp.com/#wapk=" + wapk
 }
 
-func (i instances) Pair(data *PairStruct, instance *instance_model.Instance) (*PairReturnStruct, error) {
+const phonePairingReadyTimeout = 20 * time.Second
+
+func (i instances) Pair(ctx context.Context, data *PairStruct, instance *instance_model.Instance) (*PairReturnStruct, error) {
+	if ctx == nil {
+		return nil, errors.New("pairing context is required")
+	}
 	logger := i.loggerWrapper.GetLogger(instance.Id)
 	client := i.runtime.Get(instance.Id)
+	if client != nil && client.IsLoggedIn() {
+		return nil, fmt.Errorf("instance is already authenticated")
+	}
 
 	if client == nil || !client.IsConnected() {
-		if client != nil && client.IsLoggedIn() {
-			return nil, fmt.Errorf("instance is already authenticated")
-		}
 		logger.LogInfo("[%s] No active connection, starting instance for phone pairing", instance.Id)
 		if err := i.whatsmeowService.StartInstance(instance.Id); err != nil {
 			logger.LogError("[%s] Failed to start instance for pairing: %v", instance.Id, err)
 			return nil, fmt.Errorf("failed to start instance: %w", err)
 		}
-		// Wait for the WA websocket connection and initial QR generation to establish.
-		// PairPhone must be called after the QR event is received per whatsmeow docs.
-		time.Sleep(3 * time.Second)
-		client = i.runtime.Get(instance.Id)
-		if client == nil {
-			return nil, fmt.Errorf("failed to initialize client for pairing")
-		}
 	}
 
+	readyCtx, cancelReady := context.WithTimeout(ctx, phonePairingReadyTimeout)
+	defer cancelReady()
+	if err := i.whatsmeowService.WaitPhonePairingReady(readyCtx, instance.Id); err != nil {
+		logger.LogError("[%s] Phone pairing runtime did not become ready: %v", instance.Id, err)
+		return nil, fmt.Errorf("phone pairing runtime not ready: %w", err)
+	}
+
+	client = i.runtime.Get(instance.Id)
+	if client == nil || !client.IsConnected() {
+		return nil, errors.New("phone pairing runtime disconnected before provider command")
+	}
 	if client.IsLoggedIn() {
 		return nil, fmt.Errorf("instance is already authenticated")
 	}
 
-	code, err := instance_runtime.DoProviderCommandValue(context.Background(), i.runtime, func(commandCtx context.Context) (string, error) {
+	code, err := instance_runtime.DoProviderCommandValue(ctx, i.runtime, func(commandCtx context.Context) (string, error) {
+		if i.runtime.Get(instance.Id) != client || !client.IsConnected() {
+			return "", errors.New("phone pairing runtime changed before provider command")
+		}
 		return client.PairPhone(commandCtx, data.Phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 	})
 	if err != nil {

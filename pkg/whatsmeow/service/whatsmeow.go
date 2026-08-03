@@ -62,6 +62,7 @@ type WhatsmeowService interface {
 	StartClient(clientData *ClientData)
 	ConnectOnStartup(clientName string)
 	StartInstance(instanceId string) error
+	WaitPhonePairingReady(context.Context, string) error
 	ReconnectClient(instanceId string) error
 	ClearInstanceCache(instanceId string, token string) error
 	EmitExternalEvent(instance *instance_model.Instance, eventType string, raw any, queueName string, payload []byte, metadata ...event_payload.ConfirmedPhoneMetadata) bool
@@ -149,6 +150,8 @@ type MyClient struct {
 	stateMu             sync.RWMutex
 	tokenMu             sync.RWMutex
 	qrMu                sync.Mutex
+	pairReady           chan struct{}
+	pairReadyOnce       sync.Once
 	userInfoCache       *cache.Cache
 	config              *config.Config
 	historySyncID       int32
@@ -176,6 +179,55 @@ type MyClient struct {
 	runtimeGeneration   uint64
 	loopCancel          context.CancelFunc
 	loopDone            chan struct{}
+}
+
+var ErrPhonePairingRuntimeUnavailable = errors.New("phone pairing runtime is unavailable")
+
+const phonePairingRuntimePollInterval = 25 * time.Millisecond
+
+func (m *MyClient) signalPhonePairingReady() {
+	if m == nil || m.pairReady == nil {
+		return
+	}
+	m.pairReadyOnce.Do(func() { close(m.pairReady) })
+}
+
+func isPairedClient(client *whatsmeow.Client) bool {
+	return client != nil && client.Store != nil && client.Store.ID != nil
+}
+
+// WaitPhonePairingReady waits for whatsmeow's first QR event. PairPhone must
+// not run merely because the websocket reports connected: the provider's QR
+// event is the protocol-level signal that code pairing can begin.
+func (w *whatsmeowService) WaitPhonePairingReady(ctx context.Context, instanceID string) error {
+	if w == nil || w.runtimeRegistry == nil || ctx == nil || instanceID == "" {
+		return ErrPhonePairingRuntimeUnavailable
+	}
+	ticker := time.NewTicker(phonePairingRuntimePollInterval)
+	defer ticker.Stop()
+	for {
+		snapshot, ok := w.runtimeRegistry.Lookup(instanceID)
+		if ok {
+			if snapshot.State == nil || snapshot.State.pairReady == nil {
+				return ErrPhonePairingRuntimeUnavailable
+			}
+			select {
+			case <-snapshot.State.pairReady:
+				current, currentOK := w.runtimeRegistry.Lookup(instanceID)
+				if currentOK && current.Generation == snapshot.Generation {
+					return nil
+				}
+			case <-snapshot.Context.Done():
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func (m *MyClient) currentToken() string {
@@ -922,6 +974,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		natsProducer:       w.natsProducer,
 		loggerWrapper:      w.loggerWrapper,
 		qrcodeCount:        0,
+		pairReady:          make(chan struct{}),
 		passkeyCeremony:    w.passkeyCeremony,
 		queryGuard:         w.queryGuard,
 		projectionEvents:   w.projectionEvents,
@@ -1291,6 +1344,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.QR:
 		// New-device pairing emits QR codes here (we connect without GetQRChannel
 		// so the socket survives a passkey ceremony). Forward + rotate them.
+		mycli.signalPhonePairingReady()
 		mycli.handleQRCodes(evt.Codes)
 		return
 	case *events.AppStateSyncComplete:
@@ -2422,6 +2476,17 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		err := mycli.instanceRepository.UpdateConnected(mycli.Instance.Id, mycli.Instance.Connected, mycli.Instance.DisconnectReason)
 		if err != nil {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
+		}
+
+		// An unpaired device has no durable provider identity to reconnect. Retire
+		// this generation and let a later pair/QR request start a fresh runtime.
+		// Reconnecting here creates an unbounded storm and races PairPhone.
+		if !isPairedClient(mycli.WAClient) {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Unpaired client disconnected, retiring runtime", mycli.userID)
+			if mycli.runtimeRegistry != nil {
+				go mycli.runtimeRegistry.RemoveIfCurrent(mycli.userID, mycli.runtimeGeneration)
+			}
+			break
 		}
 
 		// Trigger instance restart via websocket-capable service (non-blocking)

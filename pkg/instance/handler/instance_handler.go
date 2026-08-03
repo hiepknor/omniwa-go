@@ -499,7 +499,7 @@ func (i *instanceHandler) Pair(ctx *gin.Context) {
 		return
 	}
 
-	pairingCode, err := i.instanceService.Pair(data, instance)
+	pairingCode, err := i.instanceService.Pair(ctx.Request.Context(), data, instance)
 	if err != nil {
 		httpapi.WriteInternal(ctx, err)
 		return
