@@ -120,6 +120,7 @@ type whatsmeowService struct {
 	historySyncer      *projection_service.HistorySyncer
 	externalEvents     *event_emission.Emitter
 	appCtx             context.Context
+	webVersionOnce     *sync.Once
 }
 
 func (w *whatsmeowService) WaitOutbound(ctx context.Context, instanceID string, cost int) error {
@@ -782,6 +783,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 	if cd == nil || cd.Instance == nil {
 		return
 	}
+	w.initializeWhatsAppWebVersion(cd.Instance.Id)
 	if err := w.runtimeRegistry.Start(cd.Instance.Id, func() { w.startClient(cd) }); err != nil {
 		w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to coordinate client start: %v", cd.Instance.Id, err)
 	}
@@ -846,8 +848,6 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		}
 	}
 
-	var version clientVersion
-
 	platformID, ok := waCompanionReg.DeviceProps_PlatformType_value[strings.ToUpper("chrome")]
 	if ok {
 		store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_PlatformType(platformID).Enum()
@@ -858,34 +858,6 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 
 	store.DeviceProps.Os = &cd.Instance.OsName
 	store.DeviceProps.RequireFullSync = proto.Bool(true)
-
-	if w.config.WhatsappVersionMajor != 0 && w.config.WhatsappVersionMinor != 0 && w.config.WhatsappVersionPatch != 0 {
-		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Setting whatsapp version to %d.%d.%d", cd.Instance.Id, w.config.WhatsappVersionMajor, w.config.WhatsappVersionMinor, w.config.WhatsappVersionPatch)
-		version.Major = w.config.WhatsappVersionMajor
-		if err == nil {
-			store.DeviceProps.Version.Primary = proto.Uint32(uint32(version.Major))
-		}
-		version.Minor = w.config.WhatsappVersionMinor
-		if err == nil {
-			store.DeviceProps.Version.Secondary = proto.Uint32(uint32(version.Minor))
-		}
-		version.Patch = w.config.WhatsappVersionPatch
-		if err == nil {
-			store.DeviceProps.Version.Tertiary = proto.Uint32(uint32(version.Patch))
-		}
-	} else {
-		// Try to fetch version from WhatsApp Web
-		webVersion, err := fetchWhatsAppWebVersion()
-		if err != nil {
-			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to fetch WhatsApp Web version: %v", cd.Instance.Id, err)
-		} else {
-			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Setting whatsapp version from web to %d.%d.%d", cd.Instance.Id, webVersion.Major, webVersion.Minor, webVersion.Patch)
-			version = *webVersion
-			store.DeviceProps.Version.Primary = proto.Uint32(uint32(version.Major))
-			store.DeviceProps.Version.Secondary = proto.Uint32(uint32(version.Minor))
-			store.DeviceProps.Version.Tertiary = proto.Uint32(uint32(version.Patch))
-		}
-	}
 
 	// 🔒 FIX: Sempre criar logger, mesmo que WaDebug esteja vazio
 	// Usar "INFO" como nível mínimo para garantir que logs importantes apareçam
@@ -2940,6 +2912,49 @@ var (
 
 var whatsappWebRequester = mustWhatsAppWebRequester()
 
+func (w whatsmeowService) initializeWhatsAppWebVersion(instanceID string) {
+	once := w.webVersionOnce
+	if once == nil {
+		once = &sync.Once{}
+	}
+	once.Do(func() {
+		fallback := store.GetWAVersion()
+		version, source, err := resolveWhatsAppWebVersion(w.config, func() (*clientVersion, error) {
+			return fetchWhatsAppWebVersion()
+		}, clientVersion{Major: int(fallback[0]), Minor: int(fallback[1]), Patch: int(fallback[2])})
+		if err != nil {
+			w.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Failed to fetch WhatsApp Web version, using library default: %v", instanceID, err)
+		}
+		applyWhatsAppWebVersion(version)
+		w.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] Applied WhatsApp Web version %d.%d.%d (source=%s)", instanceID, version.Major, version.Minor, version.Patch, source)
+	})
+}
+
+func resolveWhatsAppWebVersion(cfg *config.Config, fetch func() (*clientVersion, error), fallback clientVersion) (clientVersion, string, error) {
+	if cfg != nil && cfg.WhatsappVersionMajor > 0 && cfg.WhatsappVersionMinor > 0 && cfg.WhatsappVersionPatch > 0 {
+		return clientVersion{Major: cfg.WhatsappVersionMajor, Minor: cfg.WhatsappVersionMinor, Patch: cfg.WhatsappVersionPatch}, "config", nil
+	}
+	if fetch == nil {
+		return fallback, "library_default", errors.New("WhatsApp Web version fetcher is not configured")
+	}
+	version, err := fetch()
+	if err != nil {
+		return fallback, "library_default", err
+	}
+	if version == nil || version.Major <= 0 || version.Minor <= 0 || version.Patch <= 0 {
+		return fallback, "library_default", errors.New("WhatsApp Web version response is invalid")
+	}
+	return *version, "web", nil
+}
+
+func applyWhatsAppWebVersion(version clientVersion) {
+	resolved := store.WAVersionContainer{uint32(version.Major), uint32(version.Minor), uint32(version.Patch)}
+	store.SetWAVersion(resolved)
+	store.DeviceProps.Version.Primary = proto.Uint32(resolved[0])
+	store.DeviceProps.Version.Secondary = proto.Uint32(resolved[1])
+	store.DeviceProps.Version.Tertiary = proto.Uint32(resolved[2])
+}
+
 func mustWhatsAppWebRequester() netguard.Requester {
 	requester, err := netguard.NewRequester(netguard.RequestSettings{
 		AllowedHosts: []string{"web.whatsapp.com"}, Timeout: 10 * time.Second,
@@ -3188,6 +3203,7 @@ func NewWhatsmeowService(
 		appCtx:             appCtx,
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),
+		webVersionOnce:     &sync.Once{},
 	}
 }
 
