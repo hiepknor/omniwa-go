@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/image/webp"
@@ -180,6 +181,37 @@ type MyClient struct {
 	runtimeGeneration   uint64
 	loopCancel          context.CancelFunc
 	loopDone            chan struct{}
+	pairingStartedAt    atomic.Int64
+	pairingQRSeen       atomic.Bool
+}
+
+func (m *MyClient) markPairingStarted() {
+	if m == nil {
+		return
+	}
+	m.pairingQRSeen.Store(false)
+	m.pairingStartedAt.Store(time.Now().UnixNano())
+}
+
+func (m *MyClient) markPairingQRSeen() {
+	if m != nil {
+		m.pairingQRSeen.Store(true)
+	}
+}
+
+func (m *MyClient) pairingObservation() (time.Duration, bool) {
+	if m == nil {
+		return 0, false
+	}
+	startedAt := m.pairingStartedAt.Load()
+	if startedAt <= 0 {
+		return 0, m.pairingQRSeen.Load()
+	}
+	elapsed := time.Since(time.Unix(0, startedAt))
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	return elapsed, m.pairingQRSeen.Load()
 }
 
 var ErrPhonePairingRuntimeUnavailable = errors.New("phone pairing runtime is unavailable")
@@ -1025,6 +1057,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		// QR codes run out, both of which break passkey pairing (DOC2 §4.3/§4.4).
 		// Instead we Connect() directly and consume *events.QR in myEventHandler
 		// (see handleQRCodes), which pair.go dispatches to every handler anyway.
+		mycli.markPairingStarted()
 		err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
 		if err != nil {
 			if strings.Contains(err.Error(), "EOF") {
@@ -1316,6 +1349,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.QR:
 		// New-device pairing emits QR codes here (we connect without GetQRChannel
 		// so the socket survives a passkey ceremony). Forward + rotate them.
+		mycli.markPairingQRSeen()
 		mycli.signalPhonePairingReady()
 		mycli.handleQRCodes(evt.Codes)
 		return
@@ -2422,7 +2456,8 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		mycli.stopGroupReconciliationLoop()
 		doWebhook = true
 		postMap["event"] = "ConnectFailure"
-		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Connection failed with reason %s", mycli.userID, evt.Reason.String())
+		elapsed, qrSeen := mycli.pairingObservation()
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Connection failed with reason %s message=%q pairing_elapsed=%s qr_seen=%t", mycli.userID, evt.Reason.String(), evt.Message, elapsed.Round(time.Millisecond), qrSeen)
 
 		// Limpar cache de userInfo para esta instância
 		mycli.userInfoCache.Delete(mycli.currentToken())
@@ -2454,7 +2489,8 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		// this generation and let a later pair/QR request start a fresh runtime.
 		// Reconnecting here creates an unbounded storm and races PairPhone.
 		if !isPairedClient(mycli.WAClient) {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Unpaired client disconnected, retiring runtime", mycli.userID)
+			elapsed, qrSeen := mycli.pairingObservation()
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Unpaired client disconnected, retiring runtime pairing_elapsed=%s qr_seen=%t", mycli.userID, elapsed.Round(time.Millisecond), qrSeen)
 			if mycli.runtimeRegistry != nil {
 				go mycli.runtimeRegistry.RemoveIfCurrent(mycli.userID, mycli.runtimeGeneration)
 			}

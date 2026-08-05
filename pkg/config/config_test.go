@@ -10,6 +10,18 @@ import (
 	config_env "github.com/evolution-foundation/evolution-go/pkg/config/env"
 )
 
+func TestWhatsAppLogLevelPrefersDocumentedVariable(t *testing.T) {
+	if got := whatsAppLogLevel("DEBUG", "WARN"); got != "DEBUG" {
+		t.Fatalf("level = %q, want DEBUG", got)
+	}
+}
+
+func TestWhatsAppLogLevelFallsBackToLegacyVariable(t *testing.T) {
+	if got := whatsAppLogLevel("", " INFO "); got != "INFO" {
+		t.Fatalf("level = %q, want INFO", got)
+	}
+}
+
 func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	setRequiredConfigEnv(t)
 	t.Setenv(config_env.WA_INFO_RATE, "")
