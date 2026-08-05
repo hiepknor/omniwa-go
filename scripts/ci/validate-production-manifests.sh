@@ -38,4 +38,6 @@ docker compose --project-directory "$repository_root/docker" \
   --file "$repository_root/docker/docker-compose.full.yml" config --quiet
 docker stack config --compose-file "$repository_root/docker/swarm/docker-stack.yml" >/dev/null
 
+bash "$repository_root/scripts/ci/production-preflight_test.sh"
+
 echo "production deployment manifests are valid"
