@@ -54,3 +54,9 @@ the dependency metrics; all flags default to `false` for compatibility.
 Metrics are process-local and reset when the application restarts. Use the
 persisted server overview and projection-health endpoints for durable state and
 readiness diagnostics.
+
+External delivery dead letters can be listed and replayed through the admin-only
+`GET /server/external-event-failures` and
+`POST /server/external-event-failures/replay` endpoints. Responses never include
+payloads or routing keys. Replay is at-least-once and requires a bounded audit
+reason; verify downstream consumer idempotency before using it.

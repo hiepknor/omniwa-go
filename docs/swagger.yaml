@@ -970,6 +970,77 @@ definitions:
       communityName:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_events_outbox.DeadLetterItem:
+    properties:
+      attemptCount:
+        type: integer
+      createdAt:
+        type: string
+      deadLetteredAt:
+        type: string
+      destination:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.Destination'
+      id:
+        type: string
+      instanceId:
+        type: string
+      lastAttemptAt:
+        type: string
+      lastErrorCode:
+        type: string
+      maxAttempts:
+        type: integer
+      transport:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.Transport'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_events_outbox.DeadLetterList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.DeadLetterItem'
+        type: array
+      nextCursor:
+        type: string
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_events_outbox.Destination:
+    enum:
+    - instance
+    - global
+    type: string
+    x-enum-varnames:
+    - DestinationInstance
+    - DestinationGlobal
+  github_com_evolution-foundation_evolution-go_pkg_events_outbox.ReplayResult:
+    properties:
+      id:
+        type: string
+      occurredAt:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.Status'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_events_outbox.Status:
+    enum:
+    - pending
+    - processing
+    - delivered
+    - dead_letter
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusProcessing
+    - StatusDelivered
+    - StatusDeadLetter
+  github_com_evolution-foundation_evolution-go_pkg_events_outbox.Transport:
+    enum:
+    - webhook
+    - rabbitmq
+    - nats
+    type: string
+    x-enum-varnames:
+    - TransportWebhook
+    - TransportRabbitMQ
+    - TransportNATS
   github_com_evolution-foundation_evolution-go_pkg_group_model.ManagementCommandStatus:
     enum:
     - requested
@@ -3329,6 +3400,16 @@ definitions:
         type: string
     required:
     - expectedVersion
+    - reason
+    type: object
+  pkg_server_handler.ExternalEventReplayRequest:
+    properties:
+      id:
+        type: string
+      reason:
+        type: string
+    required:
+    - id
     - reason
     type: object
   pkg_server_handler.ProjectionFailureOperationRequest:
@@ -14586,6 +14667,103 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get server capabilities
+      tags:
+      - Server
+  /server/external-event-failures:
+    get:
+      parameters:
+      - description: Instance ID filter
+        in: query
+        name: instanceId
+        type: string
+      - description: Transport filter (webhook, rabbitmq, nats)
+        in: query
+        name: transport
+        type: string
+      - default: 50
+        description: Page size (1-200)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque pagination cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.DeadLetterList'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List external event delivery dead letters
+      tags:
+      - Server
+  /server/external-event-failures/replay:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Delivery identity and audit reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/pkg_server_handler.ExternalEventReplayRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/apidocs.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.ReplayResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Replay external event delivery dead letter
       tags:
       - Server
   /server/health:

@@ -88,6 +88,8 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	eng.GET("/server/projection-failures", r.authMiddleware.AuthAdmin, r.serverHandler.ProjectionFailures)
 	eng.POST("/server/projection-failures/replay", r.authMiddleware.AuthAdmin, r.serverHandler.ReplayProjectionFailure)
 	eng.POST("/server/projection-failures/discard", r.authMiddleware.AuthAdmin, r.serverHandler.DiscardProjectionFailure)
+	eng.GET("/server/external-event-failures", r.authMiddleware.AuthAdmin, r.serverHandler.ExternalEventFailures)
+	eng.POST("/server/external-event-failures/replay", r.authMiddleware.AuthAdmin, r.serverHandler.ReplayExternalEventFailure)
 	eng.GET("/events", r.authMiddleware.Auth, r.serverHandler.EventHistory)
 
 	if r.campaignMediaHandler != nil {

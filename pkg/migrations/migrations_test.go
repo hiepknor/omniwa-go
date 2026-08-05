@@ -678,3 +678,25 @@ func TestRuntimeOwnershipEpochMigrationIsSingletonAndAdditive(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalEventReplayAuditMigrationIsAdditiveAndBounded(t *testing.T) {
+	migration := registeredMigration(t, 42)
+	if migration.Name != "create_external_event_replay_audits" {
+		t.Fatalf("external event replay audit migration = %#v", migration)
+	}
+	for _, required := range []string{
+		"CREATE TABLE external_event_replay_audits", "delivery_id UUID NOT NULL",
+		"FOREIGN KEY (delivery_id)", "REFERENCES external_event_outbox(id)",
+		"CHAR_LENGTH(reason) BETWEEN 1 AND 500", "actor_reference_hash ~",
+		"external_event_replay_audits_delivery_idx",
+	} {
+		if !strings.Contains(migration.SQL, required) {
+			t.Fatalf("external event replay audit migration missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"DROP TABLE", "DROP COLUMN", "TRUNCATE", "DELETE FROM"} {
+		if strings.Contains(migration.SQL, forbidden) {
+			t.Fatalf("external event replay audit migration contains unsafe SQL %q", forbidden)
+		}
+	}
+}

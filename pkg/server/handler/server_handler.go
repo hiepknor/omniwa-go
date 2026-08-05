@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/evolution-foundation/evolution-go/pkg/events/outbox"
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
@@ -29,6 +30,8 @@ type ServerHandler interface {
 	ProjectionFailures(ctx *gin.Context)
 	ReplayProjectionFailure(ctx *gin.Context)
 	DiscardProjectionFailure(ctx *gin.Context)
+	ExternalEventFailures(ctx *gin.Context)
+	ReplayExternalEventFailure(ctx *gin.Context)
 }
 
 // ProjectionHealth returns persisted projection synchronization metrics.
@@ -56,17 +59,18 @@ func (s *serverHandler) ProjectionHealth(ctx *gin.Context) {
 }
 
 type serverHandler struct {
-	version           string
-	revision          string
-	projectionState   projection_service.StateService
-	eventReader       *projection_service.DurableEventReader
-	overview          *projection_service.OverviewService
-	health            *projection_service.ServerHealthService
-	failures          *projection_service.FailureService
-	adminCapabilities []string
-	instances         capabilityInstanceReader
-	runtime           RuntimeHealth
-	dependencies      dependencyHealthSnapshotter
+	version               string
+	revision              string
+	projectionState       projection_service.StateService
+	eventReader           *projection_service.DurableEventReader
+	overview              *projection_service.OverviewService
+	health                *projection_service.ServerHealthService
+	failures              *projection_service.FailureService
+	externalEventFailures *outbox.FailureService
+	adminCapabilities     []string
+	instances             capabilityInstanceReader
+	runtime               RuntimeHealth
+	dependencies          dependencyHealthSnapshotter
 }
 
 type dependencyHealthSnapshotter interface {
@@ -360,6 +364,10 @@ func WithHealthService(health *projection_service.ServerHealthService) ServerOpt
 
 func WithFailureService(failures *projection_service.FailureService) ServerOption {
 	return func(handler *serverHandler) { handler.failures = failures }
+}
+
+func WithExternalEventFailureService(failures *outbox.FailureService) ServerOption {
+	return func(handler *serverHandler) { handler.externalEventFailures = failures }
 }
 
 func WithAdminCapabilities(capabilities ...string) ServerOption {

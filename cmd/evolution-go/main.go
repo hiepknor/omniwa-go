@@ -36,6 +36,7 @@ import (
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
 	"github.com/evolution-foundation/evolution-go/pkg/core"
 	event_emission "github.com/evolution-foundation/evolution-go/pkg/events/emission"
+	"github.com/evolution-foundation/evolution-go/pkg/events/outbox"
 	websocket_producer "github.com/evolution-foundation/evolution-go/pkg/events/websocket"
 	group_handler "github.com/evolution-foundation/evolution-go/pkg/group/handler"
 	group_repository "github.com/evolution-foundation/evolution-go/pkg/group/repository"
@@ -330,7 +331,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	instanceRepository := instance_repository.NewInstanceRepositoryWithTokenDigester(db, tokenDigester)
 	var tokenRotator instance_repository.TokenRotator
 	var credentialHealthService *instance_credential.HealthService
-	credentialCapabilities := []string{"instance_metadata_views"}
+	credentialCapabilities := []string{"instance_metadata_views", "external_event_dead_letter_replay"}
 	if tokenDigester != nil {
 		backfiller, ok := instanceRepository.(instance_repository.TokenBackfiller)
 		if !ok {
@@ -1027,6 +1028,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			version, revision, projectionStateService, durableEventReader, overviewService,
 			server_handler.WithHealthService(healthService),
 			server_handler.WithFailureService(projectionFailureService),
+			server_handler.WithExternalEventFailureService(outbox.NewFailureService(externalEvents.OutboxFailureRepository())),
 			server_handler.WithAdminCapabilities(credentialCapabilities...),
 			server_handler.WithCapabilityInstanceReader(instanceRepository),
 			server_handler.WithRuntimeHealth(readinessHealth),
