@@ -1008,7 +1008,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 				config.ConversationHistorySyncEnabled,
 			),
 		),
-		group_handler.NewGroupHandler(groupService, group_handler.WithManagementContract(config.GroupManagementEnabled), group_handler.WithPhotoAssets(config.GroupPhotoAssetsEnabled)),
+		group_handler.NewGroupHandler(groupService, group_handler.WithManagementContract(config.GroupManagementEnabled), group_handler.WithPhotoAssets(config.GroupPhotoAssetsEnabled), group_handler.WithLegacyMyAll(config.LegacyGroupMyAllEnabled)),
 		groupListHandler,
 		call_handler.NewCallHandler(callService),
 		campaign_handler.NewCampaignHandler(campaign_service.NewManagementService(

@@ -2915,6 +2915,7 @@ const docTemplate = `{
                     "Group"
                 ],
                 "summary": "Get my groups",
+                "deprecated": true,
                 "responses": {
                     "200": {
                         "description": "success",
@@ -2935,18 +2936,80 @@ const docTemplate = `{
                                     }
                                 }
                             ]
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "RFC 9745 structured deprecation date"
+                            },
+                            "Link": {
+                                "type": "string",
+                                "description": "Bounded successor endpoint"
+                            },
+                            "Sunset": {
+                                "type": "string",
+                                "description": "RFC 8594 sunset date"
+                            }
+                        }
+                    },
+                    "410": {
+                        "description": "Legacy endpoint disabled; use /group/search",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "RFC 9745 structured deprecation date"
+                            },
+                            "Link": {
+                                "type": "string",
+                                "description": "Bounded successor endpoint"
+                            },
+                            "Sunset": {
+                                "type": "string",
+                                "description": "RFC 8594 sunset date"
+                            }
                         }
                     },
                     "429": {
                         "description": "Information query rate limited; see Retry-After header",
                         "schema": {
                             "$ref": "#/definitions/apidocs.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "RFC 9745 structured deprecation date"
+                            },
+                            "Link": {
+                                "type": "string",
+                                "description": "Bounded successor endpoint"
+                            },
+                            "Sunset": {
+                                "type": "string",
+                                "description": "RFC 8594 sunset date"
+                            }
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/apidocs.ErrorResponse"
+                        },
+                        "headers": {
+                            "Deprecation": {
+                                "type": "string",
+                                "description": "RFC 9745 structured deprecation date"
+                            },
+                            "Link": {
+                                "type": "string",
+                                "description": "Bounded successor endpoint"
+                            },
+                            "Sunset": {
+                                "type": "string",
+                                "description": "RFC 8594 sunset date"
+                            }
                         }
                     }
                 }

@@ -229,6 +229,7 @@ type groupHandler struct {
 	groupService       group_service.GroupService
 	managementContract bool
 	photoAssets        bool
+	legacyMyAllEnabled bool
 }
 
 type Option func(*groupHandler)
@@ -239,6 +240,10 @@ func WithManagementContract(enabled bool) Option {
 
 func WithPhotoAssets(enabled bool) Option {
 	return func(handler *groupHandler) { handler.photoAssets = enabled }
+}
+
+func WithLegacyMyAll(enabled bool) Option {
+	return func(handler *groupHandler) { handler.legacyMyAllEnabled = enabled }
 }
 
 func (g *groupHandler) ManagementContractEnabled() bool { return g != nil && g.managementContract }
@@ -879,11 +884,23 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} apidocs.SuccessResponse{data=[]types.GroupInfo} "success"
+// @Failure 410 {object} apidocs.ErrorResponse "Legacy endpoint disabled; use /group/search"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Failure 429 {object} apidocs.RateLimitResponse "Information query rate limited; see Retry-After header"
+// @Header all {string} Deprecation "RFC 9745 structured deprecation date"
+// @Header all {string} Sunset "RFC 8594 sunset date"
+// @Header all {string} Link "Bounded successor endpoint"
 // @Security ApiKeyAuth
+// @Deprecated
 // @Router /group/myall [get]
 func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
+	ctx.Header("Deprecation", "@1785888000")
+	ctx.Header("Sunset", "Mon, 01 Feb 2027 00:00:00 GMT")
+	ctx.Header("Link", `</group/search?limit=50>; rel="successor-version"`)
+	if !g.legacyMyAllEnabled {
+		httpapi.WriteError(ctx, http.StatusGone, "endpoint_retired", "use the bounded /group/search endpoint")
+		return
+	}
 	getInstance := ctx.MustGet("instance")
 
 	instance, ok := getInstance.(*instance_model.Instance)
@@ -1095,7 +1112,8 @@ func NewGroupHandler(
 	options ...Option,
 ) GroupHandler {
 	handler := &groupHandler{
-		groupService: groupService,
+		groupService:       groupService,
+		legacyMyAllEnabled: true,
 	}
 	for _, option := range options {
 		option(handler)

@@ -57,6 +57,7 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	t.Setenv(config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED, "")
 	t.Setenv(config_env.WA_GROUP_MANAGEMENT_CONTRACT_ENABLED, "")
 	t.Setenv(config_env.WA_GROUP_PHOTO_ASSETS_ENABLED, "")
+	t.Setenv(config_env.WA_LEGACY_GROUP_MYALL_ENABLED, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_POLICY, "")
 	t.Setenv(config_env.REMOTE_MEDIA_ALLOWED_HOSTS, "")
 	t.Setenv(config_env.REMOTE_MEDIA_FETCH_TIMEOUT, "")
@@ -134,6 +135,13 @@ func TestLoadWAInfoGuardDefaults(t *testing.T) {
 	}
 	if config.GroupPhotoAssetsEnabled {
 		t.Fatal("expected Group photo assets to be disabled by default")
+	}
+	if !config.LegacyGroupMyAllEnabled {
+		t.Fatal("expected legacy group myall compatibility to remain enabled by default")
+	}
+	t.Setenv(config_env.WA_LEGACY_GROUP_MYALL_ENABLED, "false")
+	if Load().LegacyGroupMyAllEnabled {
+		t.Fatal("expected legacy group myall compatibility kill switch to disable the endpoint")
 	}
 	if config.CampaignDirectCreateEnabled {
 		t.Fatal("expected direct campaign creation to be disabled by default")

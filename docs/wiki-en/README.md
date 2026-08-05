@@ -38,6 +38,8 @@ OmniWA GO HTTP API (a WhatsApp API built on [whatsmeow](https://github.com/tulir
     contacts, chat naming, exact totals, and cursor/readiness semantics.
 11. **[Webhook Outbound Security](webhook-outbound-security.md)** — exact-host
     network policy, HMAC authentication, durable delivery, and staged rollout.
+12. **[Group Directory Pagination](group-directory.md)** — bounded projection
+    reads and migration from the deprecated provider-backed full listing.
 
 ## The API in one paragraph
 
