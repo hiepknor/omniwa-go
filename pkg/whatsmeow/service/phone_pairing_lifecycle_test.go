@@ -113,3 +113,30 @@ func TestPairingObservationTracksQRWithoutRaces(t *testing.T) {
 		t.Fatal("new pairing attempt retained the previous QR observation")
 	}
 }
+
+func TestProviderSocketContextUsesRuntimeLifetime(t *testing.T) {
+	commandCtx, cancelCommand := context.WithCancel(context.Background())
+	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
+	defer cancelRuntime()
+
+	socketCtx, err := providerSocketContext(commandCtx, runtimeCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelCommand()
+	if socketCtx.Err() != nil {
+		t.Fatalf("command completion canceled provider socket: %v", socketCtx.Err())
+	}
+	cancelRuntime()
+	if !errors.Is(socketCtx.Err(), context.Canceled) {
+		t.Fatalf("runtime cleanup did not cancel provider socket: %v", socketCtx.Err())
+	}
+}
+
+func TestProviderSocketContextRejectsCanceledAdmission(t *testing.T) {
+	commandCtx, cancelCommand := context.WithCancel(context.Background())
+	cancelCommand()
+	if _, err := providerSocketContext(commandCtx, context.Background()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context canceled", err)
+	}
+}

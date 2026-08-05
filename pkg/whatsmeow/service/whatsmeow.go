@@ -214,6 +214,16 @@ func (m *MyClient) pairingObservation() (time.Duration, bool) {
 	return elapsed, m.pairingQRSeen.Load()
 }
 
+func providerSocketContext(commandCtx, runtimeCtx context.Context) (context.Context, error) {
+	if commandCtx == nil || runtimeCtx == nil {
+		return nil, errors.New("command and runtime contexts are required")
+	}
+	if err := commandCtx.Err(); err != nil {
+		return nil, err
+	}
+	return runtimeCtx, nil
+}
+
 var ErrPhonePairingRuntimeUnavailable = errors.New("phone pairing runtime is unavailable")
 
 const phonePairingRuntimePollInterval = 25 * time.Millisecond
@@ -1019,15 +1029,25 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 			w.runtimeRegistry.RemoveIfCurrent(cd.Instance.Id, installedRuntime.Generation)
 		}
 	}()
+	connectClient := func() error {
+		return instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error {
+			runtimeCtx, err := providerSocketContext(commandCtx, installedRuntime.Context)
+			if err != nil {
+				return err
+			}
+			commandCtx = runtimeCtx
+			return client.ConnectContext(commandCtx)
+		})
+	}
 
 	if client.Store.ID != nil {
 		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Already logged in with JID: %s", cd.Instance.Id, client.Store.ID.String())
-		err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
+		err = connectClient()
 		if err != nil {
 			if strings.Contains(err.Error(), "EOF") {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Erro de conexão WebSocket (EOF). Tentando reconectar em 5 segundos...", cd.Instance.Id)
 				time.Sleep(5 * time.Second)
-				err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
+				err = connectClient()
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Falha na segunda tentativa de conexão: %v", cd.Instance.Id, err)
 					return
@@ -1039,7 +1059,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 				client.SetProxy(nil)
 
 				// Tenta conectar sem proxy
-				err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
+				err = connectClient()
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect even without proxy: %v", cd.Instance.Id, err)
 					return
@@ -1058,12 +1078,12 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		// Instead we Connect() directly and consume *events.QR in myEventHandler
 		// (see handleQRCodes), which pair.go dispatches to every handler anyway.
 		mycli.markPairingStarted()
-		err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
+		err = connectClient()
 		if err != nil {
 			if strings.Contains(err.Error(), "EOF") {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Erro de conexão WebSocket (EOF). Tentando reconectar em 5 segundos...", cd.Instance.Id)
 				time.Sleep(5 * time.Second)
-				err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
+				err = connectClient()
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Falha na segunda tentativa de conexão: %v", cd.Instance.Id, err)
 					return
@@ -1075,7 +1095,7 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 				client.SetProxy(nil)
 
 				// Tenta conectar sem proxy
-				err = instance_runtime.DoProviderCommand(context.Background(), w.runtimeRegistry, func(commandCtx context.Context) error { return client.ConnectContext(commandCtx) })
+				err = connectClient()
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect even without proxy: %v", cd.Instance.Id, err)
 					return
