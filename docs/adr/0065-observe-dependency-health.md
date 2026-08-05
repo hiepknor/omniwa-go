@@ -1,4 +1,4 @@
-# ADR 0061: Observe dependency health without changing readiness
+# ADR 0065: Observe dependency health without changing readiness
 
 ## Context
 

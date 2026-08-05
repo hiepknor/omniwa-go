@@ -7,6 +7,7 @@ name: omniwa-go
 services:
   omniwa-go:
     image: ${OMNIWA_IMAGE:?Set OMNIWA_IMAGE to an immutable sha256 digest}
+    stop_grace_period: 75s
     container_name: omniwa-go
     restart: unless-stopped
     ports:

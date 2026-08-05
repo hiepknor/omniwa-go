@@ -105,8 +105,7 @@ func (r *ActiveRuntime) BeginDrain() error {
 			r.drainErr = transitionErr
 			r.mu.Unlock()
 		}
-		r.cancel()
-		r.supervisor.Stopped()
+		r.supervisor.Seal()
 	})
 	r.mu.Lock()
 	err := r.drainErr
@@ -125,6 +124,7 @@ func (r *ActiveRuntime) Stop(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	drainErr := r.BeginDrain()
+	r.cancel()
 	stopped := r.supervisor.Stopped()
 	select {
 	case <-stopped:
