@@ -96,3 +96,20 @@ func TestIsPairedClientRequiresDurableStoreIdentity(t *testing.T) {
 		t.Fatal("client with a durable identity was treated as unpaired")
 	}
 }
+
+func TestPairingObservationTracksQRWithoutRaces(t *testing.T) {
+	client := &MyClient{}
+	client.markPairingStarted()
+	client.markPairingQRSeen()
+
+	elapsed, qrSeen := client.pairingObservation()
+	if elapsed < 0 || !qrSeen {
+		t.Fatalf("observation = (%s, %t), want non-negative elapsed and QR seen", elapsed, qrSeen)
+	}
+
+	client.markPairingStarted()
+	_, qrSeen = client.pairingObservation()
+	if qrSeen {
+		t.Fatal("new pairing attempt retained the previous QR observation")
+	}
+}

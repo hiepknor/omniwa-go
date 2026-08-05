@@ -420,7 +420,10 @@ func Load() *Config {
 	}
 	clientName := os.Getenv(config_env.CLIENT_NAME)
 
-	waDebug := os.Getenv(config_env.WA_DEBUG)
+	waDebug := whatsAppLogLevel(
+		os.Getenv(config_env.WA_DEBUG),
+		os.Getenv(config_env.WA_DEBUG_LEGACY),
+	)
 
 	logType := os.Getenv(config_env.LOGTYPE)
 
@@ -1011,6 +1014,13 @@ func Load() *Config {
 	}
 
 	return config
+}
+
+func whatsAppLogLevel(configured, legacy string) string {
+	if level := strings.TrimSpace(configured); level != "" {
+		return level
+	}
+	return strings.TrimSpace(legacy)
 }
 
 func validatePhoneIdentityFeatureFlags(evidenceEnabled, exposureEnabled bool) error {
