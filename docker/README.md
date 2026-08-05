@@ -100,6 +100,12 @@ verified `ghcr.io/hiepknor/omniwa-go@sha256:...` value recorded by the publish
 workflow, and `POSTGRES_IMAGE` must also identify an immutable digest. Keep the
 previous digests as rollback targets.
 
+Before and immediately after directing traffic to a new digest, run the
+[production preflight](../docs/runbooks/production-preflight.md). The gate
+verifies the exact runtime revision, active readiness, durable event backlog,
+dead letters, and an optional operator-owned MinIO read/write probe without
+placing the API key on the command line.
+
 ### One-shot database migration
 
 The image exposes a `migrate` command that upgrades the users database, the
