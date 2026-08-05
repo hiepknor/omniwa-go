@@ -37,11 +37,19 @@ authenticated `GET /server/health` response and the one-hot
 `unknown`, `healthy`, and `unavailable`; allowed dependencies are
 `users_database`, `external_event_outbox`, `rabbitmq`, `legacy_media`,
 `media_assets`, and `campaign_media`. These observations are cached and never
-put a downstream network call on the HTTP request path. They intentionally do
-not change `/server/ready` in this rollout. Raw errors, endpoints, bucket names,
-instance identifiers, and credentials are not exposed.
+put a downstream network call on the HTTP request path. They do not change
+`/server/ready` unless an operator enables an opt-in dependency requirement.
+Raw errors, endpoints, bucket names, instance identifiers, and credentials are
+not exposed.
 `omniwa_dependency_last_check_timestamp_seconds{dependency}` allows alerting
 when a probe stops updating even if its last cached state was healthy.
+
+The `READINESS_REQUIRE_USERS_DATABASE`,
+`READINESS_REQUIRE_EVENT_DELIVERY`, and `READINESS_REQUIRE_MINIO` flags promote
+the corresponding configured dependencies to readiness gates. Required
+dependencies use two-success recovery, three-failure degradation, and a
+45-second maximum observation age. Enable one group at a time after validating
+the dependency metrics; all flags default to `false` for compatibility.
 
 Metrics are process-local and reset when the application restarts. Use the
 persisted server overview and projection-health endpoints for durable state and

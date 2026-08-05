@@ -36,6 +36,9 @@ services:
     command: ["migrate"]
     environment:
       LICENSE_GATE_ENABLED: ${LICENSE_GATE_ENABLED:-true}
+      READINESS_REQUIRE_USERS_DATABASE: ${READINESS_REQUIRE_USERS_DATABASE:-false}
+      READINESS_REQUIRE_EVENT_DELIVERY: ${READINESS_REQUIRE_EVENT_DELIVERY:-false}
+      READINESS_REQUIRE_MINIO: ${READINESS_REQUIRE_MINIO:-false}
       POSTGRES_AUTH_DB_FILE: /run/secrets/omniwa_postgres_auth_dsn
       POSTGRES_USERS_DB_FILE: /run/secrets/omniwa_postgres_users_dsn
     secrets:
