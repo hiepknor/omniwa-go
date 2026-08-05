@@ -142,7 +142,7 @@ func TestRepositoryPostgresLifecycleFencingAndAtomicity(t *testing.T) {
 	}
 
 	health, err := repository.Health(ctx)
-	if err != nil || health.DeadLetter < 1 {
+	if err != nil || health.DeadLetter != 0 {
 		t.Fatalf("outbox health = %#v, %v", health, err)
 	}
 	resolver, err := NewDatabaseTargetResolver(db, "https://global.example/events", true)
