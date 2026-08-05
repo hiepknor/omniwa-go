@@ -1854,6 +1854,28 @@ ON projection_phone_identity_evidence (instance_id, last_observed_at DESC);`,
         CHECK (epoch > 0)
 );`,
 	},
+	{
+		Version: 42,
+		Name:    "create_external_event_replay_audits",
+		SQL: `CREATE TABLE external_event_replay_audits (
+    id UUID PRIMARY KEY,
+    delivery_id UUID NOT NULL,
+    reason TEXT NOT NULL,
+    actor_reference_hash VARCHAR(64) NOT NULL,
+    request_id VARCHAR(64) NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT external_event_replay_audits_delivery_fk
+        FOREIGN KEY (delivery_id) REFERENCES external_event_outbox(id) ON DELETE CASCADE,
+    CONSTRAINT external_event_replay_audits_reason_check
+        CHECK (CHAR_LENGTH(reason) BETWEEN 1 AND 500),
+    CONSTRAINT external_event_replay_audits_actor_hash_check
+        CHECK (actor_reference_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT external_event_replay_audits_request_id_check
+        CHECK (request_id ~ '^[A-Za-z0-9._-]{16,64}$')
+);
+CREATE INDEX external_event_replay_audits_delivery_idx
+ON external_event_replay_audits (delivery_id, occurred_at DESC);`,
+	},
 }
 
 func Run(db *gorm.DB) error {

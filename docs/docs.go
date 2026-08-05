@@ -7359,6 +7359,167 @@ const docTemplate = `{
                 }
             }
         },
+        "/server/external-event-failures": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "List external event delivery dead letters",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID filter",
+                        "name": "instanceId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transport filter (webhook, rabbitmq, nats)",
+                        "name": "transport",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.DeadLetterList"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/server/external-event-failures/replay": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Replay external event delivery dead letter",
+                "parameters": [
+                    {
+                        "description": "Delivery identity and audit reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pkg_server_handler.ExternalEventReplayRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/apidocs.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.ReplayResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/apidocs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/server/health": {
             "get": {
                 "security": [
@@ -10178,6 +10339,108 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_events_outbox.DeadLetterItem": {
+            "type": "object",
+            "properties": {
+                "attemptCount": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "deadLetteredAt": {
+                    "type": "string"
+                },
+                "destination": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.Destination"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "instanceId": {
+                    "type": "string"
+                },
+                "lastAttemptAt": {
+                    "type": "string"
+                },
+                "lastErrorCode": {
+                    "type": "string"
+                },
+                "maxAttempts": {
+                    "type": "integer"
+                },
+                "transport": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.Transport"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_events_outbox.DeadLetterList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.DeadLetterItem"
+                    }
+                },
+                "nextCursor": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_events_outbox.Destination": {
+            "type": "string",
+            "enum": [
+                "instance",
+                "global"
+            ],
+            "x-enum-varnames": [
+                "DestinationInstance",
+                "DestinationGlobal"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_events_outbox.ReplayResult": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "occurredAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_events_outbox.Status"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_events_outbox.Status": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "processing",
+                "delivered",
+                "dead_letter"
+            ],
+            "x-enum-varnames": [
+                "StatusPending",
+                "StatusProcessing",
+                "StatusDelivered",
+                "StatusDeadLetter"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_events_outbox.Transport": {
+            "type": "string",
+            "enum": [
+                "webhook",
+                "rabbitmq",
+                "nats"
+            ],
+            "x-enum-varnames": [
+                "TransportWebhook",
+                "TransportRabbitMQ",
+                "TransportNATS"
+            ]
         },
         "github_com_evolution-foundation_evolution-go_pkg_groupList_repository.EligibilityIssue": {
             "type": "object",
@@ -13608,6 +13871,21 @@ const docTemplate = `{
             "properties": {
                 "expectedVersion": {
                     "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_server_handler.ExternalEventReplayRequest": {
+            "type": "object",
+            "required": [
+                "id",
+                "reason"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string"
                 },
                 "reason": {
                     "type": "string"

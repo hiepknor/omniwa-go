@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,9 +110,39 @@ func TestRepositoryPostgresLifecycleFencingAndAtomicity(t *testing.T) {
 		stored.DeadLetteredAt == nil || stored.LastErrorCode == nil || *stored.LastErrorCode != "attempt_budget_exhausted" {
 		t.Fatalf("dead-letter row = %#v, %v", stored, err)
 	}
+	page, err := repository.ListDeadLetters(ctx, instance.Id, TransportRabbitMQ, 10, nil)
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != expiringDelivery.ID {
+		t.Fatalf("dead-letter page = %#v, %v", page, err)
+	}
+	operation := ReplayOperation{
+		DeliveryID: expiringDelivery.ID, Reason: "operator confirmed transport recovery",
+		ActorReferenceHash: strings.Repeat("a", 64), RequestID: "request-replay-0001", OccurredAt: now,
+	}
+	if err := repository.ReplayDeadLetter(ctx, operation); err != nil {
+		t.Fatal(err)
+	}
+	stored = Delivery{}
+	if err := db.First(&stored, "id = ?", expiringDelivery.ID).Error; err != nil || stored.Status != StatusPending || stored.AttemptCount != 0 ||
+		stored.DeadLetteredAt != nil || string(stored.Payload) == `{}` {
+		t.Fatalf("replayed row = %#v, %v", stored, err)
+	}
+	var auditCount int64
+	if err := db.Model(&ReplayAudit{}).Where("delivery_id = ?", expiringDelivery.ID).Count(&auditCount).Error; err != nil || auditCount != 1 {
+		t.Fatalf("replay audit count=%d err=%v", auditCount, err)
+	}
+	if err := repository.ReplayDeadLetter(ctx, operation); !errors.Is(err, ErrDeadLetterNotActionable) {
+		t.Fatalf("duplicate replay error=%v", err)
+	}
+	replayed, err := repository.ClaimReady(ctx, 1, time.Minute)
+	if err != nil || len(replayed) != 1 || replayed[0].ID != expiringDelivery.ID {
+		t.Fatalf("replayed claim=%#v err=%v", replayed, err)
+	}
+	if err := repository.MarkDelivered(ctx, &replayed[0]); err != nil {
+		t.Fatal(err)
+	}
 
 	health, err := repository.Health(ctx)
-	if err != nil || health.DeadLetter < 1 {
+	if err != nil || health.DeadLetter != 0 {
 		t.Fatalf("outbox health = %#v, %v", health, err)
 	}
 	resolver, err := NewDatabaseTargetResolver(db, "https://global.example/events", true)

@@ -62,10 +62,11 @@ type ExternalEventsObserver interface {
 // ExternalEvents is the process-composition result for outbound event
 // transports. Domain event behavior remains owned by pkg/events.
 type ExternalEvents struct {
-	nats         producer_interfaces.Producer
-	outbox       event_outbox.Repository
-	outboxWorker Work
-	rabbitMQ     globalQueueCreator
+	nats           producer_interfaces.Producer
+	outbox         event_outbox.Repository
+	outboxFailures event_outbox.FailureRepository
+	outboxWorker   Work
+	rabbitMQ       globalQueueCreator
 }
 
 type ExternalEventsDependencies struct {
@@ -147,10 +148,11 @@ func NewExternalEvents(deps ExternalEventsDependencies) (*ExternalEvents, error)
 	}
 
 	return &ExternalEvents{
-		nats:         natsProducer,
-		outbox:       outboxRepository,
-		outboxWorker: outboxWorker.Run,
-		rabbitMQ:     rabbitMQProducer,
+		nats:           natsProducer,
+		outbox:         outboxRepository,
+		outboxFailures: outboxRepository,
+		outboxWorker:   outboxWorker.Run,
+		rabbitMQ:       rabbitMQProducer,
 	}, nil
 }
 
@@ -166,6 +168,13 @@ func (e *ExternalEvents) OutboxRepository() event_outbox.Repository {
 		return nil
 	}
 	return e.outbox
+}
+
+func (e *ExternalEvents) OutboxFailureRepository() event_outbox.FailureRepository {
+	if e == nil {
+		return nil
+	}
+	return e.outboxFailures
 }
 
 func (e *ExternalEvents) OutboxWork() Work {

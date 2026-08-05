@@ -62,3 +62,14 @@ type Delivery struct {
 }
 
 func (Delivery) TableName() string { return "external_event_outbox" }
+
+type ReplayAudit struct {
+	ID                 string    `gorm:"column:id;type:uuid;primaryKey"`
+	DeliveryID         string    `gorm:"column:delivery_id;type:uuid;not null"`
+	Reason             string    `gorm:"column:reason;not null"`
+	ActorReferenceHash string    `gorm:"column:actor_reference_hash;size:64;not null"`
+	RequestID          string    `gorm:"column:request_id;size:64;not null"`
+	OccurredAt         time.Time `gorm:"column:occurred_at;not null"`
+}
+
+func (ReplayAudit) TableName() string { return "external_event_replay_audits" }

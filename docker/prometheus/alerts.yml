@@ -51,6 +51,14 @@ groups:
         annotations:
           summary: The oldest external event delivery has been pending for more than five minutes
 
+      - alert: OmniWAExternalDeliveryDeadLetterBacklog
+        expr: omniwa_external_event_outbox_rows{status="dead_letter"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: External event dead letters require operator review
+
       - alert: OmniWAExternalDeliveryInfrastructureFailure
         expr: sum(increase(omniwa_external_event_outbox_infrastructure_failures_total[5m])) > 0
         for: 0m

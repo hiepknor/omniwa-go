@@ -13,7 +13,7 @@ project_suffix="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${PPID}"
 project_name="omniwa-smoke-${project_suffix//[^a-zA-Z0-9_-]/-}"
 smoke_image="omniwa-smoke:${project_suffix//[^a-zA-Z0-9_.-]/-}"
 smoke_active_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-expected_migrations="41:41"
+expected_migrations="42:42"
 
 if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
   echo "SOURCE_SHA must be a full 40-character lowercase Git commit" >&2
