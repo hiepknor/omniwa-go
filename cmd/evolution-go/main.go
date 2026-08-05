@@ -1415,20 +1415,14 @@ func main() {
 	// Stop heartbeat loop
 	heartbeatCancel()
 
+	if err := bootstrap.ShutdownActiveServer(srv, activeRuntime, bootstrap.DefaultHTTPDrainTimeout, bootstrap.DefaultWorkerDrainTimeout); err != nil {
+		logger.LogError("[SHUTDOWN] Phased shutdown completed with errors: %v", err)
+	} else {
+		logger.LogInfo("[SHUTDOWN] HTTP requests drained and background workers stopped")
+	}
+
 	if cfg.LicenseGateEnabled {
 		core.Shutdown(runtimeCtx)
-	}
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.LogError("[SHUTDOWN] Server forced to shutdown: %v", err)
-	}
-	if err := activeRuntime.Stop(shutdownCtx); err != nil {
-		logger.LogError("[SHUTDOWN] Background worker shutdown failed: %v", err)
-	} else {
-		logger.LogInfo("[SHUTDOWN] Background workers stopped")
 	}
 
 	logger.LogInfo("[SHUTDOWN] Server exited")

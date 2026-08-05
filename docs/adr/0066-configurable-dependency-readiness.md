@@ -1,4 +1,4 @@
-# ADR 0062: Gate readiness on stabilized dependency health
+# ADR 0066: Gate readiness on stabilized dependency health
 
 - Status: Accepted
 - Date: 2026-08-05

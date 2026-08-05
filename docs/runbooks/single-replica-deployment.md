@@ -33,6 +33,8 @@ split-brain evidence and authorization described there.
 - Docker Compose: run one `omniwa-go` service container. Do not use `--scale`.
   A secretless `omniwa-standby` control plane is permitted because it has no
   database, ownership, WhatsApp, worker, secret, or business-route capability.
+- Keep the container stop grace period above 60 seconds. The production
+  references use 75 seconds for the 30-second HTTP and worker drain phases.
 - Docker Swarm: set `deploy.replicas: 1` and `update_config.order: stop-first`.
 - Kubernetes: set `replicas: 1`, use the `Recreate` strategy, and do not attach
   a HorizontalPodAutoscaler.

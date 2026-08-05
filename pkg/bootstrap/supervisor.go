@@ -62,13 +62,22 @@ func (s *Supervisor) Wait() {
 	<-s.Stopped()
 }
 
+// Seal closes worker registration without cancelling or waiting for existing
+// work. It creates a drain boundary before HTTP requests are allowed to finish.
+func (s *Supervisor) Seal() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.sealed = true
+	s.mu.Unlock()
+}
+
 // Stopped seals registration and returns a channel closed after all workers
 // exit, allowing bounded shutdown selection without ad-hoc waiter goroutines.
 func (s *Supervisor) Stopped() <-chan struct{} {
 	s.stopOnce.Do(func() {
-		s.mu.Lock()
-		s.sealed = true
-		s.mu.Unlock()
+		s.Seal()
 		go func() {
 			s.wait.Wait()
 			close(s.done)
