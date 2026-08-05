@@ -11963,12 +11963,23 @@ paths:
     get:
       consumes:
       - application/json
+      deprecated: true
       description: Get my groups
       produces:
       - application/json
       responses:
         "200":
           description: success
+          headers:
+            Deprecation:
+              description: RFC 9745 structured deprecation date
+              type: string
+            Link:
+              description: Bounded successor endpoint
+              type: string
+            Sunset:
+              description: RFC 8594 sunset date
+              type: string
           schema:
             allOf:
             - $ref: '#/definitions/apidocs.SuccessResponse'
@@ -11978,12 +11989,46 @@ paths:
                     $ref: '#/definitions/types.GroupInfo'
                   type: array
               type: object
+        "410":
+          description: Legacy endpoint disabled; use /group/search
+          headers:
+            Deprecation:
+              description: RFC 9745 structured deprecation date
+              type: string
+            Link:
+              description: Bounded successor endpoint
+              type: string
+            Sunset:
+              description: RFC 8594 sunset date
+              type: string
+          schema:
+            $ref: '#/definitions/apidocs.ErrorResponse'
         "429":
           description: Information query rate limited; see Retry-After header
+          headers:
+            Deprecation:
+              description: RFC 9745 structured deprecation date
+              type: string
+            Link:
+              description: Bounded successor endpoint
+              type: string
+            Sunset:
+              description: RFC 8594 sunset date
+              type: string
           schema:
             $ref: '#/definitions/apidocs.RateLimitResponse'
         "500":
           description: Internal server error
+          headers:
+            Deprecation:
+              description: RFC 9745 structured deprecation date
+              type: string
+            Link:
+              description: Bounded successor endpoint
+              type: string
+            Sunset:
+              description: RFC 8594 sunset date
+              type: string
           schema:
             $ref: '#/definitions/apidocs.ErrorResponse'
       security:

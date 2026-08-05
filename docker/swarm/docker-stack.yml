@@ -23,6 +23,7 @@ services:
       READINESS_REQUIRE_USERS_DATABASE: "false"
       READINESS_REQUIRE_EVENT_DELIVERY: "false"
       READINESS_REQUIRE_MINIO: "false"
+      WA_LEGACY_GROUP_MYALL_ENABLED: "true"
 
       GLOBAL_API_KEY_FILE: /run/secrets/omniwa_global_api_key
       POSTGRES_AUTH_DB_FILE: /run/secrets/omniwa_postgres_auth_dsn

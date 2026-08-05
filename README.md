@@ -99,6 +99,7 @@ DATABASE_SAVE_MESSAGES=false
 | `WEBHOOK_SIGNATURE_KEY_ID` | Non-secret key rotation identifier sent with signed Webhooks | required when enabled |
 | `DATABASE_SAVE_MESSAGES` | Enable message storage | `false` |
 | `LICENSE_GATE_ENABLED` | Enable the license activation gate | `true` |
+| `WA_LEGACY_GROUP_MYALL_ENABLED` | Keep the deprecated unbounded `/group/myall` compatibility endpoint active | `true` |
 
 When `INSTANCE_TOKEN_HMAC_KEY` is enabled, admin capability discovery advertises
 `instance_token_rotation` and `instance_credential_health`. Rotation is compare-and-swap protected by the
