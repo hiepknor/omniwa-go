@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"errors"
 	"net/url"
 
@@ -50,6 +51,7 @@ func ExternalEventsErrorCode(err error) string {
 
 type globalQueueCreator interface {
 	CreateGlobalQueues() error
+	Health(context.Context) error
 }
 
 type ExternalEventsObserver interface {
@@ -171,6 +173,13 @@ func (e *ExternalEvents) OutboxWork() Work {
 		return nil
 	}
 	return e.outboxWorker
+}
+
+func (e *ExternalEvents) RabbitMQHealth(ctx context.Context) error {
+	if e == nil || e.rabbitMQ == nil {
+		return errors.New("external events RabbitMQ producer is unavailable")
+	}
+	return e.rabbitMQ.Health(ctx)
 }
 
 func newWebhookRequester(cfg *config.Config) (netguard.Requester, error) {

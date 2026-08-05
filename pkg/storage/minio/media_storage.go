@@ -20,6 +20,20 @@ type MinioMediaStorage struct {
 	bucketName string
 }
 
+func (m *MinioMediaStorage) Health(ctx context.Context) error {
+	if m == nil || m.client == nil || strings.TrimSpace(m.bucketName) == "" || ctx == nil {
+		return errors.New("legacy media storage is unavailable")
+	}
+	exists, err := m.client.BucketExists(ctx, m.bucketName)
+	if err != nil {
+		return fmt.Errorf("check legacy media storage health: %w", err)
+	}
+	if !exists {
+		return errors.New("legacy media bucket is unavailable")
+	}
+	return nil
+}
+
 const legacyMediaPrefix = "evolution-go-medias/"
 
 var legacyMediaNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$`)

@@ -76,6 +76,7 @@ import (
 	send_handler "github.com/evolution-foundation/evolution-go/pkg/sendMessage/handler"
 	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
 	server_handler "github.com/evolution-foundation/evolution-go/pkg/server/handler"
+	server_service "github.com/evolution-foundation/evolution-go/pkg/server/service"
 	storage_interfaces "github.com/evolution-foundation/evolution-go/pkg/storage/interfaces"
 	minio_storage "github.com/evolution-foundation/evolution-go/pkg/storage/minio"
 	user_handler "github.com/evolution-foundation/evolution-go/pkg/user/handler"
@@ -198,6 +199,48 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 	natsProducer := externalEvents.NATSProducer()
 	outboxRepository := externalEvents.OutboxRepository()
+	dependencyNames := []server_service.DependencyName{
+		server_service.DependencyUsersDatabase,
+		server_service.DependencyExternalEventOutbox,
+	}
+	if config.AmqpUrl != "" {
+		dependencyNames = append(dependencyNames, server_service.DependencyRabbitMQ)
+	}
+	if config.MinioEnabled {
+		dependencyNames = append(dependencyNames, server_service.DependencyLegacyMedia)
+	}
+	if config.MediaAssetsEnabled {
+		dependencyNames = append(dependencyNames, server_service.DependencyMediaAssets)
+	}
+	if config.CampaignImageContentEnabled {
+		dependencyNames = append(dependencyNames, server_service.DependencyCampaignMedia)
+	}
+	dependencyHealth, err := server_service.NewDependencyHealthRegistry(metricsRegistry, dependencyNames...)
+	if err != nil {
+		logger.LogFatal("component=dependency_health action=initialize result=failed error_code=invalid_configuration")
+	}
+	startDependencyProbe := func(name server_service.DependencyName, probe server_service.DependencyProbe) {
+		worker, workerErr := server_service.NewDependencyProbeWorker(
+			name, probe, dependencyHealth,
+			server_service.DefaultDependencyProbeInterval, server_service.DefaultDependencyProbeTimeout,
+		)
+		if workerErr != nil {
+			logger.LogFatal("component=dependency_health action=register dependency=%s result=failed error_code=invalid_configuration", name)
+		}
+		startBackground(backgroundWorkers, "dependency_health."+string(name), worker.Run)
+	}
+	usersDatabase, err := db.DB()
+	if err != nil {
+		logger.LogFatal("component=dependency_health action=register dependency=users_database result=failed error_code=database_pool_unavailable")
+	}
+	startDependencyProbe(server_service.DependencyUsersDatabase, usersDatabase.PingContext)
+	startDependencyProbe(server_service.DependencyExternalEventOutbox, func(ctx context.Context) error {
+		_, healthErr := outboxRepository.Health(ctx)
+		return healthErr
+	})
+	if config.AmqpUrl != "" {
+		startDependencyProbe(server_service.DependencyRabbitMQ, externalEvents.RabbitMQHealth)
+	}
 	startBackground(backgroundWorkers, "external_event_outbox.deliveries", externalEvents.OutboxWork())
 	logger.LogInfo("component=external_event_outbox action=initialize result=success mode=durable transports=webhook,rabbitmq")
 	originPolicy, err := httpapi.NewOriginPolicy(config.HTTPAllowedOrigins)
@@ -236,6 +279,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		if err != nil {
 			log.Fatal(err)
 		}
+		startDependencyProbe(server_service.DependencyLegacyMedia, mediaStorage.Health)
 	}
 	if config.MediaAssetsEnabled {
 		if !config.MinioEnabled {
@@ -255,6 +299,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			logger.LogFatal("component=media_assets action=health result=failed error=%v", err)
 		}
 		logger.LogInfo("component=media_assets action=initialize result=success")
+		startDependencyProbe(server_service.DependencyMediaAssets, mediaAssetStore.Health)
 	}
 	if config.ChatImageContentEnabled && !config.MediaAssetsEnabled {
 		logger.LogFatal("component=chat_image_content action=initialize result=failed error=media_assets_required")
@@ -848,6 +893,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		)
 		campaignMediaHandler = campaign_handler.NewMediaHandler(campaignMediaService, config.CampaignMediaMaxBytes)
 		startBackground(backgroundWorkers, "campaign_media.cleanup", campaignMediaService.RunCleanup)
+		startDependencyProbe(server_service.DependencyCampaignMedia, campaignMediaStore.Health)
 	}
 	var imageCampaignSender campaign_service.Sender
 	if config.CampaignImageContentEnabled {
@@ -979,6 +1025,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			server_handler.WithAdminCapabilities(credentialCapabilities...),
 			server_handler.WithCapabilityInstanceReader(instanceRepository),
 			server_handler.WithRuntimeHealth(processState),
+			server_handler.WithDependencyHealth(dependencyHealth),
 		),
 		routes.WithConversationAPIObserver(metricsRegistry.ConversationAPI()),
 	).AssignRoutes(r)

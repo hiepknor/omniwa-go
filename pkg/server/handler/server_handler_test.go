@@ -18,6 +18,8 @@ import (
 	projection_model "github.com/evolution-foundation/evolution-go/pkg/projection/model"
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
+	server_service "github.com/evolution-foundation/evolution-go/pkg/server/service"
+	"github.com/evolution-foundation/evolution-go/pkg/waquery"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -32,6 +34,18 @@ type projectionStateHandlerStub struct {
 type runtimeHealthStub struct {
 	live  bool
 	ready bool
+}
+
+type dependencyHealthStub struct {
+	health []server_service.DependencyHealth
+}
+
+func (s dependencyHealthStub) Snapshot() []server_service.DependencyHealth { return s.health }
+
+type serverHealthRepositoryStub struct{}
+
+func (serverHealthRepositoryStub) ListInstances(context.Context, string) ([]projection_repository.InstanceHealthRecord, error) {
+	return []projection_repository.InstanceHealthRecord{}, nil
 }
 
 func (s runtimeHealthStub) Live() bool  { return s.live }
@@ -78,6 +92,37 @@ func TestServerOkContractIsUnchanged(t *testing.T) {
 	handler.ServerOk(ctx)
 	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != `{"status":"ok"}` {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestServerHealthAddsCachedDependenciesWithoutChangingReadiness(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard, err := waquery.New(waquery.Settings{RatePerSecond: 1, Burst: 1, MaxWait: time.Second, Cooldown: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &projectionStateHandlerStub{}
+	healthService := projection_service.NewServerHealthService(serverHealthRepositoryStub{}, state, guard)
+	handler := NewServerHandler("test", "abc123", state, nil, nil,
+		WithHealthService(healthService),
+		WithRuntimeHealth(runtimeHealthStub{live: true, ready: true}),
+		WithDependencyHealth(dependencyHealthStub{health: []server_service.DependencyHealth{
+			{Name: server_service.DependencyRabbitMQ, Status: server_service.DependencyUnavailable, ErrorCode: "probe_failed"},
+		}}),
+	)
+	response := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(response)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/server/health", nil)
+	handler.Health(ctx)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"dependencies":[{"name":"rabbitmq","status":"unavailable","errorCode":"probe_failed"}]`) {
+		t.Fatalf("Health() status=%d body=%s", response.Code, response.Body.String())
+	}
+	response = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(response)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/server/ready", nil)
+	handler.RuntimeReady(ctx)
+	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != `{"status":"ready"}` {
+		t.Fatalf("dependency observation changed readiness: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

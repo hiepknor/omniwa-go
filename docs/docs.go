@@ -7385,7 +7385,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ServerHealth"
+                                            "$ref": "#/definitions/pkg_server_handler.ServerHealthResponse"
                                         }
                                     }
                                 }
@@ -12297,23 +12297,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_evolution-foundation_evolution-go_pkg_projection_service.ServerHealth": {
-            "type": "object",
-            "properties": {
-                "api": {
-                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.HealthDimension"
-                },
-                "generatedAt": {
-                    "type": "string"
-                },
-                "instances": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.InstanceHealth"
-                    }
-                }
-            }
-        },
         "github_com_evolution-foundation_evolution-go_pkg_projection_service.ThrottlingHealth": {
             "type": "object",
             "properties": {
@@ -13013,6 +12996,58 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyHealth": {
+            "type": "object",
+            "properties": {
+                "checkedAt": {
+                    "type": "string"
+                },
+                "errorCode": {
+                    "type": "string"
+                },
+                "lastSuccessAt": {
+                    "type": "string"
+                },
+                "name": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyName"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyStatus"
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyName": {
+            "type": "string",
+            "enum": [
+                "users_database",
+                "external_event_outbox",
+                "rabbitmq",
+                "legacy_media",
+                "media_assets",
+                "campaign_media"
+            ],
+            "x-enum-varnames": [
+                "DependencyUsersDatabase",
+                "DependencyExternalEventOutbox",
+                "DependencyRabbitMQ",
+                "DependencyLegacyMedia",
+                "DependencyMediaAssets",
+                "DependencyCampaignMedia"
+            ]
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyStatus": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "healthy",
+                "unavailable"
+            ],
+            "x-enum-varnames": [
+                "DependencyUnknown",
+                "DependencyHealthy",
+                "DependencyUnavailable"
+            ]
+        },
         "github_com_evolution-foundation_evolution-go_pkg_user_service.BlockStruct": {
             "type": "object",
             "properties": {
@@ -13607,6 +13642,29 @@ const docTemplate = `{
             "properties": {
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "pkg_server_handler.ServerHealthResponse": {
+            "type": "object",
+            "properties": {
+                "api": {
+                    "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.HealthDimension"
+                },
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyHealth"
+                    }
+                },
+                "generatedAt": {
+                    "type": "string"
+                },
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.InstanceHealth"
+                    }
                 }
             }
         },

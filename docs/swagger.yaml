@@ -2419,17 +2419,6 @@ definitions:
       workLagSeconds:
         type: integer
     type: object
-  github_com_evolution-foundation_evolution-go_pkg_projection_service.ServerHealth:
-    properties:
-      api:
-        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.HealthDimension'
-      generatedAt:
-        type: string
-      instances:
-        items:
-          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.InstanceHealth'
-        type: array
-    type: object
   github_com_evolution-foundation_evolution-go_pkg_projection_service.ThrottlingHealth:
     properties:
       circuitState:
@@ -2929,6 +2918,45 @@ definitions:
       text:
         type: string
     type: object
+  github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyHealth:
+    properties:
+      checkedAt:
+        type: string
+      errorCode:
+        type: string
+      lastSuccessAt:
+        type: string
+      name:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyName'
+      status:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyStatus'
+    type: object
+  github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyName:
+    enum:
+    - users_database
+    - external_event_outbox
+    - rabbitmq
+    - legacy_media
+    - media_assets
+    - campaign_media
+    type: string
+    x-enum-varnames:
+    - DependencyUsersDatabase
+    - DependencyExternalEventOutbox
+    - DependencyRabbitMQ
+    - DependencyLegacyMedia
+    - DependencyMediaAssets
+    - DependencyCampaignMedia
+  github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyStatus:
+    enum:
+    - unknown
+    - healthy
+    - unavailable
+    type: string
+    x-enum-varnames:
+    - DependencyUnknown
+    - DependencyHealthy
+    - DependencyUnavailable
   github_com_evolution-foundation_evolution-go_pkg_user_service.BlockStruct:
     properties:
       number:
@@ -3323,6 +3351,21 @@ definitions:
     properties:
       status:
         type: string
+    type: object
+  pkg_server_handler.ServerHealthResponse:
+    properties:
+      api:
+        $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.HealthDimension'
+      dependencies:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_server_service.DependencyHealth'
+        type: array
+      generatedAt:
+        type: string
+      instances:
+        items:
+          $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.InstanceHealth'
+        type: array
     type: object
   types.AddressingMode:
     enum:
@@ -14557,7 +14600,7 @@ paths:
             - $ref: '#/definitions/apidocs.SuccessResponse'
             - properties:
                 data:
-                  $ref: '#/definitions/github_com_evolution-foundation_evolution-go_pkg_projection_service.ServerHealth'
+                  $ref: '#/definitions/pkg_server_handler.ServerHealthResponse'
               type: object
         "401":
           description: Not authorized
