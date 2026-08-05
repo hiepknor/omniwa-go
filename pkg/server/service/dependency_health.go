@@ -33,6 +33,9 @@ type DependencyHealth struct {
 	CheckedAt     *time.Time       `json:"checkedAt,omitempty"`
 	LastSuccessAt *time.Time       `json:"lastSuccessAt,omitempty"`
 	ErrorCode     string           `json:"errorCode,omitempty"`
+	stableHealthy bool
+	successes     int
+	failures      int
 }
 
 type DependencyHealthObserver interface {
@@ -85,8 +88,18 @@ func (r *DependencyHealthRegistry) Observe(name DependencyName, err error, timed
 	if err == nil {
 		current.Status = DependencyHealthy
 		current.LastSuccessAt = timePointer(now)
+		current.successes++
+		current.failures = 0
+		if current.successes >= 2 {
+			current.stableHealthy = true
+		}
 	} else {
 		current.Status = DependencyUnavailable
+		current.failures++
+		current.successes = 0
+		if current.failures >= 3 {
+			current.stableHealthy = false
+		}
 		current.ErrorCode = "probe_failed"
 		if timedOut {
 			current.ErrorCode = "probe_timeout"

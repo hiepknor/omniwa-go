@@ -74,6 +74,9 @@ type Config struct {
 	QrcodeMaxCount                  int
 	CheckUserExists                 bool
 	LicenseGateEnabled              bool
+	ReadinessRequireUsersDatabase   bool
+	ReadinessRequireEventDelivery   bool
+	ReadinessRequireMinIO           bool
 	GroupListsEnabled               bool
 	GroupListEligibilityEnabled     bool
 	GroupManagementEnabled          bool
@@ -528,6 +531,18 @@ func Load() *Config {
 	// LICENSE_GATE_ENABLED=false to run without the license activation gate and
 	// the associated remote heartbeat.
 	licenseGateEnabled := os.Getenv(config_env.LICENSE_GATE_ENABLED) != "false"
+	readinessRequireUsersDatabase, err := parseOptionalStrictBool(os.Getenv(config_env.READINESS_REQUIRE_USERS_DATABASE))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.READINESS_REQUIRE_USERS_DATABASE, err)
+	}
+	readinessRequireEventDelivery, err := parseOptionalStrictBool(os.Getenv(config_env.READINESS_REQUIRE_EVENT_DELIVERY))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.READINESS_REQUIRE_EVENT_DELIVERY, err)
+	}
+	readinessRequireMinIO, err := parseOptionalStrictBool(os.Getenv(config_env.READINESS_REQUIRE_MINIO))
+	if err != nil {
+		logger.LogFatal("[CONFIG] invalid %s: %v", config_env.READINESS_REQUIRE_MINIO, err)
+	}
 	groupListsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LISTS_ENABLED)), "true")
 	groupListEligibilityEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_LIST_ELIGIBILITY_ENABLED)), "true")
 	groupManagementContractEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.WA_GROUP_MANAGEMENT_CONTRACT_ENABLED)), "true")
@@ -886,38 +901,41 @@ func Load() *Config {
 			AttemptTimeout: externalEventOutboxAttemptTimeout, StateTimeout: externalEventOutboxStateTimeout,
 			RetryBase: externalEventOutboxRetryBase, RetryMax: externalEventOutboxRetryMax,
 		},
-		ClientName:                  clientName,
-		ApiAudioConverter:           apiAudioConverter,
-		ApiAudioConverterKey:        apiAudioConverterKey,
-		PostgresHost:                postgresHost,
-		PostgresPort:                postgresPort,
-		PostgresUser:                postgresUser,
-		PostgresPassword:            postgresPassword,
-		PostgresDB:                  postgresDB,
-		WhatsappVersionMajor:        major,
-		WhatsappVersionMinor:        minor,
-		WhatsappVersionPatch:        patch,
-		ProxyProtocol:               proxyProtocol,
-		ProxyHost:                   proxyHost,
-		ProxyPort:                   proxyPort,
-		ProxyUsername:               proxyUsername,
-		ProxyPassword:               proxyPassword,
-		EventIgnoreGroup:            eventIgnoreGroup == "true",
-		EventIgnoreStatus:           eventIgnoreStatus == "true",
-		QrcodeMaxCount:              qrMaxCount,
-		CheckUserExists:             checkUserExists != "false", // Default true, set to false to disable
-		LicenseGateEnabled:          licenseGateEnabled,
-		GroupListsEnabled:           groupListsEnabled,
-		GroupListEligibilityEnabled: groupListEligibilityEnabled,
-		GroupManagementEnabled:      groupManagementContractEnabled,
-		GroupPhotoAssetsEnabled:     groupPhotoAssetsEnabled,
-		WAInfoRatePerSecond:         waInfoRatePerSecond,
-		WAInfoBurst:                 waInfoBurst,
-		WAInfoMaxWait:               waInfoMaxWait,
-		WAInfoCooldown:              waInfoCooldown,
-		GroupSyncInterval:           waGroupReconcileInterval,
-		MessageRetention:            messageRetention,
-		EventRetention:              eventRetention,
+		ClientName:                    clientName,
+		ApiAudioConverter:             apiAudioConverter,
+		ApiAudioConverterKey:          apiAudioConverterKey,
+		PostgresHost:                  postgresHost,
+		PostgresPort:                  postgresPort,
+		PostgresUser:                  postgresUser,
+		PostgresPassword:              postgresPassword,
+		PostgresDB:                    postgresDB,
+		WhatsappVersionMajor:          major,
+		WhatsappVersionMinor:          minor,
+		WhatsappVersionPatch:          patch,
+		ProxyProtocol:                 proxyProtocol,
+		ProxyHost:                     proxyHost,
+		ProxyPort:                     proxyPort,
+		ProxyUsername:                 proxyUsername,
+		ProxyPassword:                 proxyPassword,
+		EventIgnoreGroup:              eventIgnoreGroup == "true",
+		EventIgnoreStatus:             eventIgnoreStatus == "true",
+		QrcodeMaxCount:                qrMaxCount,
+		CheckUserExists:               checkUserExists != "false", // Default true, set to false to disable
+		LicenseGateEnabled:            licenseGateEnabled,
+		ReadinessRequireUsersDatabase: readinessRequireUsersDatabase,
+		ReadinessRequireEventDelivery: readinessRequireEventDelivery,
+		ReadinessRequireMinIO:         readinessRequireMinIO,
+		GroupListsEnabled:             groupListsEnabled,
+		GroupListEligibilityEnabled:   groupListEligibilityEnabled,
+		GroupManagementEnabled:        groupManagementContractEnabled,
+		GroupPhotoAssetsEnabled:       groupPhotoAssetsEnabled,
+		WAInfoRatePerSecond:           waInfoRatePerSecond,
+		WAInfoBurst:                   waInfoBurst,
+		WAInfoMaxWait:                 waInfoMaxWait,
+		WAInfoCooldown:                waInfoCooldown,
+		GroupSyncInterval:             waGroupReconcileInterval,
+		MessageRetention:              messageRetention,
+		EventRetention:                eventRetention,
 		RemoteMedia: RemoteMediaConfig{
 			Policy: remoteMediaFetchPolicy, AllowedHosts: remoteMediaAllowedHosts,
 			Timeout: remoteMediaFetchTimeout, MaxBytes: remoteMediaMaxBytes,

@@ -206,6 +206,11 @@ Use stop-first/Recreate upgrades, not start-first or surge rollouts. See the
 
 - Databases (`omniwa_auth`, `omniwa_users`) are created automatically on startup.
 - Set `LICENSE_GATE_ENABLED=false` in `.env` to run without the activation gate.
+- Dependency readiness gates are opt-in. Enable
+  `READINESS_REQUIRE_USERS_DATABASE`, `READINESS_REQUIRE_EVENT_DELIVERY`, and
+  `READINESS_REQUIRE_MINIO` one at a time after observing healthy probes. A
+  required dependency fails readiness after three failed probes and recovers
+  after two successful probes.
 - Set `HTTP_ALLOWED_ORIGINS` to a comma-separated list of exact `http://` or
   `https://` browser origins. The same policy protects HTTP and WebSocket
   handshakes; same-host requests and clients without an `Origin` header remain

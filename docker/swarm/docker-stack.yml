@@ -18,6 +18,11 @@ services:
       # Set to false to run without the license activation gate.
       LICENSE_GATE_ENABLED: "true"
 
+      # Enable one at a time after validating dependency health metrics.
+      READINESS_REQUIRE_USERS_DATABASE: "false"
+      READINESS_REQUIRE_EVENT_DELIVERY: "false"
+      READINESS_REQUIRE_MINIO: "false"
+
       GLOBAL_API_KEY_FILE: /run/secrets/omniwa_global_api_key
       POSTGRES_AUTH_DB_FILE: /run/secrets/omniwa_postgres_auth_dsn
       POSTGRES_USERS_DB_FILE: /run/secrets/omniwa_postgres_users_dsn

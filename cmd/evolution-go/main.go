@@ -219,6 +219,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	if err != nil {
 		logger.LogFatal("component=dependency_health action=initialize result=failed error_code=invalid_configuration")
 	}
+	readinessHealth := server_service.NewReadinessHealth(processState, dependencyHealth, server_service.ReadinessRequirements{
+		UsersDatabase: config.ReadinessRequireUsersDatabase,
+		EventDelivery: config.ReadinessRequireEventDelivery,
+		MinIO:         config.ReadinessRequireMinIO,
+	})
 	startDependencyProbe := func(name server_service.DependencyName, probe server_service.DependencyProbe) {
 		worker, workerErr := server_service.NewDependencyProbeWorker(
 			name, probe, dependencyHealth,
@@ -1024,7 +1029,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 			server_handler.WithFailureService(projectionFailureService),
 			server_handler.WithAdminCapabilities(credentialCapabilities...),
 			server_handler.WithCapabilityInstanceReader(instanceRepository),
-			server_handler.WithRuntimeHealth(processState),
+			server_handler.WithRuntimeHealth(readinessHealth),
 			server_handler.WithDependencyHealth(dependencyHealth),
 		),
 		routes.WithConversationAPIObserver(metricsRegistry.ConversationAPI()),
