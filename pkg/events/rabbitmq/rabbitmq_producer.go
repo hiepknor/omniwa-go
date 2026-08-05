@@ -172,6 +172,14 @@ func (p *rabbitMQProducer) channel(ctx context.Context) (*amqp.Channel, error) {
 	return p.conn.Channel()
 }
 
+func (p *rabbitMQProducer) Health(ctx context.Context) error {
+	channel, err := p.channel(ctx)
+	if err != nil {
+		return &ConfirmedDeliveryError{Code: "connection_unavailable", Retryable: true, Cause: err}
+	}
+	return channel.Close()
+}
+
 func publishAndAwaitConfirmation(
 	ctx context.Context,
 	publisher messagePublisher,

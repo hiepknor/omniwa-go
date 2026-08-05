@@ -11,6 +11,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/httpapi"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	projection_service "github.com/evolution-foundation/evolution-go/pkg/projection/service"
+	server_service "github.com/evolution-foundation/evolution-go/pkg/server/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -65,6 +66,11 @@ type serverHandler struct {
 	adminCapabilities []string
 	instances         capabilityInstanceReader
 	runtime           RuntimeHealth
+	dependencies      dependencyHealthSnapshotter
+}
+
+type dependencyHealthSnapshotter interface {
+	Snapshot() []server_service.DependencyHealth
 }
 
 type RuntimeHealth interface {
@@ -76,6 +82,11 @@ type RuntimeStatusResponse struct {
 	Status string `json:"status"`
 }
 
+type ServerHealthResponse struct {
+	*projection_service.ServerHealth
+	Dependencies []server_service.DependencyHealth `json:"dependencies"`
+}
+
 type capabilityInstanceReader interface {
 	GetInstanceByID(string) (*instance_model.Instance, error)
 }
@@ -84,7 +95,7 @@ type capabilityInstanceReader interface {
 // @Summary Get split server health
 // @Tags Server
 // @Produce json
-// @Success 200 {object} apidocs.SuccessResponse{data=projection_service.ServerHealth} "success"
+// @Success 200 {object} apidocs.SuccessResponse{data=ServerHealthResponse} "success"
 // @Failure 401 {object} apidocs.ErrorResponse "Not authorized"
 // @Failure 500 {object} apidocs.ErrorResponse "Internal server error"
 // @Security ApiKeyAuth
@@ -105,7 +116,11 @@ func (s *serverHandler) Health(ctx *gin.Context) {
 		httpapi.WriteInternal(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": health})
+	response := ServerHealthResponse{ServerHealth: health, Dependencies: []server_service.DependencyHealth{}}
+	if s.dependencies != nil {
+		response.Dependencies = s.dependencies.Snapshot()
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": response})
 }
 
 // Overview returns persisted metrics without querying WhatsApp.
@@ -357,6 +372,10 @@ func WithCapabilityInstanceReader(instances capabilityInstanceReader) ServerOpti
 
 func WithRuntimeHealth(runtime RuntimeHealth) ServerOption {
 	return func(handler *serverHandler) { handler.runtime = runtime }
+}
+
+func WithDependencyHealth(dependencies dependencyHealthSnapshotter) ServerOption {
+	return func(handler *serverHandler) { handler.dependencies = dependencies }
 }
 
 func NewServerHandler(version, revision string, projectionState projection_service.StateService, eventReader *projection_service.DurableEventReader, overview *projection_service.OverviewService, options ...ServerOption) ServerHandler {

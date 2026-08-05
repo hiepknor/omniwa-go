@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/evolution-foundation/evolution-go/pkg/events/outbox"
+	server_service "github.com/evolution-foundation/evolution-go/pkg/server/service"
 )
 
 func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
@@ -32,6 +33,7 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 	registry.ObserveProcessState("starting", false, 1)
 	registry.ObserveProcessTransition("starting", "active")
 	registry.ObserveProcessState("active", true, 2)
+	registry.ObserveDependencyHealth(server_service.DependencyUsersDatabase, server_service.DependencyHealthy, time.Unix(100, 0))
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -65,6 +67,10 @@ func TestRegistryExposesProcessAndBoundedEligibilityMetrics(t *testing.T) {
 		`omniwa_runtime_role{role="starting"} 0`,
 		`omniwa_runtime_ready 1`,
 		`omniwa_runtime_role_transitions_total{from="starting",to="active"} 1`,
+		`omniwa_dependency_health{dependency="users_database",status="healthy"} 1`,
+		`omniwa_dependency_health{dependency="users_database",status="unknown"} 0`,
+		`omniwa_dependency_health{dependency="users_database",status="unavailable"} 0`,
+		`omniwa_dependency_last_check_timestamp_seconds{dependency="users_database"} 100`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q", expected)
@@ -97,6 +103,7 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	registry.ObserveProcessState("instance-123", false, 1)
 	registry.ObserveProcessState("active", false, 2)
 	registry.ObserveProcessTransition("instance-123", "active")
+	registry.ObserveDependencyHealth(server_service.DependencyName("provider_120363@g.us"), server_service.DependencyHealthy, time.Now())
 
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	response := httptest.NewRecorder()
@@ -105,7 +112,7 @@ func TestRegistryRejectsUnboundedLabelsAndInvalidCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total", "omniwa_external_event_outbox_attempts_total", "omniwa_external_event_outbox_infrastructure_failures_total", "omniwa_external_event_emitter_records_total", "omniwa_external_event_emitter_routes_total", "omniwa_runtime_role"} {
+	for _, forbidden := range []string{"instance-123", "legacy_chat", "provider_120363@g.us", "operation=\"batch\"", "omniwa_conversation_api_requests_total", "omniwa_external_event_outbox_attempts_total", "omniwa_external_event_outbox_infrastructure_failures_total", "omniwa_external_event_emitter_records_total", "omniwa_external_event_emitter_routes_total", "omniwa_runtime_role", "omniwa_dependency_health"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("invalid metric material was exposed: %q", forbidden)
 		}

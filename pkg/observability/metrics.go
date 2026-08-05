@@ -10,6 +10,7 @@ import (
 
 	"github.com/evolution-foundation/evolution-go/pkg/events/emission"
 	"github.com/evolution-foundation/evolution-go/pkg/events/outbox"
+	server_service "github.com/evolution-foundation/evolution-go/pkg/server/service"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -88,6 +89,8 @@ type Registry struct {
 	processRole                  *prometheus.GaugeVec
 	processReady                 prometheus.Gauge
 	processTransitions           *prometheus.CounterVec
+	dependencyHealth             *prometheus.GaugeVec
+	dependencyLastCheck          *prometheus.GaugeVec
 	processStateMu               sync.Mutex
 	processStateRevision         uint64
 }
@@ -183,6 +186,14 @@ func NewRegistry() (*Registry, error) {
 			Namespace: "omniwa", Subsystem: "runtime", Name: "role_transitions_total",
 			Help: "Successful process role transitions between bounded roles.",
 		}, []string{"from", "to"}),
+		dependencyHealth: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "omniwa", Subsystem: "dependency", Name: "health",
+			Help: "Last cached health observation as a one-hot gauge over bounded dependencies and states.",
+		}, []string{"dependency", "status"}),
+		dependencyLastCheck: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "omniwa", Subsystem: "dependency", Name: "last_check_timestamp_seconds",
+			Help: "Unix timestamp of the last completed bounded dependency health check.",
+		}, []string{"dependency"}),
 	}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -193,7 +204,7 @@ func NewRegistry() (*Registry, error) {
 		result.outboxQueue, result.outboxOldestPending, result.outboxInfrastructureFailures,
 		result.emitterRecords, result.emitterRouteCount, result.emitterRoutes,
 		result.phoneIdentityEvidence, result.phoneNumberResolution, result.phonePayloadPolicy,
-		result.processRole, result.processReady, result.processTransitions,
+		result.processRole, result.processReady, result.processTransitions, result.dependencyHealth, result.dependencyLastCheck,
 	} {
 		if err := result.registry.Register(collector); err != nil {
 			return nil, err
@@ -203,6 +214,26 @@ func NewRegistry() (*Registry, error) {
 }
 
 var processRoles = [...]string{"starting", "standby", "promotion_pending", "active", "draining", "terminated"}
+
+var dependencyStatuses = [...]server_service.DependencyStatus{
+	server_service.DependencyUnknown, server_service.DependencyHealthy, server_service.DependencyUnavailable,
+}
+
+func (r *Registry) ObserveDependencyHealth(name server_service.DependencyName, status server_service.DependencyStatus, checkedAt time.Time) {
+	if r == nil || !server_service.ValidDependencyName(name) || !server_service.ValidDependencyStatus(status) || (!checkedAt.IsZero() && checkedAt.After(time.Now().Add(time.Minute))) {
+		return
+	}
+	for _, candidate := range dependencyStatuses {
+		value := 0.0
+		if candidate == status {
+			value = 1
+		}
+		r.dependencyHealth.WithLabelValues(string(name), string(candidate)).Set(value)
+	}
+	if !checkedAt.IsZero() {
+		r.dependencyLastCheck.WithLabelValues(string(name)).Set(float64(checkedAt.UTC().Unix()))
+	}
+}
 
 // ObserveProcessState records only the newest process-local state revision. The
 // revision prevents delayed concurrent callbacks from restoring stale gauges.

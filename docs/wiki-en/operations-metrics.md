@@ -31,6 +31,18 @@ dependency, and topology details. Existing deployments must keep using
 `/server/ok` until the new endpoints have been verified; changing a proxy or
 orchestrator health check is a separate rollout step.
 
+Configured infrastructure is checked asynchronously and exposed through the
+authenticated `GET /server/health` response and the one-hot
+`omniwa_dependency_health{dependency,status}` gauge. Allowed statuses are
+`unknown`, `healthy`, and `unavailable`; allowed dependencies are
+`users_database`, `external_event_outbox`, `rabbitmq`, `legacy_media`,
+`media_assets`, and `campaign_media`. These observations are cached and never
+put a downstream network call on the HTTP request path. They intentionally do
+not change `/server/ready` in this rollout. Raw errors, endpoints, bucket names,
+instance identifiers, and credentials are not exposed.
+`omniwa_dependency_last_check_timestamp_seconds{dependency}` allows alerting
+when a probe stops updating even if its last cached state was healthy.
+
 Metrics are process-local and reset when the application restarts. Use the
 persisted server overview and projection-health endpoints for durable state and
 readiness diagnostics.

@@ -38,6 +38,10 @@ docker compose --project-directory "$repository_root/docker" \
   --file "$repository_root/docker/docker-compose.full.yml" config --quiet
 docker stack config --compose-file "$repository_root/docker/swarm/docker-stack.yml" >/dev/null
 
+docker run --rm --interactive --entrypoint promtool \
+  'prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893' \
+  check rules /dev/stdin <"$repository_root/docker/prometheus/alerts.yml"
+
 bash "$repository_root/scripts/ci/production-preflight_test.sh"
 
 echo "production deployment manifests are valid"

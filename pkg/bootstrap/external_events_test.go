@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -13,7 +14,8 @@ import (
 
 type stubGlobalQueueCreator struct{ err error }
 
-func (s stubGlobalQueueCreator) CreateGlobalQueues() error { return s.err }
+func (s stubGlobalQueueCreator) CreateGlobalQueues() error    { return s.err }
+func (s stubGlobalQueueCreator) Health(context.Context) error { return s.err }
 
 type stubExternalEventsObserver struct{}
 
@@ -113,5 +115,17 @@ func TestExternalEventsDelegatesGlobalRabbitMQQueueCreation(t *testing.T) {
 	module := &ExternalEvents{rabbitMQ: stubGlobalQueueCreator{err: expected}}
 	if err := module.CreateGlobalRabbitMQQueues(); !errors.Is(err, expected) {
 		t.Fatalf("expected delegated error, got %v", err)
+	}
+}
+
+func TestExternalEventsDelegatesRabbitMQHealthAndFailsClosed(t *testing.T) {
+	expected := errors.New("RabbitMQ unavailable")
+	module := &ExternalEvents{rabbitMQ: stubGlobalQueueCreator{err: expected}}
+	if err := module.RabbitMQHealth(context.Background()); !errors.Is(err, expected) {
+		t.Fatalf("expected delegated health error, got %v", err)
+	}
+	var missing *ExternalEvents
+	if err := missing.RabbitMQHealth(context.Background()); err == nil {
+		t.Fatal("nil module accepted RabbitMQ health")
 	}
 }

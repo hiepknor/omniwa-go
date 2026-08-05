@@ -1,4 +1,38 @@
 groups:
+  - name: omniwa-dependency-health
+    rules:
+      - alert: OmniWARequiredDependencyUnavailable
+        expr: max by (dependency) (omniwa_dependency_health{dependency=~"users_database|external_event_outbox",status="unavailable"}) == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: A required OmniWA dependency is unavailable
+
+      - alert: OmniWAOptionalDependencyUnavailable
+        expr: max by (dependency) (omniwa_dependency_health{dependency=~"rabbitmq|legacy_media|media_assets|campaign_media",status="unavailable"}) == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: An optional OmniWA dependency is unavailable
+
+      - alert: OmniWADependencyHealthUnknown
+        expr: max by (dependency) (omniwa_dependency_health{status="unknown"}) == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A configured OmniWA dependency has not completed its first health check
+
+      - alert: OmniWADependencyHealthStale
+        expr: time() - omniwa_dependency_last_check_timestamp_seconds > 45
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A configured OmniWA dependency health check is stale
+
   - name: omniwa-webhook-delivery
     rules:
       - alert: OmniWAExternalDeliveryDeadLettered
