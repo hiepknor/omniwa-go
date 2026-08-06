@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -98,4 +99,45 @@ func TestFullSyncAppStateEventsAreSuppressedFromLegacyFanout(t *testing.T) {
 	if client.handleFullSyncAppStateEvent(&events.Pin{FromFullSync: false}) {
 		t.Fatal("live app-state event was suppressed")
 	}
+}
+
+func TestContactSnapshotUsesIndependentBoundedBudgetAndSafeFailureCodes(t *testing.T) {
+	if contactSnapshotSyncTimeout <= contactProjectionSyncTimeout {
+		t.Fatalf("contact snapshot timeout %s must exceed setup timeout %s", contactSnapshotSyncTimeout, contactProjectionSyncTimeout)
+	}
+	for _, test := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "deadline", err: context.DeadlineExceeded, want: "snapshot_timeout"},
+		{name: "wrapped deadline", err: errors.Join(errors.New("apply contact"), context.DeadlineExceeded), want: "snapshot_timeout"},
+		{name: "canceled", err: context.Canceled, want: "snapshot_canceled"},
+		{name: "provider or storage", err: errors.New("snapshot failed"), want: "snapshot_failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := contactSnapshotFailureCode(test.err); got != test.want {
+				t.Fatalf("failure code = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestContactIdentityReconciliationLockHonorsContext(t *testing.T) {
+	var mutex sync.Mutex
+	mutex.Lock()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if err := lockMutexContext(ctx, &mutex); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("contended lock error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("contended lock ignored context for %s", elapsed)
+	}
+	mutex.Unlock()
+	if err := lockMutexContext(context.Background(), &mutex); err != nil {
+		t.Fatalf("available lock error = %v", err)
+	}
+	mutex.Unlock()
 }

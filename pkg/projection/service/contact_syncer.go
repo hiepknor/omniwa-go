@@ -19,6 +19,8 @@ import (
 
 type ContactSnapshotFetcher func(context.Context) (map[types.JID]types.ContactInfo, error)
 
+const contactSnapshotRefreshCooldown = 6 * time.Hour
+
 type contactSyncState interface {
 	Get(instanceID, resource string) (*projection_model.State, error)
 	MarkSyncing(instanceID, resource string, schemaVersion int64) error
@@ -56,15 +58,18 @@ func (s *ContactSyncer) Sync(ctx context.Context, instanceID string, fetch Conta
 	}
 	lockValue, _ := s.locks.LoadOrStore(instanceID, &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
-	lock.Lock()
+	if !lock.TryLock() {
+		return nil
+	}
 	defer lock.Unlock()
 
 	state, err := s.state.Get(instanceID, contactResource)
-	if err == nil && state != nil && state.SyncStatus == projection_model.SyncStatusReady && state.SchemaVersion >= ContactsProjectionSchemaVersion {
-		return nil
-	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
+	}
+	if state != nil && state.SyncStatus == projection_model.SyncStatusReady && state.SchemaVersion >= ContactsProjectionSchemaVersion &&
+		state.LastReconciledAt != nil && state.LastReconciledAt.After(s.now().UTC().Add(-contactSnapshotRefreshCooldown)) {
+		return nil
 	}
 	if err := s.state.MarkSyncing(instanceID, contactResource, ContactsProjectionSchemaVersion); err != nil {
 		return err
