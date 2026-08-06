@@ -316,6 +316,7 @@ func (m *MyClient) replaceToken(token string) string {
 const projectionIngestTimeout = 2 * time.Second
 const groupReconcileTimeout = 2 * time.Minute
 const contactProjectionSyncTimeout = 2 * time.Minute
+const contactSnapshotSyncTimeout = 15 * time.Minute
 const historyProjectionSyncTimeout = 5 * time.Minute
 const durableEventWriteTimeout = 2 * time.Second
 
@@ -414,14 +415,13 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 		parent = context.Background()
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(parent, contactProjectionSyncTimeout)
-		defer cancel()
+		setupCtx, setupCancel := context.WithTimeout(parent, contactProjectionSyncTimeout)
 		var resolver projection_service.ContactLIDResolver
 		if mycli.identityReconciler != nil && mycli.identityResolver != nil {
 			resolver = mycli.identityResolver
 			// Reopen a completed pass on every connection so mappings learned while
 			// the instance was offline are not hidden behind a one-time checkpoint.
-			result, reconcileErr := mycli.runContactIdentityReconciliation(ctx, resolver, true)
+			result, reconcileErr := mycli.runContactIdentityReconciliation(setupCtx, resolver, true)
 			if reconcileErr != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=backfill instance_id=%s resource=contact_identity result=failed error_code=local_mapping_failed", mycli.userID)
 			} else {
@@ -439,7 +439,7 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 				}
 			}
 			result, reconcileErr := mycli.chatReconciler.RefreshBounded(
-				ctx, mycli.userID, mycli.config.ConversationBackfillBatch, mycli.config.ConversationBackfillMaxBatches, enrich,
+				setupCtx, mycli.userID, mycli.config.ConversationBackfillBatch, mycli.config.ConversationBackfillMaxBatches, enrich,
 			)
 			if reconcileErr != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=backfill instance_id=%s resource=canonical_conversation result=failed error_code=association_failed", mycli.userID)
@@ -450,6 +450,9 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 				)
 			}
 		}
+		setupCancel()
+		ctx, cancel := context.WithTimeout(parent, contactSnapshotSyncTimeout)
+		defer cancel()
 		var preflight map[types.JID]types.ContactInfo
 		if !fullSyncConfirmed {
 			if mycli.WAClient.Store.Contacts == nil {
@@ -474,11 +477,22 @@ func (mycli *MyClient) startContactProjectionSync(fullSyncConfirmed bool) {
 			return mycli.WAClient.Store.Contacts.GetAllContacts(fetchCtx)
 		}, resolver)
 		if err != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=reconcile instance_id=%s resource=contacts result=failed error_code=snapshot_failed", mycli.userID)
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=reconcile instance_id=%s resource=contacts result=failed error_code=%s", mycli.userID, contactSnapshotFailureCode(err))
 			return
 		}
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=reconcile instance_id=%s resource=contacts result=queued", mycli.userID)
 	}()
+}
+
+func contactSnapshotFailureCode(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "snapshot_timeout"
+	case errors.Is(err, context.Canceled):
+		return "snapshot_canceled"
+	default:
+		return "snapshot_failed"
+	}
 }
 
 func (mycli *MyClient) runContactIdentityReconciliation(ctx context.Context, resolver projection_service.ContactLIDResolver, refresh bool) (projection_service.ContactIdentityBackfillResult, error) {

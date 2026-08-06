@@ -99,3 +99,25 @@ func TestFullSyncAppStateEventsAreSuppressedFromLegacyFanout(t *testing.T) {
 		t.Fatal("live app-state event was suppressed")
 	}
 }
+
+func TestContactSnapshotUsesIndependentBoundedBudgetAndSafeFailureCodes(t *testing.T) {
+	if contactSnapshotSyncTimeout <= contactProjectionSyncTimeout {
+		t.Fatalf("contact snapshot timeout %s must exceed setup timeout %s", contactSnapshotSyncTimeout, contactProjectionSyncTimeout)
+	}
+	for _, test := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "deadline", err: context.DeadlineExceeded, want: "snapshot_timeout"},
+		{name: "wrapped deadline", err: errors.Join(errors.New("apply contact"), context.DeadlineExceeded), want: "snapshot_timeout"},
+		{name: "canceled", err: context.Canceled, want: "snapshot_canceled"},
+		{name: "provider or storage", err: errors.New("snapshot failed"), want: "snapshot_failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := contactSnapshotFailureCode(test.err); got != test.want {
+				t.Fatalf("failure code = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
