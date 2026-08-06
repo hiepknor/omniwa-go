@@ -26,6 +26,15 @@ instance scoped, and an absorbed ID permanently redirects to its canonical
 contact. `GET /user/contact/{contactId}` accepts a current UUID, an absorbed
 UUID, or a contact JID alias and always returns the canonical ID.
 
+Incoming HistorySync messages may carry a provider-owned push name even when
+the provider Contact snapshot has no row for that identity. The backend
+normalizes the newest usable push name per sender and conversation chunk into
+the same durable, field-versioned Contact event path used by live push-name
+updates. Empty, placeholder, oversized, self-authored, or identity-invalid
+values are ignored. This enrichment never derives a name from a JID, phone
+number, alias, or message content; when the provider supplies no usable name,
+the Contact and Direct Conversation remain unnamed.
+
 The bounded local-mapping pass is resumable and is reopened on every successful
 connection. The subsequent Conversation pass also scans direct projected Chats
 and materializes authoritative local PN/LID pairs before association. This

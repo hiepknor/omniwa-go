@@ -23,6 +23,15 @@ import (
 
 type HistoryMessageParser func(types.JID, *waWeb.WebMessageInfo) (*events.Message, error)
 
+const maxHistoryPushNameBytes = 4096
+
+type historyPushNameCandidate struct {
+	jid        types.JID
+	jidAlt     types.JID
+	name       string
+	occurredAt time.Time
+}
+
 // HistorySyncFailureDetails is safe to include in operational logs. It identifies
 // the failing stage and ordinal without exposing provider identities or payloads.
 type HistorySyncFailureDetails struct {
@@ -158,6 +167,7 @@ func (s *HistorySyncer) ingestConversation(ctx context.Context, instanceID, sync
 	if _, err := s.events.Ingest(ctx, chatEvent); err != nil {
 		return newHistorySyncFailure("conversation", "history_sync_chat_ingest_failed", conversationIndex, -1, err)
 	}
+	pushNames := make(map[string]historyPushNameCandidate)
 	for messageIndex, historyMessage := range conversation.GetMessages() {
 		if historyMessage == nil || historyMessage.GetMessage() == nil {
 			return newHistorySyncFailure("message", "history_sync_message_missing", conversationIndex, messageIndex, nil)
@@ -177,6 +187,58 @@ func (s *HistorySyncer) ingestConversation(ctx context.Context, instanceID, sync
 		}
 		if err := s.ingestMessage(ctx, instanceID, syncID, parsed, source); err != nil {
 			return newHistorySyncFailure("message_ingest", "history_sync_message_ingest_failed", conversationIndex, messageIndex, err)
+		}
+		collectHistoryPushName(pushNames, parsed, source)
+	}
+	if err := s.ingestHistoryPushNames(ctx, instanceID, pushNames); err != nil {
+		return newHistorySyncFailure("contact_enrichment", "history_sync_contact_enrichment_failed", conversationIndex, -1, err)
+	}
+	return nil
+}
+
+func collectHistoryPushName(candidates map[string]historyPushNameCandidate, parsed *events.Message, source *waWeb.WebMessageInfo) {
+	if candidates == nil || parsed == nil || source == nil || parsed.Info.IsFromMe || parsed.Info.Sender.IsEmpty() {
+		return
+	}
+	name := strings.TrimSpace(source.GetPushName())
+	if name == "" || name == "-" || len(name) > maxHistoryPushNameBytes {
+		return
+	}
+	jid := parsed.Info.Sender.ToNonAD()
+	if !isContactJID(jid) {
+		return
+	}
+	occurredAt := parsed.Info.Timestamp.UTC()
+	key := jid.String()
+	candidate := historyPushNameCandidate{
+		jid: jid, jidAlt: parsed.Info.SenderAlt.ToNonAD(), name: name, occurredAt: occurredAt,
+	}
+	current, exists := candidates[key]
+	if !exists || current.occurredAt.Before(occurredAt) || (current.occurredAt.Equal(occurredAt) && current.name < name) {
+		candidates[key] = candidate
+	}
+}
+
+func (s *HistorySyncer) ingestHistoryPushNames(ctx context.Context, instanceID string, candidates map[string]historyPushNameCandidate) error {
+	keys := make([]string, 0, len(candidates))
+	for key := range candidates {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		candidate := candidates[key]
+		event, relevant, err := NormalizeContactEvent(instanceID, &events.PushName{
+			JID: candidate.jid, JIDAlt: candidate.jidAlt,
+			Message: &types.MessageInfo{Timestamp: candidate.occurredAt}, NewPushName: candidate.name,
+		})
+		if err != nil {
+			return err
+		}
+		if !relevant || event == nil {
+			continue
+		}
+		if _, err := s.events.Ingest(ctx, event); err != nil {
+			return err
 		}
 	}
 	return nil
