@@ -142,6 +142,41 @@ func TestCanonicalConversationAssociatesAuthoritativeAliasesConcurrently(t *test
 	if err != nil || storedMessage.ConversationID == nil || *storedMessage.ConversationID != conversationID {
 		t.Fatalf("canonical message association = %#v, %v", storedMessage, err)
 	}
+	messageUpdatedAt := time.Unix(250, 0).UTC()
+	if err = db.Model(&projection_model.ProjectedMessage{}).
+		Where("instance_id = ? AND message_id = ?", instances[0].Id, message.MessageID).
+		UpdateColumn("updated_at", messageUpdatedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	replayedChat := chats[0]
+	replayedChat.SourceOccurredAt = messageAt.Add(time.Second)
+	replayedChat.SourceEventKey = "replayed-chat-association"
+	if _, err = chatRepository.ApplyChat(context.Background(), &replayedChat, ChatAspectIdentity); err != nil {
+		t.Fatal(err)
+	}
+	storedMessage, err = chatRepository.GetMessage(context.Background(), instances[0].Id, message.MessageID)
+	if err != nil || !storedMessage.UpdatedAt.Equal(messageUpdatedAt) {
+		t.Fatalf("replayed chat rewrote an already-associated message = %#v, %v", storedMessage, err)
+	}
+
+	deletedAt := messageAt.Add(2 * time.Second)
+	deletedMessage := projection_model.ProjectedMessage{
+		InstanceID: instances[0].Id, MessageID: "deleted-canonical-message", ChatID: lid,
+		Direction: projection_model.MessageDirectionIncoming, MessageType: "text", ProviderTimestamp: messageAt,
+		Provenance: projection_model.MessageProvenanceHistorySync, DeletedAt: &deletedAt,
+		SourceOccurredAt: messageAt, SourceEventKey: "deleted-canonical-message", FieldVersions: []byte(`{}`),
+		LastSyncedAt: messageAt, CreatedAt: messageAt, UpdatedAt: messageAt,
+	}
+	if err = db.Create(&deletedMessage).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err = chatRepository.ApplyChat(context.Background(), &replayedChat, ChatAspectIdentity); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Where("instance_id = ? AND message_id = ?", instances[0].Id, deletedMessage.MessageID).First(&deletedMessage).Error; err != nil ||
+		deletedMessage.ConversationID != nil {
+		t.Fatalf("deleted message unexpectedly participated in canonical reassociation = %#v, %v", deletedMessage, err)
+	}
 	for index, snapshot := range []struct {
 		chatID string
 		unread int

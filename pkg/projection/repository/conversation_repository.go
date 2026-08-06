@@ -89,12 +89,17 @@ func associateChatAlias(tx *gorm.DB, chat *projection_model.Chat, conversationID
 		return err
 	}
 	if err := tx.Model(&projection_model.Chat{}).
-		Where("instance_id = ? AND chat_id = ?", chat.InstanceID, chat.ChatID).
+		Where("instance_id = ? AND chat_id = ? AND conversation_id IS DISTINCT FROM ?", chat.InstanceID, chat.ChatID, conversationID).
 		Update("conversation_id", conversationID).Error; err != nil {
 		return err
 	}
+	// Only retained messages participate in canonical Conversation history and
+	// structural readiness. Include the partial-index predicate and skip rows
+	// that are already associated: ApplyChat runs for every message event, so an
+	// unconditional update otherwise scans and rewrites the whole message table
+	// once per event during a large history import.
 	if err := tx.Model(&projection_model.ProjectedMessage{}).
-		Where("instance_id = ? AND chat_id = ?", chat.InstanceID, chat.ChatID).
+		Where("instance_id = ? AND chat_id = ? AND deleted_at IS NULL AND conversation_id IS DISTINCT FROM ?", chat.InstanceID, chat.ChatID, conversationID).
 		Update("conversation_id", conversationID).Error; err != nil {
 		return err
 	}
