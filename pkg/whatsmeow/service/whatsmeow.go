@@ -183,6 +183,7 @@ type MyClient struct {
 	loopDone            chan struct{}
 	pairingStartedAt    atomic.Int64
 	pairingQRSeen       atomic.Bool
+	connectedAt         atomic.Int64
 }
 
 func (m *MyClient) markPairingStarted() {
@@ -212,6 +213,31 @@ func (m *MyClient) pairingObservation() (time.Duration, bool) {
 		elapsed = 0
 	}
 	return elapsed, m.pairingQRSeen.Load()
+}
+
+type disconnectObservation struct {
+	connectionUptime  time.Duration
+	runtimeCanceled   bool
+	currentGeneration bool
+}
+
+func (m *MyClient) observeUnexpectedDisconnect() disconnectObservation {
+	observation := disconnectObservation{}
+	if m == nil {
+		return observation
+	}
+	if connectedAt := m.connectedAt.Load(); connectedAt > 0 {
+		observation.connectionUptime = time.Since(time.Unix(0, connectedAt))
+		if observation.connectionUptime < 0 {
+			observation.connectionUptime = 0
+		}
+	}
+	observation.runtimeCanceled = m.appCtx != nil && m.appCtx.Err() != nil
+	if m.runtimeRegistry != nil {
+		current, ok := m.runtimeRegistry.Lookup(m.userID)
+		observation.currentGeneration = ok && current.Generation == m.runtimeGeneration
+	}
+	return observation
 }
 
 func providerSocketContext(commandCtx, runtimeCtx context.Context) (context.Context, error) {
@@ -1005,11 +1031,13 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
 	cleanup := func() {
+		wasConnected := client.IsConnected()
+		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("component=whatsapp_runtime action=cleanup instance_id=%s generation=%d expected=true was_connected=%t", cd.Instance.Id, mycli.runtimeGeneration, wasConnected)
 		mycli.stopGroupReconciliationLoop()
 		if mycli.eventHandlerID != 0 {
 			client.RemoveEventHandler(mycli.eventHandlerID)
 		}
-		if client.IsConnected() {
+		if wasConnected {
 			// Teardown is intentionally not fenced: a stale or database-isolated
 			// process must always be able to close its local provider socket.
 			client.Disconnect()
@@ -1388,6 +1416,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			}
 		}
 	case *events.Connected, *events.PushNameSetting:
+		if _, connected := rawEvt.(*events.Connected); connected {
+			mycli.connectedAt.Store(time.Now().UnixNano())
+		}
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] events.Connected to Whatsapp for user '%s'", mycli.userID, mycli.WAClient.Store.PushName)
 		mycli.startGroupReconciliationLoop()
 		mycli.startLabelProjectionSync()
@@ -2493,6 +2524,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		mycli.stopGroupReconciliationLoop()
 		doWebhook = true
 		postMap["event"] = "Disconnected"
+		observation := mycli.observeUnexpectedDisconnect()
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn(
+			"component=whatsapp_runtime action=disconnect instance_id=%s generation=%d source=remote_or_network expected=false runtime_canceled=%t current_generation=%t paired=%t connection_uptime=%s",
+			mycli.userID, mycli.runtimeGeneration, observation.runtimeCanceled, observation.currentGeneration,
+			isPairedClient(mycli.WAClient), observation.connectionUptime.Round(time.Millisecond),
+		)
 
 		// Limpar cache de userInfo para esta instância (mas não para reconexão automática)
 		mycli.userInfoCache.Delete(mycli.currentToken())

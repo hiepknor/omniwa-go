@@ -140,3 +140,35 @@ func TestProviderSocketContextRejectsCanceledAdmission(t *testing.T) {
 		t.Fatalf("error = %v, want context canceled", err)
 	}
 }
+
+func TestObserveUnexpectedDisconnectReportsGenerationAndRuntimeState(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.Background())
+	defer cancelParent()
+	registry := instance_runtime.NewRegistry[*MyClient](parent)
+	client := &MyClient{userID: "instance-a", runtimeRegistry: registry}
+	client.connectedAt.Store(time.Now().Add(-time.Second).UnixNano())
+	snapshot, err := registry.Install("instance-a", new(whatsmeow.Client), client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.runtimeGeneration = snapshot.Generation
+	client.appCtx = snapshot.Context
+
+	observation := client.observeUnexpectedDisconnect()
+	if observation.runtimeCanceled || !observation.currentGeneration || observation.connectionUptime < time.Second {
+		t.Fatalf("active observation = %#v", observation)
+	}
+
+	if !registry.RemoveIfCurrent("instance-a", snapshot.Generation) {
+		t.Fatal("current runtime was not removed")
+	}
+	select {
+	case <-snapshot.Context.Done():
+	case <-time.After(time.Second):
+		t.Fatal("runtime context was not canceled")
+	}
+	observation = client.observeUnexpectedDisconnect()
+	if !observation.runtimeCanceled || observation.currentGeneration {
+		t.Fatalf("retired observation = %#v", observation)
+	}
+}
