@@ -496,7 +496,9 @@ func contactSnapshotFailureCode(err error) string {
 }
 
 func (mycli *MyClient) runContactIdentityReconciliation(ctx context.Context, resolver projection_service.ContactLIDResolver, refresh bool) (projection_service.ContactIdentityBackfillResult, error) {
-	mycli.identityReconcileMu.Lock()
+	if err := lockMutexContext(ctx, &mycli.identityReconcileMu); err != nil {
+		return projection_service.ContactIdentityBackfillResult{}, err
+	}
 	defer mycli.identityReconcileMu.Unlock()
 	if refresh {
 		return mycli.identityReconciler.RefreshBounded(
@@ -506,6 +508,27 @@ func (mycli *MyClient) runContactIdentityReconciliation(ctx context.Context, res
 	return mycli.identityReconciler.RunBounded(
 		ctx, mycli.userID, resolver, mycli.config.ContactIdentityBackfillBatch, mycli.config.ContactIdentityBackfillMaxBatches,
 	)
+}
+
+func lockMutexContext(ctx context.Context, mutex *sync.Mutex) error {
+	if ctx == nil || mutex == nil {
+		return errors.New("context and mutex are required")
+	}
+	if mutex.TryLock() {
+		return nil
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if mutex.TryLock() {
+				return nil
+			}
+		}
+	}
 }
 
 func (mycli *MyClient) stopGroupReconciliationLoop() {

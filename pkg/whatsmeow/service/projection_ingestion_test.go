@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -120,4 +121,23 @@ func TestContactSnapshotUsesIndependentBoundedBudgetAndSafeFailureCodes(t *testi
 			}
 		})
 	}
+}
+
+func TestContactIdentityReconciliationLockHonorsContext(t *testing.T) {
+	var mutex sync.Mutex
+	mutex.Lock()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if err := lockMutexContext(ctx, &mutex); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("contended lock error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("contended lock ignored context for %s", elapsed)
+	}
+	mutex.Unlock()
+	if err := lockMutexContext(context.Background(), &mutex); err != nil {
+		t.Fatalf("available lock error = %v", err)
+	}
+	mutex.Unlock()
 }
