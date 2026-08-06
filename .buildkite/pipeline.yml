@@ -1,0 +1,6 @@
+steps:
+  - label: ":go: build / vet / test"
+    command: "bash scripts/ci/run-buildkite-verification.sh"
+    timeout_in_minutes: 45
+    agents:
+      queue: "omniwa-ci-ephemeral"
