@@ -12,7 +12,10 @@ import (
 	projection_repository "github.com/evolution-foundation/evolution-go/pkg/projection/repository"
 )
 
-const maxProjectionRetryDelay = 5 * time.Minute
+const (
+	maxProjectionRetryDelay     = 5 * time.Minute
+	dependencyPendingRetryDelay = 30 * time.Second
+)
 
 type EventHandler func(context.Context, *projection_model.Event) error
 
@@ -21,6 +24,7 @@ type EventBatchResult struct {
 	Processed    int
 	Failed       int
 	Retried      int
+	Deferred     int
 	DeadLettered int
 }
 
@@ -85,9 +89,19 @@ func (s *eventService) processBatch(ctx context.Context, resource string, eventT
 	for index := range events {
 		event := &events[index]
 		if err := handler(ctx, event); err != nil {
-			result.Failed++
 			attemptedAt := s.now().UTC()
 			failureClass, errorCode := classifyProcessingFailure(err)
+			if failureClass == projection_model.EventFailureRetryable && errorCode == errorCodeDependencyPending {
+				baseDelay := max(s.retryDelay, dependencyPendingRetryDelay)
+				deferredAt := attemptedAt.Add(projectionRetryDelay(baseDelay, event, 1))
+				if markErr := s.repository.MarkDeferred(ctx, event, deferredAt); markErr != nil {
+					processingErrors = append(processingErrors, markErr)
+				} else {
+					result.Deferred++
+				}
+				continue
+			}
+			result.Failed++
 			attempt := event.RetryCount + 1
 			maxAttempts := event.MaxAttempts
 			if maxAttempts <= 0 {

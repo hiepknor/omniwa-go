@@ -26,6 +26,7 @@ type EventRepository interface {
 	ClaimPending(ctx context.Context, limit int, leaseDuration time.Duration) ([]projection_model.Event, error)
 	ClaimPendingFor(ctx context.Context, resource string, eventTypes []string, limit int, leaseDuration time.Duration) ([]projection_model.Event, error)
 	MarkProcessed(ctx context.Context, event *projection_model.Event) error
+	MarkDeferred(ctx context.Context, event *projection_model.Event, availableAt time.Time) error
 	MarkRetry(ctx context.Context, event *projection_model.Event, failureClass projection_model.EventFailureClass, errorCode string, attemptedAt, retryAt time.Time) error
 	MarkDeadLetter(ctx context.Context, event *projection_model.Event, failureClass projection_model.EventFailureClass, errorCode string, attemptedAt time.Time) error
 }
@@ -114,6 +115,23 @@ func (r *eventRepository) MarkProcessed(ctx context.Context, event *projection_m
 		"status": projection_model.EventStatusProcessed, "processed_at": now,
 		"claim_token": nil, "lease_until": nil, "last_error_code": nil,
 		"last_attempt_at": now, "failure_class": nil, "dead_lettered_at": nil,
+		"discarded_at": nil,
+	})
+	return claimResult(result)
+}
+
+func (r *eventRepository) MarkDeferred(ctx context.Context, event *projection_model.Event, availableAt time.Time) error {
+	if err := validateClaimedEvent(event); err != nil {
+		return err
+	}
+	now := r.now().UTC()
+	if !availableAt.After(now) {
+		return errors.New("future projection event availability is required")
+	}
+	result := r.claimedEventQuery(ctx, event).Updates(map[string]any{
+		"status": projection_model.EventStatusPending, "available_at": availableAt.UTC(),
+		"last_error_code": nil, "last_attempt_at": now, "failure_class": nil,
+		"claim_token": nil, "lease_until": nil, "dead_lettered_at": nil,
 		"discarded_at": nil,
 	})
 	return claimResult(result)
