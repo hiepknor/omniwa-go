@@ -144,6 +144,40 @@ func TestContactSyncerRefreshesReadyProjectionAndMarksInitialFailure(t *testing.
 	}
 }
 
+func TestContactSyncerUsesBoundedSuccessfulRefreshCooldown(t *testing.T) {
+	now := time.Unix(10_000, 0).UTC()
+	for _, test := range []struct {
+		name       string
+		state      projection_model.SyncStatus
+		schema     int64
+		reconciled time.Time
+		wantFetch  bool
+	}{
+		{name: "recent ready snapshot", state: projection_model.SyncStatusReady, schema: ContactsProjectionSchemaVersion, reconciled: now.Add(-time.Minute), wantFetch: false},
+		{name: "expired ready snapshot", state: projection_model.SyncStatusReady, schema: ContactsProjectionSchemaVersion, reconciled: now.Add(-contactSnapshotRefreshCooldown), wantFetch: true},
+		{name: "recent stale snapshot", state: projection_model.SyncStatusStale, schema: ContactsProjectionSchemaVersion, reconciled: now.Add(-time.Minute), wantFetch: true},
+		{name: "recent failed snapshot", state: projection_model.SyncStatusFailed, schema: ContactsProjectionSchemaVersion, reconciled: now.Add(-time.Minute), wantFetch: true},
+		{name: "recent old schema snapshot", state: projection_model.SyncStatusReady, schema: ContactsProjectionSchemaVersion - 1, reconciled: now.Add(-time.Minute), wantFetch: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reconciled := test.reconciled
+			state := &contactSyncStateStub{state: &projection_model.State{
+				SyncStatus: test.state, SchemaVersion: test.schema, LastReconciledAt: &reconciled,
+			}}
+			syncer := NewContactSyncer(&captureContactSnapshots{}, state, &captureContactSyncEvents{})
+			syncer.now = func() time.Time { return now }
+			fetched := false
+			err := syncer.Sync(context.Background(), "instance-a", func(context.Context) (map[types.JID]types.ContactInfo, error) {
+				fetched = true
+				return map[types.JID]types.ContactInfo{}, nil
+			}, nil)
+			if err != nil || fetched != test.wantFetch {
+				t.Fatalf("refresh fetched=%v, want=%v, error=%v", fetched, test.wantFetch, err)
+			}
+		})
+	}
+}
+
 func TestContactSyncerCoalescesConcurrentInstanceRefreshes(t *testing.T) {
 	syncer := NewContactSyncer(&captureContactSnapshots{}, &contactSyncStateStub{}, &captureContactSyncEvents{})
 	started := make(chan struct{})
@@ -163,6 +197,13 @@ func TestContactSyncerCoalescesConcurrentInstanceRefreshes(t *testing.T) {
 		return map[types.JID]types.ContactInfo{}, nil
 	}, nil); err != nil || secondFetched {
 		t.Fatalf("concurrent refresh was not coalesced: fetched=%v error=%v", secondFetched, err)
+	}
+	otherInstanceFetched := false
+	if err := syncer.Sync(context.Background(), "instance-b", func(context.Context) (map[types.JID]types.ContactInfo, error) {
+		otherInstanceFetched = true
+		return map[types.JID]types.ContactInfo{}, nil
+	}, nil); err != nil || !otherInstanceFetched {
+		t.Fatalf("independent instance refresh was coalesced: fetched=%v error=%v", otherInstanceFetched, err)
 	}
 	close(release)
 	if err := <-firstDone; err != nil {
