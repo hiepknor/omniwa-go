@@ -126,13 +126,13 @@ func TestContactSyncerCapturesOnlyDirectSnapshotPhoneEvidence(t *testing.T) {
 	}
 }
 
-func TestContactSyncerSkipsReadyProjectionAndMarksInitialFailure(t *testing.T) {
+func TestContactSyncerRefreshesReadyProjectionAndMarksInitialFailure(t *testing.T) {
 	readyState := &contactSyncStateStub{state: &projection_model.State{SyncStatus: projection_model.SyncStatusReady, SchemaVersion: ContactsProjectionSchemaVersion}}
 	fetched := false
 	if err := NewContactSyncer(&captureContactSnapshots{}, readyState, &captureContactSyncEvents{}).Sync(context.Background(), "instance-a", func(context.Context) (map[types.JID]types.ContactInfo, error) {
 		fetched = true
-		return nil, nil
-	}, nil); err != nil || fetched {
+		return map[types.JID]types.ContactInfo{}, nil
+	}, nil); err != nil || !fetched || readyState.status != projection_model.SyncStatusSyncing {
 		t.Fatalf("ready sync = fetched %v, error %v", fetched, err)
 	}
 	failedState := &contactSyncStateStub{}

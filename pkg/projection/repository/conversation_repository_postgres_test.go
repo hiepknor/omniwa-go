@@ -128,6 +128,34 @@ func TestCanonicalConversationAssociatesAuthoritativeAliasesConcurrently(t *test
 		conversation.AddressingJID == nil || *conversation.AddressingJID != phoneJID {
 		t.Fatalf("replayed contact did not refresh conversation addressing = %#v, %v", conversation, err)
 	}
+	pushName := "Authoritative push name"
+	if _, _, err = contactRepository.Apply(context.Background(), ContactPatch{
+		InstanceID: instances[0].Id,
+		Identities: []ContactIdentityRef{
+			{Kind: projection_model.ContactIdentityKindJID, Value: phoneJID},
+			{Kind: projection_model.ContactIdentityKindPhoneJID, Value: phoneJID},
+		},
+		Aspect: ContactAspectPushName, OccurredAt: time.Unix(200, 0).UTC(), EventKey: "authoritative-push-name", PushName: &pushName,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Where("instance_id = ? AND conversation_id = ?", instances[0].Id, conversationID).First(&conversation).Error; err != nil ||
+		conversation.ConversationID != conversationID || conversation.DisplayName == nil || *conversation.DisplayName != pushName ||
+		conversation.DisplayNameSource == nil || *conversation.DisplayNameSource != "push_name" || conversation.DisplayNameUpdatedAt == nil {
+		t.Fatalf("late contact enrichment did not refresh canonical conversation = %#v, %v", conversation, err)
+	}
+	stalePushName := "Stale push name"
+	if _, _, err = contactRepository.Apply(context.Background(), ContactPatch{
+		InstanceID: instances[0].Id,
+		Identities: []ContactIdentityRef{{Kind: projection_model.ContactIdentityKindPhoneJID, Value: phoneJID}},
+		Aspect:     ContactAspectPushName, OccurredAt: time.Unix(150, 0).UTC(), EventKey: "stale-push-name", PushName: &stalePushName,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Where("instance_id = ? AND conversation_id = ?", instances[0].Id, conversationID).First(&conversation).Error; err != nil ||
+		conversation.ConversationID != conversationID || conversation.DisplayName == nil || *conversation.DisplayName != pushName {
+		t.Fatalf("stale contact enrichment changed canonical conversation = %#v, %v", conversation, err)
+	}
 
 	messageAt := time.Unix(300, 0).UTC()
 	message := projection_model.ProjectedMessage{

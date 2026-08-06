@@ -60,9 +60,6 @@ func (s *ContactSyncer) Sync(ctx context.Context, instanceID string, fetch Conta
 	defer lock.Unlock()
 
 	state, err := s.state.Get(instanceID, contactResource)
-	if err == nil && state != nil && state.SyncStatus == projection_model.SyncStatusReady && state.SchemaVersion >= ContactsProjectionSchemaVersion {
-		return nil
-	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
