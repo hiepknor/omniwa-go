@@ -27,6 +27,15 @@ func (c *captureHistoryEvents) Ingest(_ context.Context, event *projection_model
 	return true, nil
 }
 
+type failHistoryContactEvents struct{ captureHistoryEvents }
+
+func (c *failHistoryContactEvents) Ingest(ctx context.Context, event *projection_model.Event) (bool, error) {
+	if event.EventType == "push_name" {
+		return false, errors.New("contact inbox unavailable")
+	}
+	return c.captureHistoryEvents.Ingest(ctx, event)
+}
+
 type historyStateStub struct {
 	states map[string]*projection_model.State
 	failed []string
@@ -172,6 +181,92 @@ func TestHistorySyncerSkipsMetadataOnlyMessageStubsAndCompletes(t *testing.T) {
 	}
 }
 
+func TestHistorySyncerDeduplicatesAuthoritativeMessagePushNames(t *testing.T) {
+	raw := testHistorySync(waHistorySync.HistorySync_RECENT, 100)
+	first := raw.Data.Conversations[0].Messages[0].Message
+	first.PushName = proto.String("Older Name")
+	first.MessageTimestamp = proto.Uint64(700)
+	newer := proto.Clone(first).(*waWeb.WebMessageInfo)
+	newer.Key.ID = proto.String("history-message-newer")
+	newer.MessageTimestamp = proto.Uint64(900)
+	newer.PushName = proto.String("  Newer Name  ")
+	raw.Data.Conversations[0].Messages = append(raw.Data.Conversations[0].Messages, &waHistorySync.HistorySyncMsg{Message: newer})
+
+	eventsCapture := &captureHistoryEvents{}
+	if err := NewHistorySyncer(eventsCapture, newHistoryStateStub()).Sync(context.Background(), "instance-a", raw, testHistoryMessageParser); err != nil {
+		t.Fatal(err)
+	}
+	var pushEvents []*projection_model.Event
+	for _, event := range eventsCapture.events {
+		if event.EventType == "push_name" {
+			pushEvents = append(pushEvents, event)
+		}
+	}
+	if len(pushEvents) != 1 {
+		t.Fatalf("push-name events = %d, want one newest event", len(pushEvents))
+	}
+	var payload contactEventPayload
+	if err := json.Unmarshal(pushEvents[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.PushName == nil || *payload.PushName != "Newer Name" || !pushEvents[0].OccurredAt.Equal(time.Unix(900, 0)) {
+		t.Fatalf("push-name event = %#v payload=%#v", pushEvents[0], payload)
+	}
+	if pushEvents[0].InstanceID != "instance-a" || payload.PreferredJID != "sender@s.whatsapp.net" {
+		t.Fatalf("push-name identity escaped instance/sender scope: %#v payload=%#v", pushEvents[0], payload)
+	}
+}
+
+func TestHistorySyncerSkipsUnusableOrSelfPushNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		pushName string
+		fromMe   bool
+	}{
+		{name: "missing", pushName: ""},
+		{name: "placeholder", pushName: "-"},
+		{name: "oversized", pushName: strings.Repeat("x", maxHistoryPushNameBytes+1)},
+		{name: "self", pushName: "Own Name", fromMe: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw := testHistorySync(waHistorySync.HistorySync_RECENT, 100)
+			source := raw.Data.Conversations[0].Messages[0].Message
+			source.PushName = proto.String(test.pushName)
+			source.Key.FromMe = proto.Bool(test.fromMe)
+			eventsCapture := &captureHistoryEvents{}
+			if err := NewHistorySyncer(eventsCapture, newHistoryStateStub()).Sync(context.Background(), "instance-a", raw, testHistoryMessageParser); err != nil {
+				t.Fatal(err)
+			}
+			for _, event := range eventsCapture.events {
+				if event.EventType == "push_name" {
+					t.Fatalf("unusable push name produced contact event: %#v", event)
+				}
+			}
+		})
+	}
+}
+
+func TestHistorySyncerFailsClosedWhenPushNameIsNotDurable(t *testing.T) {
+	raw := testHistorySync(waHistorySync.HistorySync_RECENT, 100)
+	raw.Data.Conversations[0].Messages[0].Message.PushName = proto.String("Provider Name")
+	eventsCapture := &failHistoryContactEvents{}
+	state := newHistoryStateStub()
+	err := NewHistorySyncer(eventsCapture, state).Sync(context.Background(), "instance-a", raw, testHistoryMessageParser)
+	if err == nil {
+		t.Fatal("history sync completed after contact enrichment ingestion failed")
+	}
+	details := DescribeHistorySyncFailure(err)
+	if details.Stage != "contact_enrichment" || details.Code != "history_sync_contact_enrichment_failed" || details.ConversationIndex != 0 || details.MessageIndex != -1 {
+		t.Fatalf("failure details = %#v", details)
+	}
+	for _, event := range eventsCapture.events {
+		if event.EventType == "history_sync_complete" {
+			t.Fatal("contact enrichment failure emitted readiness completion")
+		}
+	}
+}
+
 func TestHistorySyncerFailsClosedForPayloadBearingMessageWithoutIdentity(t *testing.T) {
 	raw := testHistorySync(waHistorySync.HistorySync_RECENT, 100)
 	raw.Data.Conversations[0].Messages[0].Message.Key.ID = nil
@@ -219,7 +314,7 @@ func testHistoryMessageParser(chat types.JID, source *waWeb.WebMessageInfo) (*ev
 	}
 	return &events.Message{
 		Info: types.MessageInfo{
-			MessageSource: types.MessageSource{Chat: chat, Sender: sender, IsGroup: chat.Server == types.GroupServer},
+			MessageSource: types.MessageSource{Chat: chat, Sender: sender, IsFromMe: source.GetKey().GetFromMe(), IsGroup: chat.Server == types.GroupServer},
 			ID:            types.MessageID(source.GetKey().GetID()), Type: "text", Timestamp: time.Unix(int64(source.GetMessageTimestamp()), 0).UTC(),
 		},
 		Message: source.GetMessage(), SourceWebMsg: source,
