@@ -14,6 +14,7 @@ type memoryEventRepository struct {
 	processed        int
 	failed           int
 	deadLettered     int
+	deferred         int
 	lastErrorCode    string
 	lastFailureClass projection_model.EventFailureClass
 	retryAt          time.Time
@@ -42,6 +43,12 @@ func (r *memoryEventRepository) ClaimPendingFor(ctx context.Context, _ string, _
 
 func (r *memoryEventRepository) MarkProcessed(_ context.Context, _ *projection_model.Event) error {
 	r.processed++
+	return nil
+}
+
+func (r *memoryEventRepository) MarkDeferred(_ context.Context, _ *projection_model.Event, availableAt time.Time) error {
+	r.deferred++
+	r.retryAt = availableAt
 	return nil
 }
 
@@ -131,6 +138,28 @@ func TestEventServiceDeadLettersRetryableFailureAtAttemptCeiling(t *testing.T) {
 	}
 	if result.DeadLettered != 1 || repository.lastFailureClass != projection_model.EventFailureRetryable || repository.lastErrorCode != errorCodeProcessingFailed {
 		t.Fatalf("result=%#v repository=%#v", result, repository)
+	}
+}
+
+func TestEventServiceDefersPendingDependencyWithoutConsumingRetryBudget(t *testing.T) {
+	claimToken := "claim"
+	repository := &memoryEventRepository{events: []projection_model.Event{{
+		InstanceID: "instance-a", Resource: messageResource, EventKey: "completion", ClaimToken: &claimToken,
+		RetryCount: projection_model.DefaultEventMaxAttempts - 1, MaxAttempts: projection_model.DefaultEventMaxAttempts,
+	}}}
+	service := &eventService{repository: repository, leaseDuration: time.Minute, retryDelay: time.Second, now: func() time.Time { return time.Unix(100, 0) }}
+	result, err := service.ProcessBatch(context.Background(), 1, func(context.Context, *projection_model.Event) error {
+		return retryableProjectionFailure(errorCodeDependencyPending)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Deferred != 1 || result.Failed != 0 || result.Retried != 0 || result.DeadLettered != 0 || repository.deferred != 1 || repository.failed != 0 || repository.deadLettered != 0 {
+		t.Fatalf("result=%#v repository=%#v", result, repository)
+	}
+	delay := repository.retryAt.Sub(time.Unix(100, 0))
+	if delay < 22500*time.Millisecond || delay > 37500*time.Millisecond {
+		t.Fatalf("deferred availability = %v", repository.retryAt)
 	}
 }
 
