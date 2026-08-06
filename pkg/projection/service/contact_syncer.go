@@ -19,7 +19,7 @@ import (
 
 type ContactSnapshotFetcher func(context.Context) (map[types.JID]types.ContactInfo, error)
 
-const contactSnapshotRefreshCooldown = 15 * time.Minute
+const contactSnapshotRefreshCooldown = 6 * time.Hour
 
 type contactSyncState interface {
 	Get(instanceID, resource string) (*projection_model.State, error)
