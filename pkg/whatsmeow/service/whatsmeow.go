@@ -607,48 +607,51 @@ func (mycli *MyClient) triggerHistoryProjectionSync(event *events.HistorySync) {
 	if parent == nil {
 		parent = context.Background()
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(parent, historyProjectionSyncTimeout)
-		defer cancel()
-		if err := mycli.historySyncer.Sync(ctx, mycli.userID, event, mycli.WAClient.ParseWebMessage); err != nil {
-			details := projection_service.DescribeHistorySyncFailure(err)
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError(
-				"component=projection action=history_sync instance_id=%s result=failed stage=%s error_code=%s conversation_index=%d message_index=%d",
-				mycli.userID, details.Stage, details.Code, details.ConversationIndex, details.MessageIndex,
-			)
+	// whatsmeow invokes HistorySync callbacks from its dedicated, serialized
+	// history-notification loop. Keep ingestion on that loop so it provides
+	// backpressure and releases each decoded provider payload before downloading
+	// the next one. Spawning here allows every large payload to remain reachable
+	// while HistorySyncer serializes the work, which can exhaust the container.
+	ctx, cancel := context.WithTimeout(parent, historyProjectionSyncTimeout)
+	defer cancel()
+	if err := mycli.historySyncer.Sync(ctx, mycli.userID, event, mycli.WAClient.ParseWebMessage); err != nil {
+		details := projection_service.DescribeHistorySyncFailure(err)
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogError(
+			"component=projection action=history_sync instance_id=%s result=failed stage=%s error_code=%s conversation_index=%d message_index=%d",
+			mycli.userID, details.Stage, details.Code, details.ConversationIndex, details.MessageIndex,
+		)
+		return
+	}
+	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=history_sync instance_id=%s result=ingested", mycli.userID)
+	if len(event.Data.GetPhoneNumberToLidMappings()) > 0 && mycli.identityReconciler != nil && mycli.identityResolver != nil {
+		refreshCtx, refreshCancel := context.WithTimeout(parent, contactProjectionSyncTimeout)
+		defer refreshCancel()
+		result, refreshErr := mycli.runContactIdentityReconciliation(refreshCtx, mycli.identityResolver, true)
+		if refreshErr != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=refresh instance_id=%s resource=contact_identity result=failed error_code=late_mapping_reconciliation_failed", mycli.userID)
 			return
 		}
-		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("component=projection action=history_sync instance_id=%s result=ingested", mycli.userID)
-		if len(event.Data.GetPhoneNumberToLidMappings()) > 0 && mycli.identityReconciler != nil && mycli.identityResolver != nil {
-			refreshCtx, refreshCancel := context.WithTimeout(parent, contactProjectionSyncTimeout)
-			defer refreshCancel()
-			result, refreshErr := mycli.runContactIdentityReconciliation(refreshCtx, mycli.identityResolver, true)
-			if refreshErr != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=refresh instance_id=%s resource=contact_identity result=failed error_code=late_mapping_reconciliation_failed", mycli.userID)
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo(
+			"component=projection action=refresh instance_id=%s resource=contact_identity result=success batches=%d scanned=%d mapped=%d merged=%d unchanged=%d complete=%t lease_held=%t",
+			mycli.userID, result.Batches, result.Scanned, result.Mapped, result.Merged, result.Unchanged, result.Complete, result.LeaseHeld,
+		)
+		if mycli.chatReconciler != nil {
+			enrich := func(ctx context.Context, instanceID, chatID string) error {
+				return mycli.identityReconciler.ReconcileChatIdentity(ctx, instanceID, chatID, mycli.identityResolver)
+			}
+			conversationResult, conversationErr := mycli.chatReconciler.RefreshBounded(
+				refreshCtx, mycli.userID, mycli.config.ConversationBackfillBatch, mycli.config.ConversationBackfillMaxBatches, enrich,
+			)
+			if conversationErr != nil {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=refresh instance_id=%s resource=canonical_conversation result=failed error_code=late_mapping_association_failed", mycli.userID)
 				return
 			}
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo(
-				"component=projection action=refresh instance_id=%s resource=contact_identity result=success batches=%d scanned=%d mapped=%d merged=%d unchanged=%d complete=%t lease_held=%t",
-				mycli.userID, result.Batches, result.Scanned, result.Mapped, result.Merged, result.Unchanged, result.Complete, result.LeaseHeld,
+				"component=projection action=refresh instance_id=%s resource=canonical_conversation result=success batches=%d scanned=%d associated=%d absorbed=%d messages=%d conflicts=%d complete=%t lease_held=%t",
+				mycli.userID, conversationResult.Batches, conversationResult.Scanned, conversationResult.Associated, conversationResult.Absorbed, conversationResult.Messages, conversationResult.Conflicts, conversationResult.Complete, conversationResult.LeaseHeld,
 			)
-			if mycli.chatReconciler != nil {
-				enrich := func(ctx context.Context, instanceID, chatID string) error {
-					return mycli.identityReconciler.ReconcileChatIdentity(ctx, instanceID, chatID, mycli.identityResolver)
-				}
-				conversationResult, conversationErr := mycli.chatReconciler.RefreshBounded(
-					refreshCtx, mycli.userID, mycli.config.ConversationBackfillBatch, mycli.config.ConversationBackfillMaxBatches, enrich,
-				)
-				if conversationErr != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("component=projection action=refresh instance_id=%s resource=canonical_conversation result=failed error_code=late_mapping_association_failed", mycli.userID)
-					return
-				}
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo(
-					"component=projection action=refresh instance_id=%s resource=canonical_conversation result=success batches=%d scanned=%d associated=%d absorbed=%d messages=%d conflicts=%d complete=%t lease_held=%t",
-					mycli.userID, conversationResult.Batches, conversationResult.Scanned, conversationResult.Associated, conversationResult.Absorbed, conversationResult.Messages, conversationResult.Conflicts, conversationResult.Complete, conversationResult.LeaseHeld,
-				)
-			}
 		}
-	}()
+	}
 }
 
 func (mycli *MyClient) handleFullSyncAppStateEvent(rawEvent any) bool {
@@ -1379,6 +1382,13 @@ func (mycli *MyClient) instanceSnapshot() *instance_model.Instance {
 }
 
 func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
+	// HistorySync payloads can be large and are already handled completely by
+	// the projection path. Process them before the general event-state lock and
+	// do not pass them to legacy fan-out or the raw unhandled-event logger.
+	if _, ok := rawEvt.(*events.HistorySync); ok {
+		mycli.ingestProjectionEvent(rawEvt)
+		return
+	}
 	mycli.stateMu.Lock()
 	defer mycli.stateMu.Unlock()
 	// Projection ingestion is synchronous and bounded so relevant changes reach
@@ -2603,15 +2613,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		doWebhook = true
 		postMap["event"] = "NewsletterLeave"
 	case *events.UndecryptableMessage:
-		jsonEvt, err := json.Marshal(evt)
-		if err != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Undecryptable message received: %s", mycli.userID, evt.Info.ID)
-		}
-		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Undecryptable message received all: %+v", mycli.userID, string(jsonEvt))
+		messageRef := logger_wrapper.OpaqueCorrelationID(evt.Info.ID)
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn(
+			"component=whatsapp_runtime action=undecryptable_message instance_id=%s message_ref=%s unavailable_type=%s",
+			mycli.userID, messageRef, evt.UnavailableType,
+		)
 
 		if evt.UnavailableType == "view_once" {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Undecryptable message received view_once: %s", mycli.userID, evt.Info.ID)
-
 			doWebhook = true
 			postMap["event"] = "Message"
 
