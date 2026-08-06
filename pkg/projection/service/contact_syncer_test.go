@@ -144,6 +144,32 @@ func TestContactSyncerRefreshesReadyProjectionAndMarksInitialFailure(t *testing.
 	}
 }
 
+func TestContactSyncerCoalescesConcurrentInstanceRefreshes(t *testing.T) {
+	syncer := NewContactSyncer(&captureContactSnapshots{}, &contactSyncStateStub{}, &captureContactSyncEvents{})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- syncer.Sync(context.Background(), "instance-a", func(context.Context) (map[types.JID]types.ContactInfo, error) {
+			close(started)
+			<-release
+			return map[types.JID]types.ContactInfo{}, nil
+		}, nil)
+	}()
+	<-started
+	secondFetched := false
+	if err := syncer.Sync(context.Background(), "instance-a", func(context.Context) (map[types.JID]types.ContactInfo, error) {
+		secondFetched = true
+		return map[types.JID]types.ContactInfo{}, nil
+	}, nil); err != nil || secondFetched {
+		t.Fatalf("concurrent refresh was not coalesced: fetched=%v error=%v", secondFetched, err)
+	}
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("primary refresh failed: %v", err)
+	}
+}
+
 func TestContactSyncCompletionWaitsForPendingMutations(t *testing.T) {
 	events := &captureContactSyncEvents{}
 	syncer := NewContactSyncer(&captureContactSnapshots{}, &contactSyncStateStub{}, events)

@@ -56,7 +56,9 @@ func (s *ContactSyncer) Sync(ctx context.Context, instanceID string, fetch Conta
 	}
 	lockValue, _ := s.locks.LoadOrStore(instanceID, &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
-	lock.Lock()
+	if !lock.TryLock() {
+		return nil
+	}
 	defer lock.Unlock()
 
 	state, err := s.state.Get(instanceID, contactResource)
